@@ -1,193 +1,151 @@
 # 主页运营监控工具
 
-用于监控 Facebook 公共主页的粉丝增长、最近发帖时间及主页活跃情况的桌面工具。
+当前版本：**v1.4.0**  
 
-当前版本：**v1.3.0**  
-GitHub：`bstbuku-ship-it/Page-Operations-Monitor`
+用于监控 Facebook 公共主页的粉丝增长、最近发帖时间及主页活跃情况的桌面工具。桌面端通过本机 Chrome 连接器插件使用已经登录的浏览器会话执行巡检。
 
-## v1.3.0
+## v1.4.0 更新日志
 
-- 浏览器连接器改为同一台电脑自动发现、自动连接，不再要求手动输入配对码。
-- 同时检测到多个 Chrome Profile 时，由用户选择用于巡检的浏览器，并记住上次选择。
-- 专业 ID 管理支持粉丝监控与发帖监控独立启用，支持单个勾选和批量管理。
-- 主界面显示上次巡检时间，并支持随机巡检间隔与随机主页间隔。
-- 关闭窗口后可静默留在系统托盘继续运行；再次启动程序时唤回已有窗口，避免重复启动多个实例。
-- 最近预警增加主页头像，主页名称、头像与浏览器数据同步逻辑持续优化。
-- 软件更新支持 GitHub Releases；Windows 与 macOS 安装包由 GitHub Actions 云端构建。
+- 修复预警弹窗头像读取：预警窗口现在优先读取与主页卡片相同的最新头像缓存。
+- “查看通知”会打开通知界面，并自动选中、高亮对应预警。
+- 通知界面重新整理：默认仅显示“全部未读 + 今天发生”的通知；较早且已读的记录保留在“历史记录”，不会删除。
+- 新增首页 KPI“昨日新增”，位于“当前粉丝总量”和“今日新增”之间。昨日数据由跨日有效巡检自动汇总，不重新启用历史快照。
+- 修复暖米白、雾杏米色主题下浏览器连接列表勾选框深色背景问题。
+- 首页巡检参数改为紧凑布局：`每轮间隔`、`浮动范围`、`主页间隔`靠左，筛选、搜索、排序、每行数量靠右。
+- 数字输入框取消上下箭头；点击会自动选中当前数字，输入有效数字时自动保存。
+- 设置中心“巡检与启动”使用同一套数字输入方式。
+- 精简设置中的浏览器连接器说明，删除不必要的配对说明。
+- 顶部主页、ID 管理、浏览器、主题、通知、设置图标增加同主题内的色彩层级；有未读通知时通知图标使用红色。
+- 浏览器按钮保留状态灯：绿色=可用，黄色=部分连接/需处理，红色=无可用连接。
+- 浏览器连接窗口简化为“使用 / 浏览器备注 / 状态”；一个在线连接器自动使用，多个连接器可单选或多选，并行分配任务，最多 10 个。
+- 浏览器连接器插件重新设计为紧凑弹窗：点击插件后直接填写“浏览器备注”，不再打开单独设置分页。
+- 版本统一升级为 **1.4.0**。
 
-## 用户下载哪个文件？
+## 安装桌面程序
 
-推荐普通用户只下载自己系统对应的 **bundle.zip 完整包**：
+### Windows
 
-- Windows：`PageOperationsMonitor-1.3.0-windows-x64-bundle.zip`
-- Mac Apple 芯片（M1/M2/M3/M4...）：`PageOperationsMonitor-1.3.0-macos-arm64-bundle.zip`
-- Mac Intel：`PageOperationsMonitor-1.3.0-macos-x64-bundle.zip`
+正式 Release 推荐下载：
 
-每个完整包里已经同时放入：
+`PageOperationsMonitor-1.4.0-windows-x64-bundle.zip`
 
-1. 当前系统的软件安装包；
-2. `浏览器插件` 文件夹；
-3. 本 README；
-4. 安装说明。
+解压后运行其中的 Windows 安装程序。源码调试也可以运行 `Page_Operations_Monitor_1.4.0.pyw`。
 
-因此用户不需要分别寻找“软件”和“插件”两个下载。
+### macOS
 
-## Windows 安装
+Apple Silicon 下载：
 
-1. 解压 Windows 完整包。
-2. 运行 `PageOperationsMonitor-1.3.0-windows-x64-setup.exe`。
-3. 安装完成后启动 **主页运营监控工具**。
-4. 按下面“安装 Chrome 浏览器连接器”步骤安装插件。
+`PageOperationsMonitor-1.4.0-macos-arm64-bundle.zip`
 
-## macOS 安装
+Intel Mac 下载：
 
-1. 根据 Mac 芯片下载 arm64 或 x64 完整包。
-2. 解压后运行 `.pkg` 安装包。
-3. 安装完成后从“应用程序”启动 **PageOperationsMonitor**。
-4. 按下面步骤安装 Chrome 浏览器连接器。
+`PageOperationsMonitor-1.4.0-macos-x64-bundle.zip`
 
-> 当前云端工作流已经支持生成 macOS 安装包，但如果发布者还没有配置 Apple Developer ID 签名和 Apple 公证，macOS 可能显示“未知开发者”安全提示。正式大规模分发时建议后续补上 Apple 签名/公证。
+安装包为 `.pkg`。正式公开发布建议启用 Apple Developer ID 签名与公证。
 
-## 安装 Chrome 浏览器连接器
+## 安装 Chrome 连接器
 
-1. 打开需要用于 Facebook 巡检的 Chrome Profile。
-2. 地址栏输入 `chrome://extensions`。
-3. 打开右上角 **开发者模式**。
-4. 点击 **加载已解压的扩展程序**。
-5. 选择完整包中的 **浏览器插件** 文件夹；该文件夹里面应直接看到 `manifest.json`。
-6. 软件与插件处于同一台电脑时会自动发现并连接，不需要配对码。
-7. 如果软件识别到多个在线浏览器/Profile，在软件右上角 **浏览器** 中选择需要使用的连接。
+Release 中也会提供单独的：
 
-Chrome 必须保持运行，且对应 Profile 中 Facebook 登录状态有效。
+`POM-Browser-Connector-1.4.0.zip`
 
-## 自动巡检
+1. 解压连接器 ZIP。
+2. Chrome 打开 `chrome://extensions`。
+3. 开启“开发者模式”。
+4. 点击“加载已解压的扩展程序”。
+5. 选择解压后、直接包含 `manifest.json` 的连接器文件夹。
+6. 保持 Chrome 和桌面程序运行，连接器会自动连接本机软件。
 
-- 软件启动后默认不会自动开始巡检，是否启动由用户自行开启。
-- 每轮巡检间隔及随机浮动范围可以在软件中设置。
-- 两个主页之间的等待时间支持随机范围，减少固定时间间隔。
-- 关闭主窗口后可继续在系统托盘运行。
+点击插件图标时，只需填写一个便于识别的浏览器备注，例如：`用户60`、`Profile 144`。标准 Chrome 扩展接口不能可靠读取本机完整 Profile 名称/路径，因此无法可信自动识别时由用户填写备注，软件不会伪装成已自动识别。
 
-## 自动更新
+## 多浏览器巡检
 
-安装版会从 GitHub Releases 检查更新。云端发布流程会同时生成：
+- 只有 1 个在线连接器：软件自动使用该浏览器。
+- 有多个在线连接器：默认可使用多个，也可在右上角“浏览器”中单选或多选。
+- 最多同时使用 10 个连接器。
+- 多选时主页任务随机分散并并行执行。
+- 如果某一个浏览器中途离线，未完成任务尽量交给其余在线连接器。
+- 如果所有可用连接器都离线，本轮停止；开启中的自动巡检也会暂停，等待用户恢复连接后重新启用。
 
-- Windows 安装包；
-- macOS arm64 安装包；
-- macOS x64 安装包；
-- `update-manifest.json`（包含安装包 SHA-256）；
-- 独立浏览器插件 ZIP；
-- 各平台“软件 + 插件”完整 ZIP。
+## 巡检间隔
 
-用户从软件内执行更新时，程序使用对应系统的安装包；普通新用户则推荐直接下载 bundle.zip。
+默认设置：
 
----
+- 每轮间隔基准：120 分钟。
+- 每轮随机浮动：15–25 分钟，随机提前或延后。
+- 两个主页之间：每次随机等待 6–9 秒。
 
-# 发布者说明：只在 GitHub 云端打包
+这些范围可在首页直接修改，也可在设置中心修改。有效数字会自动保存，下次启动继续使用。
 
-**本项目不要求发布者在自己的 Windows/Mac 电脑运行 PyInstaller、Inno Setup 或 pkgbuild。**
+## 通知与预警
 
-真正的打包工作全部在 `.github/workflows/release.yml` 指定的 GitHub Actions runner 中完成：
+粉丝增长超标和发帖时间超标会使用不会自动关闭的专用预警窗口。窗口会显示主页头像、专业名称和事件内容。
 
-- Windows x64：GitHub Windows runner；
-- macOS Apple Silicon：GitHub macOS arm64 runner；
-- macOS Intel：GitHub macOS Intel runner。
+点击“查看通知”后会进入通知页面，并定位到对应记录。
 
-## 仓库固定路径
+通知页面默认采用“**全部未读 + 今日通知**”作为当前视图。这比只保留未读更适合实际运营：当天已经处理过的事件仍能快速回看，但不会让几个月的旧记录一直占满界面。较早且已读的数据仍完整保存在“历史记录”视图中。
 
-仓库根目录应保持下面结构：
+## 主题
+
+内置 5 套主题：
+
+- 深海蓝
+- 石墨黑
+- 极光紫
+- 暖米白
+- 雾杏米色
+
+主题和其他界面设置都会保存，下次启动继续使用。
+
+## 数据说明
+
+程序保存专业 ID、当前粉丝状态、今日/昨日计算所需的滚动基准、最近发帖状态和通知记录。
+
+历史快照时间序列已移除；通知历史仍然保留。
+
+“昨日新增”需要经历至少一次跨日的成功巡检才能形成数据。首次升级后如果没有跨日基准，会暂时显示 `—`，不是数据错误。
+
+## GitHub 云端发布
+
+仓库根目录建议保持：
 
 ```text
 Page-Operations-Monitor/
-├─ Page_Operations_Monitor.py          # 你每次更新的主程序
-├─ PageOperationsMonitor.ico           # Windows 图标
-├─ PageOperationsMonitor.icns          # macOS 图标
-├─ README.md                            # 使用说明 + 版本日志
-├─ browser-extension/                  # Chrome 插件源码（长期保留）
-│  ├─ manifest.json
-│  ├─ background.js
-│  ├─ extractor.js
-│  ├─ options.html
-│  ├─ options.js
-│  ├─ popup.html
-│  ├─ popup.js
-│  ├─ ui.css
-│  └─ icons/
+├─ Page_Operations_Monitor.py
+├─ PageOperationsMonitor.ico
+├─ PageOperationsMonitor.icns
+├─ README.md
+├─ browser-extension/
 ├─ tools/
-│  ├─ cloud_build.py                   # GitHub runner 构建安装器
-│  └─ assemble_release.py              # 合并软件、插件、manifest
 └─ .github/
    └─ workflows/
-      └─ release.yml                   # 点击 Run workflow 就执行它
+      └─ release.yml
 ```
 
-### 以后发布新版本，你通常只需要改这几个文件
-
-1. `Page_Operations_Monitor.py`
-2. `README.md` 中的版本日志
-3. 如果插件也修改，再修改 `browser-extension/`
-4. 图标没有变化就不用每次重新上传
-
-**不要把 EXE、PKG、build、dist 文件手动上传到仓库。GitHub Actions 会自己生成。**
-
-## 在 GitHub 网页上发布
-
-1. 打开仓库：`bstbuku-ship-it/Page-Operations-Monitor`。
-2. 确认上述文件已经提交到 `main` 分支。
-3. 点击仓库顶部 **Actions**。
-4. 左边选择 **Build and Release / 云端打包发布**。
-5. 右边点击 **Run workflow**。
-6. Branch 选择 `main`。
-7. 再点击绿色 **Run workflow**。
-8. 等待 Windows、macOS Apple Silicon、macOS Intel 三个平台全部变绿。
-9. 工作流最后的“合并软件 + 插件并发布 Release”会自动创建 `v1.3.0` Release。
-10. 打开仓库右侧 **Releases**，即可看到最终下载文件。
-
-如果 `v1.3.0` 已存在，再运行同一个工作流会覆盖本版本附件，便于正式发布前反复测试。
-
-## 版本规则
-
-主程序必须存在：
+`Page_Operations_Monitor.py` 中必须保持：
 
 ```python
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 ```
 
-插件 `browser-extension/manifest.json` 的 `version` 也必须是：
+`browser-extension/manifest.json` 中必须保持：
 
 ```json
-"version": "1.3.0"
+"version": "1.4.0"
 ```
 
-两个版本不同，云端工作流会直接停止，避免发布错版本。
+进入 GitHub 仓库 **Actions → Build and Release / 云端打包发布 → Run workflow**，构建在 GitHub runner 上完成，本地电脑不执行 PyInstaller。
 
-## 图标说明
+正式公开发布时建议将 `require_signing` 设为 `true`，并提前配置 Windows 代码签名证书以及 Apple Developer ID / 公证所需 Secrets。证书和密码不要提交进仓库。
 
-Windows 原生安装包使用：
+## 运行依赖（源码方式）
 
-```text
-PageOperationsMonitor.ico
+```bash
+python -m pip install PyQt6 Pillow
 ```
 
-macOS 原生 `.app` 使用：
+Chrome 连接器版桌面程序不需要额外安装 `websockets` Python 包。
 
-```text
-PageOperationsMonitor.icns
-```
+## 注意
 
-macOS 原生应用图标不应该直接使用 Windows `.ico`，因此仓库中需要同时保留 `.ico` 和 `.icns` 两个文件。
-
-## 发布后的主要文件
-
-```text
-PageOperationsMonitor-1.3.0-windows-x64-setup.exe
-PageOperationsMonitor-1.3.0-macos-arm64.pkg
-PageOperationsMonitor-1.3.0-macos-x64.pkg
-POM-Browser-Connector-1.3.0.zip
-PageOperationsMonitor-1.3.0-windows-x64-bundle.zip
-PageOperationsMonitor-1.3.0-macos-arm64-bundle.zip
-PageOperationsMonitor-1.3.0-macos-x64-bundle.zip
-PageOperationsMonitor-1.3.0-source.zip
-update-manifest.json
-```
-
-其中 **bundle.zip 就是给普通用户的一次性“软件 + 插件”完整下载包**。
+Facebook 页面结构、登录验证与权限可能随时变化。读取失败时程序不会把失败结果写成 0 粉丝。请在正式大批量巡检前，先用少量主页验证当前 Facebook 页面结构和登录状态。
