@@ -1,1 +1,9 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><link rel="stylesheet" href="ui.css"><title>POM Connector</title></head><body><main class="popup"><header><img src="icons/icon48.png" width="42" height="42" alt="Connector"><h1 id="heading"></h1></header><div id="status" class="status"></div><div id="details" class="details"></div><div class="actions"><button id="settings" class="primary"></button><button id="toggle"></button></div></main><script src="popup.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>主页运营连接器</title><link rel="stylesheet" href="ui.css"></head>
+<body><main class="popup compact">
+  <header class="top"><img src="icons/icon48.png" width="42" height="42" alt=""><div><h1>主页运营连接器</h1><div id="status" class="statusline"><span id="dot" class="dot"></span><span id="statusText">正在检测软件</span></div></div></header>
+  <label class="remark"><span>浏览器备注</span><input id="profile_name" maxlength="80" placeholder="例如：用户60 / Profile 144"></label>
+  <button id="save" class="primary wide">保存备注</button>
+  <div id="saved" class="saved" aria-live="polite"></div>
+</main><script src="popup.js"></script></body></html>
