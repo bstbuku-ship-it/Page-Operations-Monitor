@@ -55,7 +55,7 @@ def write_zip(path: Path, entries: list[tuple[Path, str]], folders: list[tuple[P
 
 def release_notes(ver: str) -> str:
     text = README.read_text(encoding="utf-8-sig")
-    # README 里使用 “## v1.3.0” 作为本版本日志标题。
+    # README 里使用 “## v1.4.0” 作为本版本日志标题。
     pat = re.compile(rf"(?ms)^##\s+v?{re.escape(ver)}\s*$\n(.*?)(?=^##\s+|\Z)")
     m = pat.search(text)
     if m:
