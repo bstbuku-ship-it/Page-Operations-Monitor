@@ -1,12 +1,8 @@
-# POM Connector 1.3.0 - Auto Connect
+# 主页运营·浏览器连接器 1.4.0
 
-请与本次自动连接修复版桌面软件同时使用。
-解压后，在 chrome://extensions 中加载包含 manifest.json 的文件夹。
-已安装旧版时，覆盖原插件目录内容并点击重新加载。保留 manifest.json 中的 key，不要修改。
-安装后自动连接，没有配对码、端口输入框或必填路径。
-只有一个浏览器时自动选中，多个时在软件中选择。
-打开插件菜单可暂停或恢复连接。备注名称和 Profile 路径均可留空。
+1. 在 Chrome 打开 `chrome://extensions`，开启“开发者模式”。
+2. 选择“加载已解压的扩展程序”，选择本文件夹。
+3. 保持 Chrome 与桌面端“主页运营监控工具”运行，连接器会自动连接本机软件。
+4. 点击插件图标只需填写一个便于识别的“浏览器备注”，例如“用户60”或“Profile 144”。
 
-Local only, ports 17831-17840. Chrome must remain open and signed in to Facebook.
-The connector creates inactive tabs only for page IDs requested by the desktop; it does not export passwords or cookies.
-Public version: 1.3.0. Build: auto-connect-20261013.
+只有一个在线连接器时桌面端自动使用；多个在线连接器时可在桌面端单选或多选并行巡检。
