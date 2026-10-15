@@ -1,4 +1,4 @@
-/* POM Connector 1.3.0 -- automatic local bridge, no codes, no remote code and no cookies. */
+/* POM Connector 1.4.0 -- automatic local bridge, no codes, no remote code and no cookies. */
 "use strict";
 importScripts('extractor.js');
 const DEFAULT_PORT = 17831;
@@ -279,7 +279,9 @@ async function connect() {
       else if(msg.type==='collect')collect(msg);
       else if(msg.type==='cancel') {if(currentTask?.job_id===msg.job_id)await abortCurrent();}
       else if(msg.type==='identify') {
-        await chrome.tabs.create({url:chrome.runtime.getURL('options.html')+'?identify=1',active:true});
+        await badge('ID','#5B5FEF');
+        await state({text:'这是当前选中的浏览器连接器',connected:true,port,auto:true});
+        setTimeout(async()=>{if(pairedReady){await badge('ON','#20A58F');await state({text:tr.connected,connected:true,port,auto:true});}},5000);
       } else if(msg.type==='revoked') {
         await modifyConfig(c=>({...c,enabled:false}));
         await state({text:'\u8f6f\u4ef6\u5df2\u505c\u7528\u6b64\u8fde\u63a5',connected:false,error:true});ws.close();
@@ -323,7 +325,8 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=> {
       const v=msg.config||{},allowed={};
       const limits={profile_name:80,profile_directory:100,profile_path:800,channel_label:100};
       for(const [key,limit] of Object.entries(limits)) {
-        const value=String(v[key]||'').trim();
+        if(!Object.prototype.hasOwnProperty.call(v,key))continue;
+        const value=String(v[key]??'').trim();
         if(value.length>limit||/[\x00-\x1f]/.test(value))throw new Error('Invalid identity field: '+key);
         allowed[key]=value;
       }
