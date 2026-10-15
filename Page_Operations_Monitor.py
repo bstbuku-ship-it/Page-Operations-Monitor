@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Page Operations Monitor 1.3.0 -- automatic local Chrome Connector edition.
+"""Page Operations Monitor 1.4.0 -- automatic multi-Chrome Connector edition.
 Run .py / .pyw; install PyQt6 Pillow (no connector network dependency).
 Unpack extension/ in Chrome. It connects automatically. Select only when several browsers are online.
 No remote-debugging switch, no cookie export, no unattended launch of the old default browser.
@@ -40,8 +40,8 @@ import base64
 import shlex
 
 APP_TITLE = "主页运营监控工具"
-APP_VERSION = "1.3.0"
-APP_BUILD = "controls-random-timing-20261013"
+APP_VERSION = "1.4.0"
+APP_BUILD = "multi-connector-notification-ui-20261015"
 DEFAULT_INTERVAL_MINUTES = 120
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -101,8 +101,33 @@ def format_count(v) -> str:
     return "—" if v is None else f"{int(v):,}"
 
 
+def format_compact_count(v) -> str:
+    """Compact follower number for cards; exact value remains in the tooltip."""
+    if v is None:
+        return "—"
+    n = int(v)
+    if abs(n) < 7000:
+        return f"{n:,}"
+    text = f"{n / 10000.0:.1f}".rstrip("0").rstrip(".")
+    return text + "W"
+
+
 def format_delta(v) -> str:
     return "—" if v is None else (f"+{int(v):,}" if v > 0 else f"{int(v):,}")
+
+
+def compact_elapsed(ts, now=None, approximate=False) -> str:
+    if not ts:
+        return "—"
+    now = time.time() if now is None else float(now)
+    seconds = max(0.0, now - float(ts))
+    mark = "≈" if approximate else ""
+    if seconds < 3600:
+        return f"{mark}{max(1, int(seconds // 60))}M"
+    hours = seconds / 3600.0
+    if hours < 100:
+        return f"{mark}{hours:.1f}H"
+    return f"{mark}{hours / 24.0:.1f}D"
 
 
 def local_time_label(value: str, with_date=True) -> str:
@@ -913,13 +938,13 @@ def post_view(row, now=None, interval_seconds=DEFAULT_INTERVAL_MINUTES*60):
     """Read-only state; a stale/failed detection cannot become a new timeout alert."""
     now = time.time() if now is None else float(now)
     if not row.get("monitor_posts"):
-        return dict(state="off", label="未监控", elapsed="未监控", tooltip="未选择发帖时间监控", overdue=False)
+        return dict(state="off", label="未监控", elapsed="未监控", elapsed_short="未监控", tooltip="未选择发帖时间监控", overdue=False)
     ts = valid_post_ts(row.get("last_post_ts"), now)
     checked = float(row.get("last_post_checked_ts") or 0)
     valid = row.get("post_result") == "ok" and checked > 0 and now - checked <= max(7200, interval_seconds * 2.5)
     if ts is None:
         label = "待获取" if not checked else "无法获取"
-        return dict(state="unknown", label=label, elapsed=label,
+        return dict(state="unknown", label=label, elapsed=label, elapsed_short=label,
                     tooltip=row.get("post_error") or "尚未成功读取主页贴文时间", overdue=False)
     approximate = bool(row.get("post_precision_seconds", 1) > 1)
     timestamp = datetime.fromtimestamp(ts).astimezone().strftime("%Y-%m-%d %H:%M:%S")
@@ -929,12 +954,13 @@ def post_view(row, now=None, interval_seconds=DEFAULT_INTERVAL_MINUTES*60):
     age = max(0, now - ts)
     limit = max(1, int(row.get("post_limit_hours") or 24)) * 3600
     if not valid:
-        return dict(state="unverified", label="待核实", elapsed=elapsed_label(ts, now),
+        return dict(state="unverified", label="待核实", elapsed=elapsed_label(ts, now), elapsed_short=compact_elapsed(ts, now, approximate),
                     tooltip=tooltip + "\n本次无法确认最新贴文；仅显示缓存，不据此产生新预警。\n" +
                     str(row.get("post_error") or "检测记录已过期"), overdue=False)
     state = "overdue" if age >= limit else "soon" if age >= limit * .8 else "ok"
     label = {"overdue": "发帖超时", "soon": "即将超时", "ok": "正常"}[state]
     return dict(state=state, label=label, elapsed=("约" if approximate else "") + elapsed_label(ts, now),
+                elapsed_short=compact_elapsed(ts, now, approximate),
                 tooltip=tooltip + f"\n超时标准：{int(limit / 3600)} 小时\n点击菜单可打开已读取的贴文。",
                 overdue=state == "overdue")
 
@@ -1103,7 +1129,9 @@ class Store:
                     page_id TEXT PRIMARY KEY,latest_ts REAL NOT NULL,latest_count INTEGER NOT NULL,
                     latest_approx INTEGER NOT NULL DEFAULT 0,prior_ts REAL,prior_count INTEGER,prior_approx INTEGER,
                     baseline_date TEXT NOT NULL,baseline_ts REAL NOT NULL,baseline_count INTEGER NOT NULL,
-                    baseline_approx INTEGER NOT NULL DEFAULT 0,partial INTEGER NOT NULL DEFAULT 1
+                    baseline_approx INTEGER NOT NULL DEFAULT 0,partial INTEGER NOT NULL DEFAULT 1,
+                    yesterday_date TEXT NOT NULL DEFAULT '',yesterday_delta INTEGER,
+                    yesterday_partial INTEGER NOT NULL DEFAULT 1,yesterday_approx INTEGER NOT NULL DEFAULT 0
                 );
             """)
             previous=self._columns(c,"pages")
@@ -1119,6 +1147,14 @@ class Store:
                 "name_error":"TEXT NOT NULL DEFAULT ''"}
             for name,typ in columns.items():
                 if name not in previous:c.execute(f"ALTER TABLE pages ADD COLUMN {name} {typ}")
+            follower_columns=self._columns(c,"follower_state")
+            for name,typ in {
+                "yesterday_date":"TEXT NOT NULL DEFAULT ''",
+                "yesterday_delta":"INTEGER",
+                "yesterday_partial":"INTEGER NOT NULL DEFAULT 1",
+                "yesterday_approx":"INTEGER NOT NULL DEFAULT 0",
+            }.items():
+                if name not in follower_columns:c.execute(f"ALTER TABLE follower_state ADD COLUMN {name} {typ}")
             if "monitor_growth" not in previous:c.execute("UPDATE pages SET monitor_growth=enabled")
             if "sort_order" not in previous:
                 for order,row in enumerate(c.execute("SELECT page_id FROM pages ORDER BY created_at,page_id").fetchall(),1):
@@ -1131,7 +1167,7 @@ class Store:
                 if re.fullmatch(r"(?:主页|公共主页|专页|Page)\s*[:：]?\s*[\d\W]+",custom,re.I):
                     c.execute("UPDATE pages SET custom_name='' WHERE page_id=?",(row["page_id"],))
             c.execute("CREATE INDEX IF NOT EXISTS idx_alert_page_ts ON alerts(page_id,alerted_ts)")
-            c.execute("INSERT OR REPLACE INTO app_meta VALUES('schema','1.9')")
+            c.execute("INSERT OR REPLACE INTO app_meta VALUES('schema','2.0')")
 
 
     def add_pages(self,ids,monitor_growth=True,monitor_posts=True,limit_hours=24):
@@ -1223,11 +1259,12 @@ class Store:
 
     def add_alert(self, pid: str, current: int, baseline: int, growth: int, window_seconds: int, threshold: int):
         with self.lock, self._connect() as c:
-            c.execute("""
+            cur=c.execute("""
                 INSERT INTO alerts(page_id,alerted_at,alerted_ts,current_count,baseline_count,growth,
                                    window_seconds,threshold,acknowledged)
                 VALUES(?,?,?,?,?,?,?,?,0)
             """, (pid,now_iso(),time.time(),current,baseline,growth,window_seconds,threshold))
+            return int(cur.lastrowid)
 
     def checkpoint(self):
         """Flush SQLite WAL before migrating the live data directory."""
@@ -1381,6 +1418,20 @@ class Store:
         return {"delta":row["latest_count"]-row["baseline_count"],"partial":partial,"approx":approx,"note":note}
 
 
+    def yesterday_change(self,pid,now=None):
+        """Return only yesterday's rolled-up delta; no historical time series is stored."""
+        now=time.time() if now is None else float(now)
+        yesterday=(datetime.fromtimestamp(now).astimezone().date()-timedelta(days=1)).isoformat()
+        with self.lock,self._connect() as c:
+            row=c.execute("SELECT yesterday_date,yesterday_delta,yesterday_partial,yesterday_approx FROM follower_state WHERE page_id=?",(pid,)).fetchone()
+        if not row or row["yesterday_date"]!=yesterday or row["yesterday_delta"] is None:
+            return {"delta":None,"partial":True,"approx":False,"note":"需要跨日的成功巡检记录后显示"}
+        note="昨天从首次有效基准起计算" if row["yesterday_partial"] else "昨天完整基准"
+        if row["yesterday_approx"]:note+="；来源为缩写约值"
+        return {"delta":int(row["yesterday_delta"]),"partial":bool(row["yesterday_partial"]),
+                "approx":bool(row["yesterday_approx"]),"note":note}
+
+
     def record_posts(self,pid,result,now=None):
         """Persist success/failure separately; only fresh, confirmed results can alert."""
         now=time.time() if now is None else float(now)
@@ -1411,7 +1462,7 @@ class Store:
                 message=f"距最近可确认贴文 {elapsed_label(ts,now)}，超过 {limit} 小时标准"
                 cur=c.execute("""INSERT INTO post_alerts(page_id,alerted_at,alerted_ts,last_post_ts,limit_hours,message)
                     VALUES(?,?,?,?,?,?)""",(pid,datetime.fromtimestamp(now,timezone.utc).isoformat(),now,ts,limit,message))
-                new_alert={"id":cur.lastrowid,"page_id":pid,"name":display_name(dict(row)),"message":message,"kind":"post"}
+                new_alert={"id":cur.lastrowid,"page_id":pid,"name":display_name(dict(row)),"avatar_path":row["avatar_path"] or "","message":message,"kind":"post"}
             c.execute("""UPDATE pages SET last_post_ts=?,last_post_checked_ts=?,post_result='ok',post_error='',
                 post_source=?,post_url=?,post_precision_seconds=?,post_alert_key=?,last_inspected_at=?,updated_at=?
                 WHERE page_id=?""",(ts,now,str(result.get("post_source") or "主页可见贴文")[:180],
@@ -1443,8 +1494,9 @@ class Store:
                     if is_true(opts.get("alert_enabled"),True) and should_alert(value,previous,ts,bool(result.get("approx")),interval,threshold):
                         if not self.has_recent_alert(pid,int(opts.get("alert_cooldown_minutes",30))*60):
                             diff=value-previous["count"]
-                            self.add_alert(pid,value,previous["count"],diff,interval,threshold)
-                            notices.append({"kind":"growth","page_id":pid,"name":name or display_name(row),
+                            alert_id=self.add_alert(pid,value,previous["count"],diff,interval,threshold)
+                            notices.append({"id":alert_id,"kind":"growth","page_id":pid,"name":name or display_name(row),
+                                            "avatar_path":result.get("avatar_path") or row.get("avatar_path") or "",
                                             "message":f"本轮粉丝增加 {format_delta(diff)}"})
                 except Exception as exc:
                     ok=False;errors.append(str(exc)[:220])
@@ -1543,7 +1595,10 @@ class Store:
                     AND COALESCE(followers_count,fan_count) IS NOT NULL ORDER BY collected_ts,id LIMIT 1""",
                     (pid,midnight,latest["ts"])).fetchone()
             base=base or latest
-            c.execute("""INSERT OR REPLACE INTO follower_state VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            c.execute("""INSERT OR REPLACE INTO follower_state(
+                page_id,latest_ts,latest_count,latest_approx,prior_ts,prior_count,prior_approx,
+                baseline_date,baseline_ts,baseline_count,baseline_approx,partial)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (pid,latest["ts"],latest["count"],latest["approx"],prior["ts"] if prior else None,
                  prior["count"] if prior else None,prior["approx"] if prior else None,
                  local.date().isoformat(),base["ts"],base["count"],base["approx"],int(partial)))
@@ -1568,15 +1623,36 @@ class Store:
             old=c.execute("SELECT * FROM follower_state WHERE page_id=?",(pid,)).fetchone()
             if old and ts<=old["latest_ts"]:return None
             prior={"ts":old["latest_ts"],"count":old["latest_count"],"approx":bool(old["latest_approx"])} if old else None
+            yesterday=(local.date()-timedelta(days=1)).isoformat()
+            y_date='';y_delta=None;y_partial=1;y_approx=0
+            if old:
+                if old["baseline_date"]==day:
+                    y_date=str(old["yesterday_date"] or '')
+                    y_delta=old["yesterday_delta"]
+                    y_partial=int(old["yesterday_partial"] or 0)
+                    y_approx=int(old["yesterday_approx"] or 0)
+                elif old["baseline_date"]==yesterday:
+                    y_date=yesterday
+                    y_delta=int(old["latest_count"])-int(old["baseline_count"])
+                    y_partial=int(old["partial"] or 0)
+                    y_approx=int(bool(old["latest_approx"] or old["baseline_approx"]))
+                elif str(old["yesterday_date"] or '')==yesterday:
+                    y_date=yesterday;y_delta=old["yesterday_delta"]
+                    y_partial=int(old["yesterday_partial"] or 0);y_approx=int(old["yesterday_approx"] or 0)
             if old and old["baseline_date"]==day and old["latest_ts"]>=midnight:
                 base_ts,base,base_approx,partial=(old["baseline_ts"],old["baseline_count"],old["baseline_approx"],old["partial"])
             elif old and 0<=midnight-old["latest_ts"]<=max(3600,2.5*interval_seconds):
                 base_ts,base,base_approx,partial=old["latest_ts"],old["latest_count"],old["latest_approx"],0
             else:
                 base_ts,base,base_approx,partial=ts,count,approx,1
-            c.execute("INSERT OR REPLACE INTO follower_state VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("""INSERT OR REPLACE INTO follower_state(
+                page_id,latest_ts,latest_count,latest_approx,prior_ts,prior_count,prior_approx,
+                baseline_date,baseline_ts,baseline_count,baseline_approx,partial,
+                yesterday_date,yesterday_delta,yesterday_partial,yesterday_approx)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (pid,ts,count,approx,prior["ts"] if prior else None,prior["count"] if prior else None,
-                 int(prior["approx"]) if prior else None,day,base_ts,base,base_approx,partial))
+                 int(prior["approx"]) if prior else None,day,base_ts,base,base_approx,partial,
+                 y_date,y_delta,y_partial,y_approx))
             name=normalize_name(result.get("page_name"),pid)
             c.execute("""UPDATE pages SET last_followers=?,previous_followers=?,last_collected_at=?,approx=?,
                 page_name=CASE WHEN ?<>'' THEN ? ELSE page_name END,status='正常',updated_at=? WHERE page_id=?""",
@@ -2415,7 +2491,7 @@ import queue
 from dataclasses import dataclass, field
 from pathlib import PureWindowsPath
 
-CONNECTOR_VERSION = '1.3.0'
+CONNECTOR_VERSION = '1.4.0'
 CONNECTOR_PROTOCOL = 1
 CONNECTOR_PORT = 17831
 CONNECTOR_EXTENSION_ID = 'lpjmbcclokpbgfogjhjepmnpoplgheoh'
@@ -2971,6 +3047,14 @@ class ConnectorBridge:
             if cid in self.records:
                 self.records[cid]['blocked']=False;self._save()
 
+    def forget(self,cid):
+        """Delete an offline historical record. Online instances must be closed first."""
+        with self.lock:
+            session=self.sessions.get(cid)
+            if session and time.monotonic()-session.last_seen<65:
+                raise ConnectorError('请先关闭该浏览器或停用连接后再删除记录')
+            self.records.pop(cid,None);self.sessions.pop(cid,None);self._save()
+
     def stop(self):
         self._running=False
         with self.lock:
@@ -3212,7 +3296,7 @@ except ModuleNotFoundError as exc:
         "缺少 PyQt6 图形界面依赖。\n\n请在命令行运行：\n"
         "python -m pip install PyQt6 Pillow\n"
         ""
-        "安装后再启动 Page_Operations_Monitor_1.3.0.pyw。"
+        "安装后再启动 Page_Operations_Monitor_1.4.0.pyw。"
     )
     if os.name == "nt":
         try:
@@ -3253,7 +3337,13 @@ THEME_PRESETS = {
         red="#F87186",amber="#F8BC65",cyan="#5CBEDC",input="#141D27",hover="#2D3F52",soft="#303153",light=False),
     "极光紫": dict(bg="#131222",sidebar="#111020",panel="#1D1D35",panel_2="#292A47",
         border="#444463",text="#F3F1FE",muted="#ACABCA",accent="#A18AF8",green="#54DBB7",
-        red="#FA7C9A",amber="#EDC185",cyan="#86CAF2",input="#191B30",hover="#363752",soft="#39325D",light=False)
+        red="#FA7C9A",amber="#EDC185",cyan="#86CAF2",input="#191B30",hover="#363752",soft="#39325D",light=False),
+    "暖米白": dict(bg="#F5F0E7",sidebar="#EEE5D7",panel="#FFFDFC",panel_2="#F2EADF",
+        border="#D8C9B8",text="#3B332C",muted="#7D6E61",accent="#7668D7",green="#248A6A",
+        red="#C84B5A",amber="#B77825",cyan="#287E9C",input="#FFF9F1",hover="#E9DED0",soft="#E7E0FA",light=True),
+    "雾杏米色": dict(bg="#EFE8DD",sidebar="#E8DFD2",panel="#FAF6F0",panel_2="#F0E6D8",
+        border="#D1C0AD",text="#3A342F",muted="#786B60",accent="#5F73C8",green="#2A846B",
+        red="#BF5961",amber="#A96E2D",cyan="#357D93",input="#FFF9F2",hover="#E5D8C8",soft="#DCE4F8",light=True)
 }
 BG = THEME_PRESETS["深海蓝"]["bg"]
 SIDEBAR = THEME_PRESETS["深海蓝"]["sidebar"]
@@ -3310,6 +3400,11 @@ def ui_icon(kind,color=None):
         path=QPainterPath();path.moveTo(15,45);path.quadTo(21,38,21,27)
         path.cubicTo(21,10,43,10,43,27);path.quadTo(43,38,49,45);path.closeSubpath();p.drawPath(path)
         p.drawArc(QRectF(26,45,12,12),180*16,180*16)
+    elif kind=="browser":
+        p.drawRoundedRect(QRectF(10,15,44,32),6,6);line(10,24,54,24)
+        p.drawEllipse(QRectF(17,18,2,2));p.drawEllipse(QRectF(23,18,2,2));line(22,53,42,53);line(32,47,32,53)
+    elif kind=="theme":
+        p.drawEllipse(QRectF(12,12,40,40));p.drawEllipse(QRectF(22,20,7,7));p.drawEllipse(QRectF(34,18,7,7));p.drawEllipse(QRectF(40,31,7,7));line(24,43,33,43)
     elif kind=="settings":
         p.drawEllipse(QRectF(21,21,22,22));p.drawEllipse(QRectF(29,29,6,6))
         for angle in range(0,360,45):
@@ -3374,6 +3469,20 @@ class ValueLabel(ElideLabel):
         p.end()
 
 
+class DirectNumberSpinBox(QSpinBox):
+    """Compact numeric field: click selects the value; valid typing commits via valueChanged."""
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        self.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.setKeyboardTracking(True)
+        self.lineEdit().setAlignment(Qt.AlignmentFlag.AlignCenter)
+    def focusInEvent(self,event):
+        super().focusInEvent(event);QTimer.singleShot(0,self.selectAll)
+    def mousePressEvent(self,event):
+        super().mousePressEvent(event)
+        if event.button()==Qt.MouseButton.LeftButton:QTimer.singleShot(0,self.selectAll)
+
+
 class CheckDelegate(QStyledItemDelegate):
     """Centered indicator with full-cell hit testing and one integer state write per click."""
     @staticmethod
@@ -3383,7 +3492,7 @@ class CheckDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         painter.save()
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
-        painter.fillRect(option.rect, QColor("#263D63") if selected else QColor(PANEL_2 if index.row()%2 else PANEL))
+        painter.fillRect(option.rect, option.palette.color(QPalette.ColorRole.Highlight) if selected else option.palette.color(QPalette.ColorRole.AlternateBase if index.row()%2 else QPalette.ColorRole.Base))
         checked = self.checked(index.data(Qt.ItemDataRole.CheckStateRole))
         enabled = bool(index.flags() & Qt.ItemFlag.ItemIsEnabled and index.flags() & Qt.ItemFlag.ItemIsUserCheckable)
         label = ("\u5f00\u542f" if checked else "\u5173\u95ed") if index.column() else ""
@@ -3394,8 +3503,8 @@ class CheckDelegate(QStyledItemDelegate):
         rect = QRect(left, option.rect.center().y()-box//2, box, box)
         painter.setOpacity(1.0 if enabled else .5)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor(ACCENT if checked else "#8499B2"), 1))
-        painter.setBrush(QColor(ACCENT if checked else "#142538"))
+        painter.setPen(QPen(QColor(ACCENT if checked else MUTED), 1))
+        painter.setBrush(QColor(ACCENT) if checked else option.palette.color(QPalette.ColorRole.Base))
         painter.drawRoundedRect(QRectF(rect), 4, 4)
         if checked:
             painter.setPen(QPen(QColor("#FFFFFF"),2,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
@@ -3759,6 +3868,40 @@ class LoginWorker(QObject):
             self.finished.emit("登录浏览器失败：" + str(exc)[:240])
 
 
+class PersistentMonitorAlert(QDialog):
+    """High-visibility business alert that never auto-closes."""
+    def __init__(self, entries, owner, stack_index=0):
+        super().__init__(None,Qt.WindowType.Tool|Qt.WindowType.FramelessWindowHint|Qt.WindowType.WindowStaysOnTopHint)
+        self.owner=owner;self.entries=list(entries);self.stack_index=max(0,int(stack_index));self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground,True);self.setModal(False);self.setStyleSheet(owner.styleSheet())
+        self.setWindowTitle('主页监控预警');self.setWindowIcon(make_app_icon());self.setMinimumWidth(450);self.setMaximumWidth(540)
+        outer=QVBoxLayout(self);outer.setContentsMargins(10,10,10,10);panel=QFrame();panel.setObjectName('MonitorAlertPopup');outer.addWidget(panel)
+        root=QVBoxLayout(panel);root.setContentsMargins(18,15,18,16);root.setSpacing(11)
+        head=QHBoxLayout();symbol=QLabel('!');symbol.setObjectName('MonitorAlertSymbol');symbol.setFixedSize(34,34);symbol.setAlignment(Qt.AlignmentFlag.AlignCenter);head.addWidget(symbol)
+        head_text=QVBoxLayout();head_text.setSpacing(0);title=QLabel('主页监控预警');title.setObjectName('MonitorAlertHeadline');head_text.addWidget(title)
+        subtitle=QLabel('需要处理 · 此窗口不会自动关闭');subtitle.setObjectName('SmallMuted');head_text.addWidget(subtitle);head.addLayout(head_text);head.addStretch()
+        close=QPushButton('×');close.setObjectName('AlertCloseButton');close.setFixedSize(32,32);close.clicked.connect(self.close);head.addWidget(close);root.addLayout(head)
+        for entry in self.entries[:5]:
+            row=QFrame();row.setObjectName('MonitorAlertRow');hl=QHBoxLayout(row);hl.setContentsMargins(10,9,10,9);hl.setSpacing(12)
+            hl.addWidget(AvatarWidget(entry.get('name') or entry.get('page_name',''),entry.get('avatar_path',''),56),0,Qt.AlignmentFlag.AlignTop)
+            texts=QVBoxLayout();texts.setSpacing(4);page_name=entry.get('name') or entry.get('page_name') or '名称待获取';name=ElideLabel(page_name)
+            name.setObjectName('MonitorAlertName');name.setMinimumHeight(22);name.setToolTip(page_name);texts.addWidget(name)
+            meta=QHBoxLayout();event='发帖时间超标' if entry.get('kind')=='post' else '粉丝增长超标';badge=QLabel(event);badge.setObjectName('MonitorAlertEvent')
+            badge.setProperty('kind',entry.get('kind','growth'));badge.setMaximumWidth(118);badge.setAlignment(Qt.AlignmentFlag.AlignCenter);meta.addWidget(badge);meta.addStretch();texts.addLayout(meta)
+            message=QLabel(str(entry.get('message') or ''));message.setWordWrap(True);message.setObjectName('MonitorAlertMessage');texts.addWidget(message);hl.addLayout(texts,1);root.addWidget(row)
+        if len(self.entries)>5:
+            more=QLabel(f'另有 {len(self.entries)-5} 条预警，请进入通知列表查看。');more.setObjectName('SmallMuted');root.addWidget(more)
+        actions=QHBoxLayout();actions.addStretch();view=QPushButton('查看通知');view.setObjectName('PrimaryButton');view.clicked.connect(self.open_alerts);actions.addWidget(view)
+        close2=QPushButton('关闭');close2.clicked.connect(self.close);actions.addWidget(close2);root.addLayout(actions)
+        self.adjustSize();QTimer.singleShot(0,self.reposition)
+    def reposition(self):
+        screen=QApplication.screenAt(self.owner.frameGeometry().center()) or QApplication.primaryScreen()
+        if screen:
+            area=screen.availableGeometry();self.adjustSize();step=min(self.stack_index,4);x=area.right()-self.width()-22-step*18;y=area.bottom()-self.height()-22-step*32
+            self.move(max(area.left()+10,x),max(area.top()+10,y))
+    def open_alerts(self):
+        self.owner.open_alert_notification(self.entries[0] if self.entries else {});self.close()
+
+
 class CollectWorker(QObject):
     result=pyqtSignal(dict)
     progress=pyqtSignal(int,int,str)
@@ -3845,148 +3988,234 @@ class CollectWorker(QObject):
 
 
 class ConnectorCollectWorker(CollectWorker):
-    """The only UI collection backend in this connector build; no Playwright launch."""
-    def __init__(self,pages,bridge,instance_id,gap=8,purpose='monitor',gap_range=None):
+    """Distribute a round across up to 10 selected Chrome connectors in parallel.
+
+    Every connector receives at least one task when task_count >= connector_count.
+    If one connector drops during a round, its unfinished task returns to the shared
+    queue and the remaining selected connectors continue. Only when all selected
+    connectors are unavailable does the round stop.
+    """
+    def __init__(self,pages,bridge,instance_ids,gap=8,purpose='monitor',gap_range=None):
         super().__init__(pages,gap=gap,purpose=purpose,gap_range=gap_range)
-        self.bridge=bridge;self.instance_id=instance_id
+        if isinstance(instance_ids,str):instance_ids=[instance_ids]
+        self.bridge=bridge;self.instance_ids=list(dict.fromkeys(str(x) for x in instance_ids if x))[:10]
 
     def run(self):
-        total=len(self.pages);success=0;failure=0;aborted=False
-        try:
-            for index,row in enumerate(self.pages,1):
-                if not self._wait_ready():aborted=True;break
-                self.progress.emit(index,total,'\u901a\u8fc7\u6240\u9009\u6d4f\u89c8\u5668\u91c7\u96c6 '+display_name(row))
-                try:
-                    payload=self.bridge.request(self.instance_id,row,self.purpose,self._stop,timeout=120)
-                    if self._stop.is_set():aborted=True;break
-                    record=connector_record(row,payload,self.purpose)
-                except ConnectorError as exc:
-                    if self._stop.is_set():aborted=True;break
-                    record={'page_id':row['page_id'],'error':str(exc),'growth_ok':False,'posts_ok':False,'metadata_ok':False}
-                    if not self.bridge.online(self.instance_id):aborted=True
-                checks=[]
-                if self.purpose=='metadata':checks=[bool(record.get('metadata_ok'))]
-                else:
-                    if row.get('monitor_growth'):checks.append(bool(record.get('growth_ok')))
-                    if row.get('monitor_posts'):checks.append(bool(record.get('posts_ok')))
-                good=bool(checks and all(checks));record['ok']=good;record['purpose']=self.purpose
-                self.result.emit(record)
-                if good:success+=1
-                else:failure+=1
-                self.progress.emit(index,total,f'\u5df2\u5904\u7406 {index} / {total}')
-                if aborted:break
-                if index<total:
-                    remaining=self.current_gap()
-                    while remaining>0:
-                        if not self._wait_ready():aborted=True;break
-                        tick=min(.2,remaining)
-                        if self._stop.wait(tick):aborted=True;break
-                        remaining-=tick
-                    if aborted:break
-            text=('\u5de1\u68c0\u5df2\u505c\u6b62' if aborted else '\u5de1\u68c0\u5b8c\u6210')
-            self.finished.emit(not aborted and failure==0,f'{text} \u00b7 \u6210\u529f {success} / \u90e8\u5206\u6216\u5931\u8d25 {failure} / \u603b\u6570 {total}')
-        except Exception as exc:
-            self.finished.emit(False,'\u8fde\u63a5\u5668\u4efb\u52a1\u5931\u8d25\uff1a'+str(exc)[:280])
+        total=len(self.pages);success=0;failure=0;completed=0
+        if not self.instance_ids:
+            self.finished.emit(False,'没有可用浏览器连接器');return
+        if total < len(self.instance_ids):
+            self.finished.emit(False,f'任务数 {total} 少于已选择连接器 {len(self.instance_ids)} 个，请减少连接器或增加监控主页');return
+        online=[cid for cid in self.instance_ids if self.bridge.online(cid)]
+        if not online:
+            self.finished.emit(False,'连接器中断：所有已选择浏览器均已离线');return
+        # If a previously selected browser is temporarily offline, use the remaining
+        # online selected browsers. We never route work to an unselected connector.
+        self.instance_ids=online
+        if total < len(self.instance_ids):
+            self.finished.emit(False,f'任务数 {total} 少于当前在线连接器 {len(self.instance_ids)} 个，请减少连接器');return
+
+        pages=list(self.pages);random.shuffle(pages)
+        workq=queue.Queue();outq=queue.Queue();threads=[]
+        initial={cid:pages[i] for i,cid in enumerate(self.instance_ids)}
+        for row in pages[len(self.instance_ids):]:workq.put(row)
+        remaining={'count':total};lock=threading.Lock()
+
+        def mark_done():
+            with lock:remaining['count']-=1
+
+        def remaining_count():
+            with lock:return remaining['count']
+
+        def lane_worker(cid,first_row):
+            row=first_row
+            try:
+                while not self._stop.is_set():
+                    if not self._wait_ready():break
+                    if row is None:
+                        if remaining_count()<=0:break
+                        try:row=workq.get(timeout=.35)
+                        except queue.Empty:
+                            if remaining_count()<=0:break
+                            if not self.bridge.online(cid):
+                                outq.put(('offline',cid,'浏览器连接已断开'));break
+                            continue
+                    if not self.bridge.online(cid):
+                        workq.put(row);row=None;outq.put(('offline',cid,'浏览器连接已断开'));break
+                    try:
+                        payload=self.bridge.request(cid,row,self.purpose,self._stop,timeout=120)
+                        if self._stop.is_set():
+                            workq.put(row);row=None;break
+                        record=connector_record(row,payload,self.purpose)
+                    except ConnectorError as exc:
+                        if not self.bridge.online(cid):
+                            workq.put(row);row=None;outq.put(('offline',cid,str(exc)));break
+                        record={'page_id':row['page_id'],'error':str(exc),'growth_ok':False,'posts_ok':False,'metadata_ok':False}
+                    checks=[]
+                    if self.purpose=='metadata':checks=[bool(record.get('metadata_ok'))]
+                    else:
+                        if row.get('monitor_growth'):checks.append(bool(record.get('growth_ok')))
+                        if row.get('monitor_posts'):checks.append(bool(record.get('posts_ok')))
+                    good=bool(checks and all(checks));record['ok']=good;record['purpose']=self.purpose
+                    mark_done();outq.put(('result',cid,record,good));row=None
+                    if remaining_count()<=0:break
+                    remaining_wait=self.current_gap()
+                    while remaining_wait>0 and not self._stop.is_set():
+                        if not self._wait_ready():break
+                        tick=min(.2,remaining_wait)
+                        if self._stop.wait(tick):break
+                        remaining_wait-=tick
+            finally:outq.put(('done',cid))
+
+        for cid in self.instance_ids:
+            t=threading.Thread(target=lane_worker,args=(cid,initial[cid]),name='POM-connector-'+cid[:8],daemon=True);threads.append(t);t.start()
+        done=0;offline=set()
+        while done<len(threads):
+            try:item=outq.get(timeout=.25)
+            except queue.Empty:
+                if not any(t.is_alive() for t in threads):break
+                continue
+            kind=item[0]
+            if kind=='done':done+=1;continue
+            if kind=='offline':offline.add(item[1]);continue
+            _,cid,record,good=item;completed+=1;self.result.emit(record)
+            if good:success+=1
+            else:failure+=1
+            try:browser_no=self.instance_ids.index(cid)+1
+            except ValueError:browser_no=1
+            self.progress.emit(completed,total,f'并行巡检 {completed} / {total} · 浏览器 {browser_no}/{len(self.instance_ids)}')
+        for t in threads:t.join(timeout=1)
+        aborted=self._stop.is_set() and completed<total
+        if completed<total and not aborted:
+            active=[cid for cid in self.instance_ids if self.bridge.online(cid)]
+            if not active:
+                self.finished.emit(False,f'连接器中断：所有已选择浏览器均已离线，当前轮次已停止 · 已处理 {completed}/{total}');return
+            self.finished.emit(False,f'浏览器连接异常，本轮未完成 · 已处理 {completed}/{total}');return
+        task='资料同步' if self.purpose=='metadata' else '主页巡检'
+        extra=f' · {len(offline)} 个浏览器中途离线，任务已由其余浏览器接续' if offline else ''
+        self.finished.emit(not aborted and failure==0 and completed==total,
+            f"{task}{'已停止' if aborted else '完成'} · 完整成功 {success} / 部分或失败 {failure} / 共 {total} · 使用 {len(self.instance_ids)} 个浏览器{extra}")
 
 
 class BrowserConnectionsDialog(QDialog):
+    """Zero-configuration connector view. Checkboxes auto-save; no pairing step."""
     def __init__(self, owner):
         super().__init__(owner);self.owner=owner;self.bridge=owner.connector
-        self.setWindowTitle('\u6d4f\u89c8\u5668\u81ea\u52a8\u8fde\u63a5');self.resize(900,650)
-        layout=QVBoxLayout(self);layout.setContentsMargins(22,18,22,18);layout.setSpacing(12)
-        title=QLabel('\u5df2\u5b89\u88c5\u63d2\u4ef6\u7684\u6d4f\u89c8\u5668\u4f1a\u81ea\u52a8\u51fa\u73b0');title.setObjectName('DialogTitle');layout.addWidget(title)
-        self.service_label=QLabel();self.service_label.setWordWrap(True);self.service_label.setTextFormat(Qt.TextFormat.PlainText);layout.addWidget(self.service_label)
-        hint=QLabel('\u65e0\u9700\u914d\u5bf9\u7801\u3001\u65e0\u9700\u586b\u7aef\u53e3\u6216\u8def\u5f84\u3002\u6253\u5f00\u5b89\u88c5\u4e86\u65b0\u63d2\u4ef6\u7684 Chrome \u5373\u53ef\u81ea\u52a8\u8fde\u63a5\u3002\u4e00\u4e2a\u6d4f\u89c8\u5668\u81ea\u52a8\u9009\u4e2d\uff1b\u591a\u4e2a\u6d4f\u89c8\u5668\u8bf7\u624b\u52a8\u9009\u62e9\u3002\u8fde\u63a5\u6210\u529f\u4e0d\u4f1a\u81ea\u884c\u542f\u52a8\u5de1\u68c0\u3002')
+        self.setWindowTitle('浏览器连接');self.resize(650,390)
+        layout=QVBoxLayout(self);layout.setContentsMargins(22,18,22,18);layout.setSpacing(10)
+        title=QLabel('浏览器连接');title.setObjectName('DialogTitle');layout.addWidget(title)
+        hint=QLabel('1 个在线浏览器自动使用；多个在线浏览器可勾选一个或多个并行巡检，修改后自动保存。')
         hint.setWordWrap(True);hint.setObjectName('SmallMuted');layout.addWidget(hint)
-        self.table=QTableWidget(0,5);self.table.setHorizontalHeaderLabels(('\u6d4f\u89c8\u5668\u540d\u79f0','\u7248\u672c','Profile \u76ee\u5f55\uff08\u53ef\u9009\uff09','\u8fde\u63a5\u72b6\u6001','\u8fde\u63a5 ID'))
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.verticalHeader().hide()
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.itemSelectionChanged.connect(self.details);layout.addWidget(self.table,1)
-        self.detail=QPlainTextEdit();self.detail.setReadOnly(True);self.detail.setMaximumHeight(160);layout.addWidget(self.detail)
-        buttons=QHBoxLayout()
-        for label,method in [('\u4f7f\u7528\u9009\u4e2d\u6d4f\u89c8\u5668',self.choose),('\u5b9a\u4f4d\u6b64\u6d4f\u89c8\u5668',self.identify),('\u91cd\u65b0\u68c0\u6d4b',self.retry)]:
-            button=QPushButton(label);button.clicked.connect(method);buttons.addWidget(button)
-        self.block_button=QPushButton('\u505c\u7528\u6b64\u8fde\u63a5');self.block_button.clicked.connect(self.toggle_block);buttons.addWidget(self.block_button);layout.addLayout(buttons)
-        bottom=QHBoxLayout();folder=QPushButton('\u6253\u5f00\u63d2\u4ef6\u6587\u4ef6\u5939');folder.clicked.connect(self.open_folder);bottom.addWidget(folder)
-        bottom.addStretch();close=QPushButton('\u5b8c\u6210');close.clicked.connect(self.accept);bottom.addWidget(close);layout.addLayout(bottom)
-        self.rows=[];self._signature=None;self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(1000);self.refresh()
+        self.summary=QLabel();self.summary.setObjectName('InfoBox');self.summary.setWordWrap(True);layout.addWidget(self.summary)
+        self.table=QTableWidget(0,3);self.table.setHorizontalHeaderLabels(('使用','浏览器备注','状态'))
+        self.table.verticalHeader().hide();self.table.setShowGrid(False);self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setColumnWidth(0,58);self.table.setColumnWidth(2,92)
+        self.table.horizontalHeader().setSectionResizeMode(1,QHeaderView.ResizeMode.Stretch)
+        self.table.setItemDelegateForColumn(0,CheckDelegate(self.table));layout.addWidget(self.table,1)
+        buttons=QHBoxLayout();buttons.setSpacing(8)
+        all_btn=QPushButton('全选在线');all_btn.clicked.connect(self.select_all_online);buttons.addWidget(all_btn);buttons.addStretch()
+        self.block_button=QPushButton('停用');self.block_button.clicked.connect(self.toggle_block);buttons.addWidget(self.block_button)
+        delete=QPushButton('删除旧记录');delete.clicked.connect(self.delete_record);buttons.addWidget(delete)
+        retry=QPushButton('重新检测');retry.clicked.connect(self.retry);buttons.addWidget(retry);layout.addLayout(buttons)
+        self.rows=[];self._signature=None;self._loading=False
+        self.table.itemChanged.connect(self._item_changed);self.table.itemSelectionChanged.connect(self._selection_changed)
+        self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(900);self.refresh()
 
-    def selected(self):
-        row=self.table.currentRow()
-        return self.rows[row] if 0<=row<len(self.rows) else None
+    def selected_row(self):
+        row=self.table.currentRow();return self.rows[row] if 0<=row<len(self.rows) else None
+
+    def checked_ids(self):
+        out=[]
+        for r in range(self.table.rowCount()):
+            item=self.table.item(r,0)
+            if item and item.checkState()==Qt.CheckState.Checked:
+                cid=str(item.data(Qt.ItemDataRole.UserRole) or '')
+                if cid:out.append(cid)
+        return out
+
+    def _selection_changed(self):
+        row=self.selected_row();self.block_button.setText('启用' if row and row.get('blocked') else '停用')
+
+    def _persist_checks(self):
+        rows={r['instance_id']:r for r in self.rows};ids=[cid for cid in self.checked_ids() if cid in rows and rows[cid]['online'] and not rows[cid].get('blocked')]
+        if len(ids)>10:ids=ids[:10]
+        self.owner.set_connector_selection(ids,initialized=True)
+
+    def _item_changed(self,item):
+        if self._loading or item.column()!=0:return
+        ids=self.checked_ids();online=[r for r in self.rows if r['online'] and not r.get('blocked')]
+        if len(ids)>10:
+            self._loading=True;item.setCheckState(Qt.CheckState.Unchecked);self._loading=False;show_hint(self,'最多同时使用 10 个浏览器连接器');return
+        if len(online)>1 and not ids:
+            self._loading=True;item.setCheckState(Qt.CheckState.Checked);self._loading=False;show_hint(self,'多个浏览器在线时至少保留 1 个');return
+        self._persist_checks();self._signature=None;self.owner.refresh_connector_summary()
 
     def refresh(self):
-        state='127.0.0.1:'+str(self.bridge.port)
-        self.service_label.setText(('\u81ea\u52a8\u8fde\u63a5\u670d\u52a1\u5df2\u5c31\u7eea\uff1a' if self.bridge._running else '\u8fde\u63a5\u670d\u52a1\u672a\u542f\u52a8\uff1a')+state+('\n'+self.bridge.error if self.bridge.error else ''))
-        rows=sorted(self.bridge.clients(),key=lambda r:(not r['online'],r.get('blocked',False),r['identity'].get('profile_name',''),r['instance_id']))
-        selected=self.selected();cid=selected['instance_id'] if selected else str(self.owner.settings.value('connector/selected_id',''))
-        signature=json.dumps(rows,sort_keys=True)+str(self.owner.settings.value('connector/selected_id',''))
+        try:
+            if not self.bridge._running:self.bridge.start()
+        except Exception as exc:self.bridge.error=str(exc)
+        rows=sorted(self.bridge.clients(),key=lambda r:(r.get('blocked',False),not r['online'],r['identity'].get('profile_name',''),r['instance_id']))
+        saved=set(self.owner.configured_connector_ids(include_offline=True));signature=json.dumps(rows,sort_keys=True)+json.dumps(sorted(saved))+str(self.owner.connector_selection_initialized())
         if signature==self._signature:return
-        self._signature=signature;self.rows=rows
-        self.table.blockSignals(True);self.table.setRowCount(len(rows))
-        chosen=self.owner.selected_connector()
+        self._signature=signature;current=self.selected_row()['instance_id'] if self.selected_row() else '';self.rows=rows
+        online=[r for r in rows if r['online'] and not r.get('blocked')]
+        if len(online)==1:saved={online[0]['instance_id']}
+        elif len(online)>1 and not self.owner.connector_selection_initialized():saved={r['instance_id'] for r in online[:10]}
+        self._loading=True;self.table.blockSignals(True);self.table.setRowCount(len(rows))
         for i,row in enumerate(rows):
-            identity=row['identity'];name=identity.get('profile_name') or ('Chrome '+row['instance_id'][:6])
-            status='\u5df2\u505c\u7528' if row.get('blocked') else ('\u5728\u7ebf' if row['online'] else '\u7b49\u5f85\u6d4f\u89c8\u5668\u6253\u5f00')
-            if row['instance_id']==chosen:status+=' / \u5f53\u524d\u4f7f\u7528'
-            values=(name,identity.get('browser_brand','')+' '+identity.get('browser_version',''),identity.get('profile_directory') or '\u4e0d\u5f71\u54cd\u8fde\u63a5',status,row['instance_id'])
-            for col,value in enumerate(values):self.table.setItem(i,col,QTableWidgetItem(value))
-            if row['instance_id']==cid:self.table.selectRow(i)
-        self.table.blockSignals(False);self.details()
+            identity=row['identity'];cid=row['instance_id'];marker=QTableWidgetItem('')
+            marker.setFlags(Qt.ItemFlag.ItemIsEnabled|Qt.ItemFlag.ItemIsSelectable|Qt.ItemFlag.ItemIsUserCheckable);marker.setData(Qt.ItemDataRole.UserRole,cid)
+            marker.setCheckState(Qt.CheckState.Checked if cid in saved and row['online'] and not row.get('blocked') else Qt.CheckState.Unchecked);marker.setTextAlignment(Qt.AlignmentFlag.AlignCenter);self.table.setItem(i,0,marker)
+            name=identity.get('profile_name') or ('Chrome '+cid[:6])
+            status='已停用' if row.get('blocked') else ('在线' if row['online'] else '离线')
+            for col,text in ((1,name),(2,status)):
+                cell=QTableWidgetItem(str(text));cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter);cell.setToolTip(str(text));self.table.setItem(i,col,cell)
+            self.table.setRowHeight(i,42)
+            if cid==current:self.table.selectRow(i)
+        self.table.blockSignals(False);self._loading=False
+        if self.bridge.error:self.summary.setText('连接服务异常：'+self.bridge.error)
+        elif not online:self.summary.setText('未检测到在线连接器。打开安装了插件的 Chrome 后会自动连接。')
+        elif len(online)==1:self.summary.setText('1 个浏览器在线 · 已自动使用')
+        else:self.summary.setText(f'{len(online)} 个浏览器在线 · 已勾选 {len([x for x in saved if any(r["instance_id"]==x and r["online"] and not r.get("blocked") for r in rows)])} 个 · 多选时并行分配任务')
+        self._selection_changed()
 
-    def details(self):
-        row=self.selected()
-        if not row:
-            self.detail.setPlainText('\u63d2\u4ef6\u4f1a\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u8f6f\u4ef6\u3002\u6ca1\u6709\u51fa\u73b0\u65f6\uff0c\u8bf7\u786e\u8ba4\u5df2\u66ff\u6362\u65b0\u7248\u63d2\u4ef6\u5e76\u70b9\u51fb Chrome \u6269\u5c55\u9875\u7684\u91cd\u65b0\u52a0\u8f7d\u6309\u94ae\u3002');return
-        identity=row['identity'];unspecified='\u672a\u586b\u5199\uff08\u53ef\u9009\uff09'
-        parts=['\u6d4f\u89c8\u5668\u7248\u672c\uff1a'+identity.get('browser_brand','')+' '+identity.get('browser_version',''),
-               '\u8fde\u63a5 ID\uff1a'+row['instance_id'],
-               '\u5907\u6ce8\u540d\u79f0\uff1a'+(identity.get('profile_name') or unspecified),
-               'Profile \u76ee\u5f55\uff1a'+(identity.get('profile_directory') or unspecified),
-               '\u5b8c\u6574\u8def\u5f84\uff1a'+(identity.get('profile_path') or unspecified),
-               '\u8def\u5f84\u548c\u6e20\u9053\u4ec5\u4f5c\u4eba\u5de5\u5907\u6ce8\uff0c\u4e0d\u662f\u8fde\u63a5\u6761\u4ef6\u3002\u6700\u7ec8\u6309\u8fde\u63a5 ID \u8def\u7531\u4efb\u52a1\u3002']
-        self.detail.setPlainText('\n'.join(parts));self.block_button.setText('\u5141\u8bb8\u91cd\u65b0\u8fde\u63a5' if row.get('blocked') else '\u505c\u7528\u6b64\u8fde\u63a5')
-
-    def choose(self):
-        row=self.selected()
-        if not row or not row['online'] or row.get('blocked'):
-            show_hint(self,'\u8bf7\u9009\u62e9\u4e00\u4e2a\u5728\u7ebf\u6d4f\u89c8\u5668');return
-        self.owner.settings.setValue('connector/selected_id',row['instance_id'])
-        self.owner.settings.setValue('connector/selection_mode','manual');self.owner.settings.sync()
-        self.owner.refresh_connector_summary();self._signature=None;self.refresh()
-        show_hint(self,'\u5df2\u9009\u62e9\uff0c\u73b0\u5728\u53ef\u4ee5\u70b9\u51fb\u5de1\u68c0\u3002\u6b63\u5728\u8fdb\u884c\u7684\u4efb\u52a1\u4e0d\u4f1a\u4e2d\u9014\u6362\u53f7\u3002')
+    def select_all_online(self):
+        self._loading=True
+        try:
+            selected=0
+            for i,row in enumerate(self.rows):
+                use=row['online'] and not row.get('blocked') and selected<10;self.table.item(i,0).setCheckState(Qt.CheckState.Checked if use else Qt.CheckState.Unchecked)
+                if use:selected+=1
+        finally:self._loading=False
+        self._persist_checks();self._signature=None;self.refresh();self.owner.refresh_connector_summary()
 
     def identify(self):
-        row=self.selected()
+        row=self.selected_row()
         if not row:return
         try:self.bridge.identify(row['instance_id'])
         except Exception as exc:show_hint(self,str(exc))
 
     def retry(self):
-        try:
-            if not self.bridge._running:self.bridge.start()
-            self.owner.refresh_connector_summary();self._signature=None;self.refresh()
-            show_hint(self,'\u6b63\u5728\u7b49\u5f85\u63d2\u4ef6\u81ea\u52a8\u8fde\u63a5\uff0c\u65e0\u9700\u8f93\u5165\u4efb\u4f55\u4ee3\u7801')
-        except Exception as exc:
-            self.bridge.error=str(exc);self._signature=None;self.refresh()
+        self._signature=None;self.refresh();self.owner.refresh_connector_summary();show_hint(self,'正在自动检测本机浏览器连接器')
 
     def toggle_block(self):
-        row=self.selected()
+        row=self.selected_row()
         if not row:return
-        if row.get('blocked'):
-            self.bridge.allow(row['instance_id'])
-            show_hint(self,'\u5df2\u5141\u8bb8\uff0c\u8bf7\u5728\u63d2\u4ef6\u4e2d\u70b9\u51fb\u201c\u6062\u590d\u8fde\u63a5\u201d')
-        else:
-            if QMessageBox.question(self,'\u505c\u7528\u8fde\u63a5','\u505c\u7528\u540e\u4f1a\u7ec8\u6b62\u6b64\u6d4f\u89c8\u5668\u7684\u5f53\u524d\u4efb\u52a1\uff0c\u662f\u5426\u7ee7\u7eed\uff1f')!=QMessageBox.StandardButton.Yes:return
-            self.bridge.revoke(row['instance_id'])
+        if row.get('blocked'):self.bridge.allow(row['instance_id']);show_hint(self,'已启用，连接器会自动重新连接')
+        else:self.bridge.revoke(row['instance_id']);show_hint(self,'已停用该浏览器连接')
         self._signature=None;self.refresh();self.owner.refresh_connector_summary()
 
-    def open_folder(self):
-        folder=Path(__file__).resolve().parent/'extension'
-        if folder.is_dir():QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
-        else:show_hint(self,'\u8bf7\u89e3\u538b\u5b8c\u6574\u5305\u4e2d\u7684 extension \u6587\u4ef6\u5939')
+    def delete_record(self):
+        row=self.selected_row()
+        if not row:return
+        if row.get('online') and not row.get('blocked'):show_hint(self,'请先停用该连接，再删除旧记录');return
+        try:self.bridge.forget(row['instance_id'])
+        except Exception as exc:show_hint(self,str(exc));return
+        saved=[x for x in self.owner.configured_connector_ids(include_offline=True) if x!=row['instance_id']]
+        self.owner.set_connector_selection(saved,initialized=self.owner.connector_selection_initialized())
+        self._signature=None;self.refresh();show_hint(self,'旧连接记录已删除')
 
 
 class BrandMark(QWidget):
@@ -4037,7 +4266,7 @@ class AvatarWidget(QWidget):
         self.setFixedSize(size,size)
         self.image = QPixmap(self.path) if self.path and Path(self.path).is_file() else QPixmap()
         if self.image.isNull():
-            self.setToolTip("头像与专业 ID 管理共用同一缓存；巡检或资料同步时更新。")
+            self.setToolTip("头像与专业 ID 管理共用同一缓存；正常巡检时自动更新。")
         else:
             self.setToolTip("已缓存的真实主页头像")
 
@@ -4065,7 +4294,7 @@ class AvatarWidget(QWidget):
 
 class MetricCard(QFrame):
     def __init__(self,title,accent=None,kind="pages"):
-        super().__init__();self.setObjectName("MetricCard");self.setMinimumWidth(0);self.setFixedHeight(104)
+        super().__init__();self.setObjectName("MetricCard");self.setProperty("tone",kind);self.setMinimumWidth(0);self.setFixedHeight(104)
         layout=QHBoxLayout(self);layout.setContentsMargins(14,12,14,12);layout.setSpacing(12)
         self.icon_label=QLabel();self.icon_label.setFixedSize(40,40)
         self.icon_label.setPixmap(ui_icon(kind,accent or ACCENT).pixmap(28,28));self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -4098,7 +4327,7 @@ class PageCard(QFrame):
     manage_requested=pyqtSignal(str)
     def __init__(self,row,rank=0,window_label=""):
         super().__init__();self.row=dict(row);self.setObjectName("PageCard")
-        self.setMinimumWidth(0);self.setFixedHeight(224)
+        self.setMinimumWidth(0);self.setFixedHeight(216)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         pid=str(row["page_id"]);name=display_name(row);post=row.get("post_view") or post_view(row)
         layout=QVBoxLayout(self);layout.setContentsMargins(14,12,14,10);layout.setSpacing(8)
@@ -4117,21 +4346,20 @@ class PageCard(QFrame):
         today=row.get("today") or {"delta":None,"partial":True,"note":"暂无记录"}
         specs=[
             ("当前粉丝" if row.get("monitor_growth") else "上次粉丝",
-             format_count(row.get("last_followers")),"BigNumber",
-             "粉丝监控未开启，显示最后一次已保存值" if not row.get("monitor_growth") else
-             "最后一次成功采集的粉丝数"+("（约值）" if row.get("approx") else "")),
+             format_compact_count(row.get("last_followers")),"BigNumber",
+             "实际粉丝数："+format_count(row.get("last_followers"))+("\n粉丝监控未开启，显示最后一次已保存值" if not row.get("monitor_growth") else "")+("（约值）" if row.get("approx") else "")),
             ("今日新增",("未监控" if not row.get("monitor_growth") else
               (("≈" if today.get("approx") else "")+format_delta(today["delta"])+"")),
              "GrowthUp" if row.get("monitor_growth") and (today.get("delta") or 0)>0 else
              "GrowthDown" if row.get("monitor_growth") and (today.get("delta") or 0)<0 else "GrowthFlat",today.get("note","")),
-            ("距上次发帖",post["elapsed"],
+            ("距上次发帖",post.get("elapsed_short",post["elapsed"]),
              "GrowthDown" if post["state"]=="overdue" else "GrowthSoon" if post["state"] in ("soon","unknown","unverified")
              else "GrowthUp" if post["state"]=="ok" else "GrowthFlat",post["tooltip"])
         ]
         for i,(label,text,objectname,tip) in enumerate(specs):
             col=QVBoxLayout();col.setSpacing(1)
             heading=ElideLabel(label);heading.setMinimumHeight(17);heading.setObjectName("SmallMuted")
-            value=ValueLabel(text,22 if i==0 else 20);value.setObjectName(objectname);value.setToolTip(tip)
+            value=ValueLabel(text,20 if i==0 else 18);value.setObjectName(objectname);value.setToolTip(tip)
             col.addWidget(heading);col.addWidget(value);values.addLayout(col,12 if i==2 else 11 if i==0 else 9)
         layout.addLayout(values)
         modules=[]
@@ -4157,7 +4385,7 @@ class PageCard(QFrame):
         badge=QLabel(status);badge.setObjectName("StatusBadge");badge.setProperty("state",state)
         badge.setMinimumHeight(23);badge.setAlignment(Qt.AlignmentFlag.AlignCenter);footer.addWidget(badge)
         layout.addLayout(footer)
-        self.setToolTip("双击卡片查看粉丝趋势；点击名称或 ID 直接复制。")
+        self.setToolTip("双击卡片编辑监控设置；点击名称或 ID 直接复制。")
 
     def mouseDoubleClickEvent(self,event):
         self.manage_requested.emit(self.row["page_id"]);event.accept()
@@ -4181,7 +4409,7 @@ class ResponsiveCards(QWidget):
         super().__init__(parent);self.setObjectName("CardCanvas");self.settings=settings
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground,True)
         self.grid=QGridLayout(self);self.grid.setContentsMargins(0,0,4,6)
-        self.grid.setHorizontalSpacing(12);self.grid.setVerticalSpacing(12)
+        self.grid.setHorizontalSpacing(10);self.grid.setVerticalSpacing(10)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.cards=[];self.columns=0
     def set_cards(self,cards):
@@ -4190,15 +4418,15 @@ class ResponsiveCards(QWidget):
             if item.widget():item.widget().deleteLater()
         self.cards=list(cards);self.columns=0;self.reflow()
     def reflow(self):
-        try:desired=max(4,min(6,int(self.settings.value("dashboard_columns",5)))) if self.settings else 5
+        try:desired=max(4,min(8,int(self.settings.value("dashboard_columns",5)))) if self.settings else 5
         except (TypeError,ValueError):desired=5
         available=max(220,self.width()-4)
-        columns=max(1,min(desired,int((available+12)//(226+12))))
+        columns=max(1,min(desired,int((available+10)//(172+10))))
         if columns==self.columns:return
         self.columns=columns
         while self.grid.count():self.grid.takeAt(0)
         for i,w in enumerate(self.cards):self.grid.addWidget(w,i//columns,i%columns)
-        for col in range(6):self.grid.setColumnStretch(col,1 if col<columns else 0)
+        for col in range(8):self.grid.setColumnStretch(col,1 if col<columns else 0)
     def resizeEvent(self,event):
         super().resizeEvent(event);self.reflow()
 
@@ -4272,59 +4500,44 @@ class DashboardPage(QWidget):
         metrics=QHBoxLayout();metrics.setSpacing(12)
         self.metric_pages=MetricCard("专业主页数",ACCENT,"pages")
         self.metric_total=MetricCard("当前粉丝总量",CYAN,"people")
+        self.metric_yesterday=MetricCard("昨日新增",AMBER,"history")
         self.metric_growth=MetricCard("今日新增",GREEN,"trend")
         self.metric_post=MetricCard("发帖已超时",AMBER,"clock")
         self.metric_alerts=MetricCard("增长超标预警",RED,"bell")
-        for metric in (self.metric_pages,self.metric_total,self.metric_growth,self.metric_post,self.metric_alerts):metrics.addWidget(metric,1)
+        for metric in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_growth,self.metric_post,self.metric_alerts):metrics.addWidget(metric,1)
         root.addLayout(metrics)
-        timing_bar=QFrame();timing_bar.setObjectName("TimingBar")
-        timing=QHBoxLayout(timing_bar);timing.setContentsMargins(12,8,12,8);timing.setSpacing(8)
+        control_bar=QFrame();control_bar.setObjectName("TimingBar")
+        toolbar=QHBoxLayout(control_bar);toolbar.setContentsMargins(10,7,10,7);toolbar.setSpacing(5)
         minutes,j0,j1,g0,g1=random_inspection_timing(self.settings)
-        def spin(value,low,high,suffix,width=84):
-            widget=QSpinBox();widget.setObjectName("QuickTimingSpin");widget.setRange(low,high)
-            widget.setSuffix(suffix);widget.setValue(value);widget.setKeyboardTracking(False);widget.setFixedSize(width,38)
-            return widget
-        timing.addWidget(QLabel("\u6bcf\u8f6e\u57fa\u51c6"))
-        self.quick_interval=spin(minutes,5,1440," \u5206\u949f",108);timing.addWidget(self.quick_interval)
-        timing.addSpacing(8);timing.addWidget(QLabel("\u4e0a\u4e0b\u6d6e\u52a8"))
-        self.quick_jitter_min=spin(j0,0,1439,"",70);timing.addWidget(self.quick_jitter_min)
-        timing.addWidget(QLabel("\u2014"))
-        self.quick_jitter_max=spin(j1,0,1439," \u5206\u949f",100);timing.addWidget(self.quick_jitter_max)
-        timing.addSpacing(8);timing.addWidget(QLabel("\u4e3b\u9875\u95f4\u9694"))
-        self.quick_gap_min=spin(g0,0,120,"",70);timing.addWidget(self.quick_gap_min)
-        timing.addWidget(QLabel("\u2014"))
-        self.quick_gap_max=spin(g1,0,120," \u79d2",84);timing.addWidget(self.quick_gap_max)
-        timing.addStretch();tip=QLabel("\u6bcf\u6b21\u91cd\u65b0\u968f\u673a");tip.setObjectName("SmallMuted");timing.addWidget(tip)
-        round_tip="\u6bcf\u8f6e\u4ece\u6d6e\u52a8\u8303\u56f4\u53d6\u4e00\u4e2a\u5206\u949f\u6570\uff0c\u968f\u673a\u63d0\u524d\u6216\u5ef6\u540e\u3002\u4f8b\uff1a120\u00b1(15\u201425)\u5206\u949f\uff0c\u5b9e\u9645\u4e3a95\u2014105\u6216135\u2014145\u5206\u949f\u3002\u4ece\u672c\u8f6e\u5f00\u59cb\u65f6\u8ba1\u7b97\uff0c\u4e0d\u4f1a\u91cd\u53e0\u5de1\u68c0\u3002"
-        for widget in (self.quick_interval,self.quick_jitter_min,self.quick_jitter_max):widget.setToolTip(round_tip)
-        for widget in (self.quick_gap_min,self.quick_gap_max):widget.setToolTip("\u6bcf\u5904\u7406\u5b8c\u4e00\u4e2a\u4e3b\u9875\uff0c\u4ece\u8be5\u79d2\u6570\u8303\u56f4\u91cd\u65b0\u62bd\u53d6\u7b49\u5f85\u65f6\u95f4\u3002\u4fee\u6539\u4ece\u4e0b\u4e00\u6bb5\u7b49\u5f85\u751f\u6548\u3002")
-        for widget in (self.quick_interval,self.quick_jitter_min,self.quick_jitter_max,self.quick_gap_min,self.quick_gap_max):
-            widget.valueChanged.connect(self._quick_timing_changed)
-        root.addWidget(timing_bar)
-        toolbar=QHBoxLayout();toolbar.setSpacing(8);toolbar.addStretch()
+        def spin(value,low,high,width=47,tip=""):
+            widget=DirectNumberSpinBox();widget.setObjectName("QuickTimingSpin");widget.setRange(low,high);widget.setValue(value)
+            widget.setFixedSize(width,34);widget.setToolTip(tip);return widget
+        def timing_label(text,tip):
+            label=QLabel(text);label.setObjectName("QuickTimingLabel");label.setToolTip(tip);return label
+        toolbar.addWidget(timing_label("每轮间隔","自动巡检每轮的基准间隔（分钟）"));self.quick_interval=spin(minutes,5,1440,52,"每轮间隔基准，单位：分钟");toolbar.addWidget(self.quick_interval)
+        toolbar.addSpacing(4);toolbar.addWidget(timing_label("浮动范围","每轮会随机提前或延后，填写最小/最大分钟数"));self.quick_jitter_min=spin(j0,0,1439,43,"随机浮动最小分钟数");toolbar.addWidget(self.quick_jitter_min)
+        dash1=QLabel("–");dash1.setObjectName("QuickTimingLabel");toolbar.addWidget(dash1);self.quick_jitter_max=spin(j1,0,1439,43,"随机浮动最大分钟数");toolbar.addWidget(self.quick_jitter_max)
+        toolbar.addSpacing(4);toolbar.addWidget(timing_label("主页间隔","每两个主页之间随机等待，单位：秒"));self.quick_gap_min=spin(g0,0,120,39,"主页间隔最小秒数");toolbar.addWidget(self.quick_gap_min)
+        dash2=QLabel("–");dash2.setObjectName("QuickTimingLabel");toolbar.addWidget(dash2);self.quick_gap_max=spin(g1,0,120,39,"主页间隔最大秒数");toolbar.addWidget(self.quick_gap_max)
+        for widget in (self.quick_interval,self.quick_jitter_min,self.quick_jitter_max,self.quick_gap_min,self.quick_gap_max):widget.valueChanged.connect(self._quick_timing_changed)
+        toolbar.addStretch(1)
         self.status_filter=QComboBox()
-        for name,value in (("全部主页","all"),("粉丝监控","growth"),("发帖监控","posts"),
-                           ("发帖超时","overdue"),("待核实","unknown"),("未选择模块","off")):
-            self.status_filter.addItem(name,value)
-        self.status_filter.currentIndexChanged.connect(lambda _:self.refresh());toolbar.addWidget(self.status_filter)
-        self.search=QLineEdit();self.search.setPlaceholderText("搜索名称或专业 ID")
-        self.search.setClearButtonEnabled(True);self.search.setMinimumWidth(150);self.search.setMaximumWidth(230)
-        self.search.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        for name,value in (("全部主页","all"),("粉丝监控","growth"),("发帖监控","posts"),("发帖超时","overdue"),("待核实","unknown"),("未选择模块","off")):self.status_filter.addItem(name,value)
+        self.status_filter.currentIndexChanged.connect(lambda _:self.refresh());self.status_filter.setFixedWidth(106);toolbar.addWidget(self.status_filter)
+        self.search=QLineEdit();self.search.setPlaceholderText("搜索名称 / 专业 ID");self.search.setClearButtonEnabled(True)
+        self.search.setFixedWidth(190);self.search.setSizePolicy(QSizePolicy.Policy.Fixed,QSizePolicy.Policy.Fixed)
         self.search.textChanged.connect(lambda _:self.refresh());toolbar.addWidget(self.search)
         self.sort_box=QComboBox()
-        for name,key in (("自定义排序","manual"),("今日增长优先","growth"),("发帖超时优先","post"),("名称排序","name")):
-            self.sort_box.addItem(name,key)
-        self.sort_box.currentIndexChanged.connect(lambda _:self.refresh());toolbar.addWidget(self.sort_box)
+        for name,key in (("自定义排序","manual"),("增长预警优先","growth"),("发帖超时优先","post"),("名称排序","name")):self.sort_box.addItem(name,key)
+        self.sort_box.currentIndexChanged.connect(lambda _:self.refresh());self.sort_box.setFixedWidth(126);toolbar.addWidget(self.sort_box)
         self.columns_box=QComboBox()
-        for num in (4,5,6):self.columns_box.addItem(f"每行 {num} 个",num)
-        try:col=max(4,min(6,int(self.settings.value("dashboard_columns",5))))
+        for num in range(4,9):self.columns_box.addItem(f"每行 {num} 个",num)
+        try:col=max(4,min(8,int(self.settings.value("dashboard_columns",5))))
         except (ValueError,TypeError):col=5
-        self.columns_box.setCurrentIndex(col-4)
-        self.columns_box.setToolTip("默认每行5张；小窗口会自动减少列数，避免挤压字体")
+        self.columns_box.setCurrentIndex(col-4);self.columns_box.setFixedWidth(92);self.columns_box.setToolTip("可选每行 4–8 张；窗口太窄时会自动减少实际列数")
         self.columns_box.currentIndexChanged.connect(self._columns_changed);toolbar.addWidget(self.columns_box)
-        for control in (self.status_filter,self.search,self.sort_box,self.columns_box):
-            control.setFixedHeight(40)
-        root.addLayout(toolbar)
+        for control in (self.status_filter,self.search,self.sort_box,self.columns_box):control.setFixedHeight(36)
+        root.addWidget(control_bar)
         self.scroll=QScrollArea();self.scroll.setObjectName("CardScroll");self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setWidgetResizable(True);self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.cards=ResponsiveCards(settings=self.settings);self.scroll.setWidget(self.cards)
@@ -4396,7 +4609,7 @@ class DashboardPage(QWidget):
             self._last_inspection_stamp=latest_inspection_stamp(self.settings,rows)
         self.run_badge.setText("上次巡检时间："+inspection_stamp_label(self._last_inspection_stamp))
         unread_pages={a["page_id"] for a in self.store.alert_rows() if not a["acknowledged"]}
-        today_sum=0;covered=0;partial=0
+        today_sum=0;covered=0;partial=0;yesterday_sum=0;yesterday_covered=0;yesterday_partial=0
         growth_rows=[r for r in rows if r["monitor_growth"]]
         post_rows=[r for r in rows if r["monitor_posts"]]
         for row in rows:
@@ -4404,9 +4617,13 @@ class DashboardPage(QWidget):
             row["is_growth_alert"]=row["monitor_growth"] and row["page_id"] in unread_pages
             if row["monitor_growth"]:
                 row["today"]=self.store.today_change(row["page_id"],now,interval)
+                row["yesterday"]=self.store.yesterday_change(row["page_id"],now)
                 if row["today"]["delta"] is not None:
                     today_sum+=row["today"]["delta"];covered+=1
                     partial+=int(row["today"]["partial"])
+                if row["yesterday"]["delta"] is not None:
+                    yesterday_sum+=row["yesterday"]["delta"];yesterday_covered+=1
+                    yesterday_partial+=int(row["yesterday"]["partial"])
         total=sum(r["last_followers"] for r in growth_rows if r["last_followers"] is not None)
         sampled=sum(r["last_followers"] is not None for r in growth_rows)
         overdue=sum(r["post_view"]["state"]=="overdue" for r in rows)
@@ -4414,6 +4631,8 @@ class DashboardPage(QWidget):
         g,p=self.store.unread_totals()
         self.metric_pages.set_values(len(rows),f"粉丝监控 {len(growth_rows)} · 发帖监控 {len(post_rows)}")
         self.metric_total.set_values(format_count(total) if sampled else "—",f"有粉丝记录 {sampled} / {len(growth_rows)}")
+        self.metric_yesterday.set_values(format_delta(yesterday_sum) if yesterday_covered else "—",
+            f"可比较 {yesterday_covered} 个"+(f" · {yesterday_partial} 个为部分日" if yesterday_partial else ""))
         self.metric_growth.set_values(format_delta(today_sum) if covered else "—",f"可比较 {covered} 个"+(f" · {partial} 个从今日首检起计算" if partial else ""))
         self.metric_post.set_values(overdue,f"监控 {len(post_rows)} 个 · 待核实 {unverified}")
         self.metric_alerts.set_values(g,"尚未标记已读的增长预警")
@@ -4429,8 +4648,12 @@ class DashboardPage(QWidget):
             filtered.append(r)
         order=self.sort_box.currentData()
         if order=="name":filtered.sort(key=lambda r:display_name(r).casefold())
-        elif order=="growth":filtered.sort(key=lambda r:(r.get("today",{}).get("delta") is None,-(r.get("today",{}).get("delta") or 0),r["sort_order"]))
-        elif order=="post":filtered.sort(key=lambda r:(r["post_view"]["state"]!="overdue",float(r.get("last_post_ts") or now+1),r["sort_order"]))
+        elif order=="growth":
+            filtered.sort(key=lambda r:(not bool(r.get("is_growth_alert")),r["post_view"]["state"]!="overdue",
+                r.get("today",{}).get("delta") is None,-(r.get("today",{}).get("delta") or 0),r["sort_order"]))
+        elif order=="post":
+            filtered.sort(key=lambda r:(r["post_view"]["state"]!="overdue",not bool(r.get("is_growth_alert")),
+                float(r.get("last_post_ts") or now+1),r["sort_order"]))
         else:filtered.sort(key=lambda r:(r["sort_order"],r["page_id"]))
         self.status_filter.setToolTip("匹配 %s 个，共 %s 个主页" % (len(filtered),len(rows)))
         cards=[]
@@ -4453,8 +4676,7 @@ class DashboardPage(QWidget):
             if item.widget():item.widget().deleteLater()
         self.alert_count.setText(f"{g+p} 条未读")
         entries=self.store.combined_alerts(limit=3,unread_only=True)
-        if not entries:
-            label=QLabel("暂无未读预警");label.setObjectName("SmallMuted");label.setMinimumHeight(36);self.notices.addWidget(label)
+        self.notice_panel.setVisible(bool(entries))
         for entry in entries:
             frame=QFrame();frame.setObjectName("AlertRow");layout=QHBoxLayout(frame);layout.setContentsMargins(9,5,9,5);layout.setSpacing(9)
             avatar=AvatarWidget(entry["page_name"],entry.get("avatar_path",""),40)
@@ -4472,37 +4694,72 @@ class AlertsPage(QWidget):
     export_requested=pyqtSignal()
     ack_requested=pyqtSignal()
     def __init__(self,store):
-        super().__init__();self.store=store;self.setObjectName("AlertsPage")
-        root=QVBoxLayout(self);root.setContentsMargins(24,22,24,18);root.setSpacing(14)
-        row=QHBoxLayout();title=QLabel("通知与预警");title.setObjectName("PageTitle");row.addWidget(title);row.addStretch()
+        super().__init__();self.store=store;self.setObjectName("AlertsPage");self.mode="current";self._highlight_key=None
+        root=QVBoxLayout(self);root.setContentsMargins(24,22,24,18);root.setSpacing(12)
+        head=QHBoxLayout();title=QLabel("通知与预警");title.setObjectName("PageTitle");head.addWidget(title);head.addStretch()
+        self.current_btn=QPushButton("当前 · 未读+今日");self.current_btn.setObjectName("NoticeModeButton");self.current_btn.clicked.connect(lambda:self.set_mode("current"));head.addWidget(self.current_btn)
+        self.history_btn=QPushButton("历史记录");self.history_btn.setObjectName("NoticeHistoryButton");self.history_btn.clicked.connect(lambda:self.set_mode("history"));head.addWidget(self.history_btn)
         self.filter=QComboBox()
         for text,key in (("全部类型","all"),("粉丝增长","growth"),("发帖超时","post")):self.filter.addItem(text,key)
-        self.filter.currentIndexChanged.connect(lambda _:self.refresh());row.addWidget(self.filter)
-        ack=QPushButton("全部标为已读");ack.setObjectName("PrimaryButton");ack.clicked.connect(self.ack_requested.emit);row.addWidget(ack);root.addLayout(row)
-        self.summary=QLabel();self.summary.setObjectName("SmallMuted");root.addWidget(self.summary)
-        self.table=QTableWidget(0,7);self.table.setHorizontalHeaderLabels(("头像","类型","专业名称","专业 ID","预警内容","记录时间","状态"))
+        self.filter.currentIndexChanged.connect(lambda _:self.refresh());self.filter.setFixedWidth(112);head.addWidget(self.filter)
+        self.ack_btn=QPushButton("全部未读标为已读");self.ack_btn.setObjectName("PrimaryButton");self.ack_btn.clicked.connect(self.ack_requested.emit);head.addWidget(self.ack_btn);root.addLayout(head)
+        self.summary=QLabel();self.summary.setObjectName("NoticeSummary");self.summary.setWordWrap(True);root.addWidget(self.summary)
+        note=QLabel("默认只显示：全部未读通知 + 今天发生的通知。较早且已读的记录仍永久保留在「历史记录」中。")
+        note.setObjectName("SmallMuted");note.setWordWrap(True);root.addWidget(note)
+        self.table=QTableWidget(0,7);self.table.setObjectName("AlertsTable");self.table.setHorizontalHeaderLabels(("头像","类型","专业名称","专业 ID","预警内容","记录时间","状态"))
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.verticalHeader().setVisible(False);self.table.setAlternatingRowColors(True);self.table.setShowGrid(False)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection);self.table.verticalHeader().setVisible(False);self.table.setAlternatingRowColors(True);self.table.setShowGrid(False)
+        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         for col,width in ((0,58),(1,100),(2,190),(3,170),(5,150),(6,75)):self.table.setColumnWidth(col,width)
         self.table.horizontalHeader().setSectionResizeMode(4,QHeaderView.ResizeMode.Stretch)
-        root.addWidget(self.table,1);self.refresh()
-    def refresh(self):
-        rows=self.store.combined_alerts(limit=1000);kind=self.filter.currentData()
+        root.addWidget(self.table,1);self.set_mode("current",refresh=False);self.refresh()
+
+    def set_mode(self,mode,refresh=True):
+        self.mode="history" if mode=="history" else "current"
+        self.current_btn.setProperty("active",self.mode=="current");self.history_btn.setProperty("active",self.mode=="history")
+        for button in (self.current_btn,self.history_btn):button.style().unpolish(button);button.style().polish(button)
+        self.ack_btn.setVisible(self.mode=="current")
+        if refresh:self.refresh()
+
+    @staticmethod
+    def _is_today(row):
+        try:return datetime.fromtimestamp(float(row.get("alerted_ts") or 0)).astimezone().date()==datetime.now().astimezone().date()
+        except (ValueError,TypeError,OSError):return False
+
+    def _visible_rows(self):
+        rows=self.store.combined_alerts(limit=5000);kind=self.filter.currentData()
         if kind!="all":rows=[r for r in rows if r["kind"]==kind]
-        self.table.clearContents();self.table.setRowCount(len(rows))
+        if self.mode=="current":rows=[r for r in rows if not bool(r.get("acknowledged")) or self._is_today(r)]
+        else:rows=[r for r in rows if bool(r.get("acknowledged")) and not self._is_today(r)]
+        return rows
+
+    def refresh(self):
+        rows=self._visible_rows();self.table.clearContents();self.table.setRowCount(len(rows));matched=None
         for i,r in enumerate(rows):
-            cell=QWidget();layout=QHBoxLayout(cell);layout.setContentsMargins(9,3,9,3)
-            layout.addWidget(AvatarWidget(r["page_name"],r.get("avatar_path",""),36))
-            self.table.setCellWidget(i,0,cell)
-            values=("发帖超时" if r["kind"]=="post" else "粉丝增长",r["page_name"],r["page_id"],r["message"],
-                    local_time_label(r["alerted_at"]),"已读" if r["acknowledged"] else "未读")
+            cell=QWidget();layout=QHBoxLayout(cell);layout.setContentsMargins(9,3,9,3);layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(AvatarWidget(r["page_name"],r.get("avatar_path",""),36));self.table.setCellWidget(i,0,cell)
+            values=("发帖超时" if r["kind"]=="post" else "粉丝增长",r["page_name"],r["page_id"],r["message"],local_time_label(r["alerted_at"]),"已读" if r["acknowledged"] else "未读")
             for j,text in enumerate(values,1):
-                item=QTableWidgetItem(str(text));item.setToolTip(str(text))
+                item=QTableWidgetItem(str(text));item.setToolTip(str(text));item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if j in (1,3,5,6) else Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft)
+                item.setData(Qt.ItemDataRole.UserRole,(r["kind"],int(r.get("id") or 0),r["page_id"]))
                 if j==1:item.setForeground(QColor(AMBER if r["kind"]=="post" else RED))
                 self.table.setItem(i,j,item)
-            self.table.setRowHeight(i,48)
-        g,p=self.store.unread_totals()
-        self.summary.setText(f"未读：增长 {g} 条 · 发帖 {p} 条。仅在成功读取后记录预警；失败或过期缓存不生成新超时通知。")
+            self.table.setRowHeight(i,50)
+            if self._highlight_key==(r["kind"],int(r.get("id") or 0)):matched=i
+        g,p=self.store.unread_totals();today=sum(self._is_today(r) for r in self.store.combined_alerts(limit=5000))
+        if self.mode=="current":self.summary.setText(f"当前：未读 {g+p} 条（增长 {g} · 发帖 {p}） · 今天 {today} 条")
+        else:self.summary.setText(f"历史记录：{len(rows)} 条较早且已读的预警 · 数据不会因默认隐藏而删除")
+        if matched is not None:
+            self.table.selectRow(matched);item=self.table.item(matched,1)
+            if item:self.table.scrollToItem(item,QAbstractItemView.ScrollHint.PositionAtCenter)
+
+    def focus_alert(self,entry):
+        try:self._highlight_key=(str(entry.get("kind") or ""),int(entry.get("id") or 0))
+        except (TypeError,ValueError):self._highlight_key=(str(entry.get("kind") or ""),0)
+        # A previously selected type filter must not hide the alert opened from the popup.
+        self.filter.blockSignals(True);self.filter.setCurrentIndex(0);self.filter.blockSignals(False)
+        self.set_mode("current",refresh=True)
+        if self.table.currentRow()>=0:self.table.setFocus(Qt.FocusReason.OtherFocusReason)
 
 
 # 1.8: 发帖监控已移入每个专业 ID 的配置。
@@ -4545,7 +4802,6 @@ class PageEditDialog(QDialog):
 
 class PageManagementPage(QWidget):
     add_requested=pyqtSignal()
-    sync_requested=pyqtSignal(list)
     delete_requested=pyqtSignal(list)
     config_changed=pyqtSignal()
     def __init__(self,store,settings):
@@ -4555,15 +4811,14 @@ class PageManagementPage(QWidget):
     def build_ui(self):
         root=QVBoxLayout(self);root.setContentsMargins(24,20,24,16);root.setSpacing(13)
         title=QLabel("专业 ID 管理");title.setObjectName("PageTitle");root.addWidget(title)
-        desc=QLabel("一次添加，多模块共用。直接勾选监控模块；双击名称、标准、排序或备注可编辑。")
+        desc=QLabel("一次添加，多模块共用。直接勾选监控模块；双击名称、标准、排序或备注即可编辑。")
         desc.setObjectName("Subtitle");desc.setWordWrap(True);root.addWidget(desc)
         actions=QHBoxLayout();actions.setSpacing(8)
         self.add_btn=QPushButton("添加 ID");self.add_btn.setObjectName("PrimaryButton");self.add_btn.clicked.connect(self.add_requested.emit)
-        self.sync_btn=QPushButton("同步名称 / 头像");self.sync_btn.clicked.connect(self.sync_selected)
         self.batch_btn=QPushButton("批量设置");self.batch_btn.clicked.connect(self.batch_settings)
         self.delete_btn=QPushButton("批量删除");self.delete_btn.setObjectName("DangerButton");self.delete_btn.clicked.connect(self.delete_selected)
         self.export_btn=QPushButton("导出 ID 清单");self.export_btn.clicked.connect(self.export_ids)
-        for btn in (self.add_btn,self.sync_btn,self.batch_btn,self.delete_btn,self.export_btn):
+        for btn in (self.add_btn,self.batch_btn,self.delete_btn,self.export_btn):
             btn.setFixedHeight(38);actions.addWidget(btn)
         actions.addStretch();root.addLayout(actions)
         tools=QHBoxLayout();tools.setSpacing(10)
@@ -4595,7 +4850,7 @@ class PageManagementPage(QWidget):
         self.table.cellClicked.connect(self._clicked)
         self.table.cellDoubleClicked.connect(self._double_clicked)
         root.addWidget(self.table,1)
-        hint=QLabel("排序号会同步到主界面“自定义排序”。未获取的头像与名称不会伪造；同步资料使用当前监控登录会话。")
+        hint=QLabel("排序号会同步到主界面“自定义排序”。名称和头像会在正常巡检时自动更新；未获取资料不会伪造。")
         hint.setObjectName("SmallMuted");hint.setWordWrap(True);root.addWidget(hint)
         self.filter.blockSignals(True);self.filter.setCurrentIndex(max(0,self.filter.findData(self.settings.value("manager/filter","all"))));self.filter.blockSignals(False)
         self.search.blockSignals(True);self.search.setText(str(self.settings.value("manager/search","")));self.search.blockSignals(False)
@@ -4617,7 +4872,7 @@ class PageManagementPage(QWidget):
 
     def set_busy(self,busy):
         self._busy=bool(busy)
-        for b in (self.add_btn,self.sync_btn,self.batch_btn,self.delete_btn):b.setEnabled(not busy)
+        for b in (self.add_btn,self.batch_btn,self.delete_btn):b.setEnabled(not busy)
         # Selection/copying is harmless during collection. Disabling the whole table made
         # single checkbox clicks fail while the external Select All checkbox still worked.
         self.table.setEnabled(True)
@@ -4682,12 +4937,6 @@ class PageManagementPage(QWidget):
             self.refresh();self.config_changed.emit()
 
 
-
-    def sync_selected(self):
-        ids=self.ids()
-        if not ids:
-            show_hint(self,"请选择需要同步名称和头像的专业 ID。");return
-        self.sync_requested.emit(ids)
 
     def delete_selected(self):
         ids=self.ids()
@@ -4822,8 +5071,9 @@ class SettingsPage(QWidget):
         self.autosave=QTimer(self);self.autosave.setSingleShot(True)
         self.autosave.timeout.connect(self._request_autosave)
         for widget in self.findChildren(QSpinBox):
-            widget.setKeyboardTracking(False)
-            widget.valueChanged.connect(lambda *_:self.autosave.start(300))
+            widget.setKeyboardTracking(isinstance(widget,DirectNumberSpinBox))
+            widget.valueChanged.connect(lambda *_:self.autosave.start(260))
+            widget.editingFinished.connect(lambda:self.autosave.start(1))
         for widget in self.findChildren(QCheckBox):
             widget.toggled.connect(lambda *_:self.autosave.start(120))
 
@@ -4849,50 +5099,49 @@ class SettingsPage(QWidget):
         account_layout=make_tab("浏览器与巡检")
         data_layout=make_tab("数据与迁移")
 
-        browser,bl=self.section("01  Chrome \u6d4f\u89c8\u5668\u8fde\u63a5\u5668",
-            "\u5b89\u88c5\u8fde\u63a5\u5668\u540e\uff0c\u9009\u62e9\u81ea\u52a8\u8fde\u63a5\u4e14\u5728\u7ebf\u7684 Profile \u6267\u884c\u5de1\u68c0\u3002\u4e0d\u518d\u7531\u8f6f\u4ef6\u542f\u52a8\u65e7\u7248\u4e13\u7528\u6d4f\u89c8\u5668\u3002")
+        browser,bl=self.section("01  Chrome 浏览器连接器","")
         row=QHBoxLayout()
-        self.login_button=QPushButton("\u7ba1\u7406\u6d4f\u89c8\u5668\u8fde\u63a5");self.login_button.setObjectName("PrimaryButton")
+        self.login_button=QPushButton("浏览器连接");self.login_button.setObjectName("PrimaryButton")
         self.login_button.clicked.connect(self.login_requested.emit);row.addWidget(self.login_button);row.addStretch();bl.addLayout(row)
-        self.connector_summary=QLabel("\u5c1a\u672a\u9009\u62e9\u6d4f\u89c8\u5668");self.connector_summary.setWordWrap(True)
+        self.connector_summary=QLabel("等待浏览器连接");self.connector_summary.setWordWrap(True)
         self.connector_summary.setTextFormat(Qt.TextFormat.PlainText);bl.addWidget(self.connector_summary)
-        help_label=QLabel("\u63d2\u4ef6\u5728\u5df2\u6253\u5f00\u7684 Chrome \u4e2d\u521b\u5efa\u975e\u6fc0\u6d3b\u6807\u7b7e\u9875\u3002\u4e0d\u5207\u6362\u4f60\u7684\u5f53\u524d\u6807\u7b7e\uff0c\u4e5f\u4e0d\u4f1a\u628a\u6574\u4e2a\u6d4f\u89c8\u5668\u53d8\u6210 headless\u3002\u8bf7\u4fdd\u6301\u6240\u9009\u6d4f\u89c8\u5668\u6253\u5f00\u3001Facebook \u5df2\u767b\u5f55\u3002")
-        help_label.setObjectName("SmallMuted");help_label.setWordWrap(True);bl.addWidget(help_label)
         account_layout.addWidget(browser)
 
         collect,cl=self.section("02  \u5de1\u68c0\u4e0e\u542f\u52a8",
             "\u6bcf\u8f6e\u4ee5\u57fa\u51c6\u95f4\u9694\u4e3a\u4e2d\u5fc3\u968f\u673a\u63d0\u524d\u6216\u5ef6\u540e\uff1b\u4e24\u4e2a\u4e3b\u9875\u4e4b\u95f4\u4e5f\u968f\u673a\u7b49\u5f85\u3002\u4e3b\u754c\u9762\u53ef\u76f4\u63a5\u4fee\u6539\u5e76\u81ea\u52a8\u4fdd\u5b58\u3002")
         form=QGridLayout();form.setHorizontalSpacing(18);form.setVerticalSpacing(13)
-        self.interval=QSpinBox();self.interval.setRange(5,1440);self.interval.setSuffix(" \u5206\u949f")
-        self.jitter_min=QSpinBox();self.jitter_min.setRange(0,1439);self.jitter_min.setSuffix(" \u5206\u949f")
-        self.jitter_max=QSpinBox();self.jitter_max.setRange(0,1439);self.jitter_max.setSuffix(" \u5206\u949f")
-        self.gap_min=QSpinBox();self.gap_min.setRange(0,120);self.gap_min.setSuffix(" \u79d2")
-        self.gap_max=QSpinBox();self.gap_max.setRange(0,120);self.gap_max.setSuffix(" \u79d2")
-        form.addWidget(QLabel("\u6bcf\u8f6e\u57fa\u51c6\u95f4\u9694"),0,0);form.addWidget(self.interval,0,1)
-        form.addWidget(QLabel("\u968f\u673a\u65b9\u5411"),0,2);form.addWidget(QLabel("\u63d0\u524d\u6216\u5ef6\u540e\uff08\u5404\u4e00\u534a\u6982\u7387\uff09"),0,3)
-        form.addWidget(QLabel("\u6d6e\u52a8\u6700\u5c0f\u503c"),1,0);form.addWidget(self.jitter_min,1,1)
-        form.addWidget(QLabel("\u6d6e\u52a8\u6700\u5927\u503c"),1,2);form.addWidget(self.jitter_max,1,3)
-        form.addWidget(QLabel("\u4e3b\u9875\u95f4\u9694\u6700\u5c0f\u503c"),2,0);form.addWidget(self.gap_min,2,1)
-        form.addWidget(QLabel("\u4e3b\u9875\u95f4\u9694\u6700\u5927\u503c"),2,2);form.addWidget(self.gap_max,2,3)
+        self.interval=DirectNumberSpinBox();self.interval.setRange(5,1440);self.interval.setToolTip("单位：分钟")
+        self.jitter_min=DirectNumberSpinBox();self.jitter_min.setRange(0,1439);self.jitter_min.setToolTip("单位：分钟")
+        self.jitter_max=DirectNumberSpinBox();self.jitter_max.setRange(0,1439);self.jitter_max.setToolTip("单位：分钟")
+        self.gap_min=DirectNumberSpinBox();self.gap_min.setRange(0,120);self.gap_min.setToolTip("单位：秒")
+        self.gap_max=DirectNumberSpinBox();self.gap_max.setRange(0,120);self.gap_max.setToolTip("单位：秒")
+        form.addWidget(QLabel("每轮间隔（分钟）"),0,0);form.addWidget(self.interval,0,1)
+        float_label=QLabel("浮动范围（分钟）");form.addWidget(float_label,0,2)
+        float_box=QWidget();float_layout=QHBoxLayout(float_box);float_layout.setContentsMargins(0,0,0,0);float_layout.setSpacing(6)
+        float_layout.addWidget(self.jitter_min);float_layout.addWidget(QLabel("–"));float_layout.addWidget(self.jitter_max);float_layout.addStretch();form.addWidget(float_box,0,3)
+        form.addWidget(QLabel("主页间隔（秒）"),1,0)
+        gap_box=QWidget();gap_layout=QHBoxLayout(gap_box);gap_layout.setContentsMargins(0,0,0,0);gap_layout.setSpacing(6)
+        gap_layout.addWidget(self.gap_min);gap_layout.addWidget(QLabel("–"));gap_layout.addWidget(self.gap_max);gap_layout.addStretch();form.addWidget(gap_box,1,1,1,3)
+        for widget in (self.interval,self.jitter_min,self.jitter_max,self.gap_min,self.gap_max):widget.setFixedWidth(86)
         self.start_auto=QCheckBox("\u542f\u52a8\u8f6f\u4ef6\u65f6\u81ea\u52a8\u5de1\u68c0\uff08\u9ed8\u8ba4\u5173\u95ed\uff09")
         self.start_auto.setToolTip("\u53ea\u6709\u5728\u6b64\u660e\u786e\u5f00\u542f\uff0c\u4e0b\u6b21\u542f\u52a8\u624d\u81ea\u52a8\u5de1\u68c0\u3002\u4e3b\u9875\u7684\u6309\u94ae\u4ec5\u63a7\u5236\u672c\u6b21\u8fd0\u884c\u3002")
         self.silent_to_tray=QCheckBox("\u9759\u9ed8\u6536\u8d77\u5230\u6258\u76d8\uff08\u5173\u95ed\u6b64\u9879\u4f1a\u663e\u793a\u63d0\u793a\uff09")
         self.silent_to_tray.setToolTip("\u5f00\u542f\uff1a\u5173\u95ed\u7a97\u53e3\u4e0d\u63d0\u793a\u3002\u5173\u95ed\uff1a\u6536\u8d77\u65f6\u63d0\u793a\u4ecd\u5728\u540e\u53f0\u8fd0\u884c\u3002\u4e24\u79cd\u60c5\u51b5\u90fd\u4fdd\u6301\u6258\u76d8\u5de1\u68c0\uff0c\u5b8c\u5168\u9000\u51fa\u8bf7\u7528\u6258\u76d8\u83dc\u5355\u3002")
-        form.addWidget(self.start_auto,3,0,1,4);form.addWidget(self.silent_to_tray,4,0,1,4)
-        tip=QLabel("\u9ed8\u8ba4\uff1a120\u5206\u949f\u00b1(15\u201425)\u5206\u949f\uff1b\u4e3b\u9875\u95f4\u9694\u6bcf\u6b21\u968f\u673a6\u20149\u79d2\u3002\u5c06\u6d6e\u52a8\u4e24\u9879\u8bbe\u4e3a0\u53ef\u4f7f\u7528\u56fa\u5b9a\u8f6e\u6b21\u95f4\u9694\u3002\u6bcf\u8f6e\u56fa\u5b9a\u4f7f\u7528\u6240\u9009Profile\uff0c\u4e0d\u4e2d\u9014\u6362\u53f7\u3002")
-        tip.setObjectName("SmallMuted");tip.setWordWrap(True);form.addWidget(tip,5,0,1,4)
+        form.addWidget(self.start_auto,2,0,1,4);form.addWidget(self.silent_to_tray,3,0,1,4)
+        tip=QLabel("默认：120分钟±(15–25)分钟；主页间隔每次随机6–9秒。将浮动两项设为0可使用固定轮次间隔。多浏览器时只在用户选择的在线连接器之间并行分配任务。")
+        tip.setObjectName("SmallMuted");tip.setWordWrap(True);form.addWidget(tip,4,0,1,4)
         form.setColumnStretch(1,1);form.setColumnStretch(3,1);cl.addLayout(form);account_layout.addWidget(collect)
 
         alert,al=self.section("03  增长提醒",
-            "增长和发帖异常继续使用桌面提醒；删除、更新安装、失败等重要事项仍需确认。普通成功提示显示为短暂气泡。")
+            "增长和发帖异常使用不会自动关闭的专用预警窗口；删除、更新安装、失败等重要事项仍需确认。普通成功提示显示为短暂气泡。")
         ar=QGridLayout();ar.setVerticalSpacing(12);ar.setHorizontalSpacing(12)
         self.alert_enabled=QCheckBox("开启桌面增长提醒");self.sound=QCheckBox("触发提醒时播放系统提示音")
         ar.addWidget(self.alert_enabled,0,0,1,2);ar.addWidget(self.sound,0,2,1,2)
         ar.addWidget(QLabel("单次增长阈值"),1,0)
-        self.threshold=QSpinBox();self.threshold.setRange(1,100_000_000);self.threshold.setSingleStep(100);self.threshold.setSuffix(" 粉丝")
+        self.threshold=DirectNumberSpinBox();self.threshold.setRange(1,100_000_000);self.threshold.setSingleStep(100);self.threshold.setToolTip("粉丝数")
         ar.addWidget(self.threshold,1,1)
         ar.addWidget(QLabel("同一主页冷却时间"),1,2)
-        self.cooldown=QSpinBox();self.cooldown.setRange(5,1440);self.cooldown.setSuffix(" 分钟");ar.addWidget(self.cooldown,1,3)
+        self.cooldown=DirectNumberSpinBox();self.cooldown.setRange(5,1440);self.cooldown.setToolTip("单位：分钟");ar.addWidget(self.cooldown,1,3)
         al.addLayout(ar);account_layout.addWidget(alert);account_layout.addStretch()
 
         data,dl=self.section("数据管理",
@@ -5139,11 +5388,15 @@ class MainWindow(QMainWindow):
                 btn.setText("ID管理");btn.setObjectName("HeaderAction");btn.setFixedSize(104,40)
             btn.clicked.connect(lambda _=False,i=index:self.switch_page(i));bar.addWidget(btn)
             self.page_nav_buttons[index]=btn
-        self.connector_button=icon_button("pages","\u6d4f\u89c8\u5668\u8fde\u63a5",self)
+        connector_wrap=QWidget();connector_wrap.setFixedSize(102,42);connector_grid=QGridLayout(connector_wrap);connector_grid.setContentsMargins(0,0,0,0)
+        self.connector_button=icon_button("browser","\u6d4f\u89c8\u5668\u8fde\u63a5",connector_wrap)
         self.connector_button.setText("\u6d4f\u89c8\u5668");self.connector_button.setObjectName("HeaderAction");self.connector_button.setFixedSize(96,40)
-        self.connector_button.clicked.connect(self.open_login_browser);bar.addWidget(self.connector_button)
-        self.theme_pill=QPushButton("主题 · "+self.theme_name);self.theme_pill.setObjectName("ThemePill")
-        self.theme_pill.setFixedSize(140,40);self.theme_pill.setToolTip("切换主题：深海蓝、石墨黑、极光紫")
+        self.connector_button.clicked.connect(self.open_login_browser);connector_grid.addWidget(self.connector_button,0,0)
+        self.connector_dot=QLabel(connector_wrap);self.connector_dot.setObjectName("ConnectorDot");self.connector_dot.setFixedSize(12,12)
+        self.connector_dot.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+        connector_grid.addWidget(self.connector_dot,0,0,Qt.AlignmentFlag.AlignTop|Qt.AlignmentFlag.AlignRight);bar.addWidget(connector_wrap)
+        self.theme_pill=QPushButton("主题 · "+self.theme_name);self.theme_pill.setObjectName("ThemePill");self.theme_pill.setProperty("iconKind","theme");self.theme_pill.setIcon(ui_icon("theme",ACCENT));self.theme_pill.setIconSize(QSize(18,18))
+        self.theme_pill.setFixedSize(140,40);self.theme_pill.setToolTip("切换主题：深海蓝、石墨黑、极光紫、暖米白、雾杏米色")
         self.theme_pill.clicked.connect(self.show_theme_menu);bar.addWidget(self.theme_pill)
         wrap=QWidget();wrap.setFixedSize(84,42);grid=QGridLayout(wrap);grid.setContentsMargins(0,0,0,0)
         self.notification_btn=icon_button("bell","通知与预警",wrap)
@@ -5176,7 +5429,7 @@ class MainWindow(QMainWindow):
         d.view_alerts.connect(lambda:self.switch_page(2));d.open_manager.connect(self.open_manager)
         d.open_page.connect(self.open_page);d.timing_changed.connect(self.on_quick_timing_changed)
         m=self.page_manager;m.add_requested.connect(self.open_batch_dialog)
-        m.sync_requested.connect(self.sync_profiles);m.delete_requested.connect(self.delete_ids)
+        m.delete_requested.connect(self.delete_ids)
         m.config_changed.connect(self.refresh_dashboard)
         self.alerts.ack_requested.connect(self.ack_alerts)
         settings=self.settings_page;settings.login_requested.connect(self.open_login_browser)
@@ -5200,17 +5453,34 @@ class MainWindow(QMainWindow):
         self.switch_page(3)
         if pid:self.page_manager.focus_id(pid);self.page_manager.edit_id(pid)
 
+    def _update_header_icons(self,unread=None):
+        if not hasattr(self,"page_nav_buttons"):return
+        colors={"pages":CYAN,"browser":GREEN,"theme":ACCENT,"settings":CYAN,"update":MUTED}
+        for button in self.findChildren(QPushButton):
+            kind=button.property("iconKind")
+            if not kind:continue
+            if button.objectName()=="HomePill":color="#FFFFFF"
+            elif kind=="bell":color=RED if (unread or 0)>0 else CYAN
+            elif kind=="browser":color=GREEN if (hasattr(self,"connector") and self.selected_connectors()) else RED
+            else:color=colors.get(kind,MUTED)
+            button.setIcon(ui_icon(kind,color))
+
     def refresh_dashboard(self):
         self.dashboard.refresh();self.dashboard.set_running(self.auto_enabled,self.worker_thread is not None)
         g,p=self.store.unread_totals();n=g+p
         self.notification_badge.setText(str(n) if n<100 else "99+");self.notification_badge.setVisible(n>0)
         self.notification_btn.setToolTip(f"通知与预警 · {n} 条未读")
+        self._update_header_icons(n)
 
     def refresh_all(self):
         self.refresh_dashboard()
         index=self.stack.currentIndex()
         if index==2:self.alerts.refresh()
         elif index==3:self.page_manager.refresh()
+
+    def open_alert_notification(self,entry):
+        self.showNormal();self.raise_();self.activateWindow();self.switch_page(2)
+        self.alerts.focus_alert(entry or {})
 
     def schedule_refresh(self):
         if not self.paint_timer.isActive():self.paint_timer.start(450)
@@ -5232,7 +5502,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:QMessageBox.warning(self,"导入失败",str(exc));return
         self.switch_page(3);self.refresh_all()
         msg=f"新增 {result['added']} 个 · 已存在跳过 {result['skipped']} 个 · 移除 {result['removed']} 个"
-        self.dashboard.status.setText(msg);show_hint(self,msg+"\n\n名称和头像会在巡检时获取，也可选中 ID 后点击“同步名称 / 头像”。")
+        self.dashboard.status.setText(msg);show_hint(self,msg+"\n\n名称和头像会在正常巡检时自动更新。")
 
     def delete_ids(self,ids):
         if self._tasks_busy():return
@@ -5246,7 +5516,7 @@ class MainWindow(QMainWindow):
 
     def _tasks_busy(self):
         if self.worker_thread is not None or self.login_thread is not None or self._maintenance:
-            show_hint(self,"请等待巡检、资料同步或登录结束后再操作。暂停不会结束当前任务。")
+            show_hint(self,"请等待当前巡检或连接任务结束后再操作。暂停不会结束当前任务。")
             return True
         return False
 
@@ -5283,19 +5553,21 @@ class MainWindow(QMainWindow):
         try:self.settings_page.flush_pending()
         except (ValueError,OSError) as exc:
             QMessageBox.warning(self,"\u8bbe\u7f6e\u672a\u80fd\u4fdd\u5b58",str(exc));return
-        cid=self.selected_connector()
-        if not cid:
-            self.dashboard.status.setText("\u6240\u9009\u6d4f\u89c8\u5668\u672a\u8fde\u63a5\uff0c\u8bf7\u6253\u5f00\u5b89\u88c5\u63d2\u4ef6\u7684 Chrome\uff0c\u591a\u4e2a\u8fde\u63a5\u65f6\u9009\u62e9\u4e00\u4e2a")
-            if self.auto_enabled:
-                self.next_run_at=time.time()+30;self.auto_timer.start(30000)
-            else:self.show_toast("\u8bf7\u5148\u70b9\u51fb\u53f3\u4e0a\u89d2\u201c\u6d4f\u89c8\u5668\u201d\uff0c\u67e5\u770b\u81ea\u52a8\u8fde\u63a5\u7684\u6d4f\u89c8\u5668")
+        cids=self.selected_connectors(require_all=False)
+        if not cids:
+            self.dashboard.status.setText("浏览器连接未就绪，请打开已安装连接器的 Chrome")
+            if self.auto_enabled:self.stop_auto()
+            else:self.show_toast("请先确认右上角浏览器连接状态")
+            return
+        if len(pages)<len(cids):
+            self.show_toast(f"本轮只有 {len(pages)} 个任务，少于已选 {len(cids)} 个连接器，请减少连接器数量")
+            if self.auto_enabled:self.stop_auto()
             return
         self.auto_timer.stop();self.next_run_at=None;self.current_purpose=purpose
         self.active_run_id=uuid.uuid4().hex;self.store.start_run(self.active_run_id,len(pages))
         self.run_started_at=time.time();self.run_ok=0;self.run_fail=0
-        self.worker_thread=QThread(self)
-        timing=random_inspection_timing(self.settings)
-        self.worker=ConnectorCollectWorker(pages,self.connector,cid,purpose=purpose,gap_range=timing[3:])
+        self.worker_thread=QThread(self);timing=random_inspection_timing(self.settings)
+        self.worker=ConnectorCollectWorker(pages,self.connector,cids,purpose=purpose,gap_range=timing[3:])
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.started.connect(self.worker.run)
         self.worker.result.connect(self.on_collect_result);self.worker.progress.connect(self.on_progress)
@@ -5303,7 +5575,7 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self.worker.deleteLater);self.worker.finished.connect(self.worker_thread.quit)
         self.worker_thread.finished.connect(self.cleanup_worker)
         self.dashboard.paused=False;self.dashboard.set_running(self.auto_enabled,True);self.page_manager.set_busy(True)
-        self.dashboard.status.setText("\u901a\u8fc7\u6240\u9009 Chrome \u8fde\u63a5\u5668\u5f00\u59cb\u4efb\u52a1 \u00b7 "+str(len(pages))+" \u4e2a ID")
+        self.dashboard.status.setText(f"通过 {len(cids)} 个 Chrome 连接器并行开始任务 · {len(pages)} 个 ID")
         self.worker_thread.start()
 
     def on_progress(self,current,total,info):
@@ -5326,16 +5598,35 @@ class MainWindow(QMainWindow):
         self.schedule_refresh()
 
     def flush_notices(self):
-        entries=self._notice_queue;self._notice_queue=[]
-        if not entries:return
-        title="发帖超时提醒" if len(entries)==1 and entries[0]["kind"]=="post" else "主页监控预警"
-        body="\n".join(e["name"]+" · "+e["message"] for e in entries[:3])
-        if len(entries)>3:body+=f"\n另有 {len(entries)-3} 条，请查看通知列表。"
-        if self.tray.isVisible():
-            self.tray.showMessage(title,body,QSystemTrayIcon.MessageIcon.Warning,9000)
-        else:
-            self._popup=QMessageBox(QMessageBox.Icon.Warning,title,body,QMessageBox.StandardButton.Ok,self)
-            self._popup.setModal(False);self._popup.show()
+        queued=self._notice_queue;self._notice_queue=[]
+        if not queued:return
+        fresh=self.store.combined_alerts(limit=300,unread_only=True);entries=[]
+        for raw in queued:
+            match=next((row for row in fresh if row.get("kind")==raw.get("kind") and row.get("page_id")==raw.get("page_id")
+                        and (not raw.get("id") or int(row.get("id") or 0)==int(raw.get("id") or 0))),None)
+            item=dict(match or raw)
+            pid=str(item.get("page_id") or "")
+            page=self.store.page(pid) or {}
+            # Popup must use the same avatar cache as the dashboard. A queued/stale path
+            # must never override the current valid page avatar.
+            current_avatar=str(page.get("avatar_path") or "") if isinstance(page,dict) else ""
+            cached=AVATAR_DIR/(pid+".png") if pid else None
+            if current_avatar and Path(current_avatar).is_file():
+                item["avatar_path"]=current_avatar
+            elif cached is not None and cached.is_file():
+                item["avatar_path"]=str(cached)
+            elif not (item.get("avatar_path") and Path(str(item.get("avatar_path"))).is_file()):
+                item["avatar_path"]=""
+            if page:
+                item["page_name"]=display_name(page)
+                item.setdefault("name",item["page_name"])
+            entries.append(item)
+        if not hasattr(self,'_monitor_alert_popups'):self._monitor_alert_popups=[]
+        self._monitor_alert_popups=[p for p in self._monitor_alert_popups if p.isVisible()]
+        popup=PersistentMonitorAlert(entries,self,len(self._monitor_alert_popups))
+        self._monitor_alert_popups.append(popup)
+        popup.finished.connect(lambda _=0,p=popup:self._monitor_alert_popups.remove(p) if p in self._monitor_alert_popups else None)
+        popup.show();popup.raise_();popup.activateWindow()
         if is_true(self.settings.value("alert_sound","1"),True):QApplication.beep()
 
     def on_collection_finished(self,ok,message):
@@ -5346,7 +5637,10 @@ class MainWindow(QMainWindow):
             stamp=now_iso();self.settings.setValue("last_inspection_at",stamp);self.settings.sync()
             self.dashboard._last_inspection_stamp=stamp
             self.dashboard.run_badge.setText("上次巡检时间："+inspection_stamp_label(stamp))
-        self.dashboard.status.setText(message);self.schedule_refresh()
+        if "连接器中断" in message and self.auto_enabled:
+            self.stop_auto();self.dashboard.status.setText(message+" · 自动巡检已暂停，请恢复浏览器连接后重新开启")
+        else:self.dashboard.status.setText(message)
+        self.schedule_refresh()
 
     def cleanup_worker(self):
         thread=self.worker_thread
@@ -5364,14 +5658,19 @@ class MainWindow(QMainWindow):
 
     def start_auto(self):
         if self.auto_enabled:return
-        if not self.selected_connector():
-            self.show_toast("\u5148\u9009\u62e9\u5df2\u8fde\u63a5\u7684\u6d4f\u89c8\u5668\uff0c\u518d\u5f00\u542f\u81ea\u52a8\u5de1\u68c0")
+        cids=self.selected_connectors(require_all=False)
+        if not cids:
+            self.show_toast("未检测到在线浏览器连接器，请先打开已安装连接器的 Chrome")
             return
         try:self.settings_page.flush_pending()
         except (ValueError,OSError) as exc:
             QMessageBox.warning(self,"设置未能保存",str(exc));return
-        if not self.store.list_pages(enabled_only=True):
+        pages=self.store.list_pages(enabled_only=True)
+        if not pages:
             self.show_toast("请先在 ID管理中选择粉丝监控或发帖监控。")
+            return
+        if len(pages)<len(cids):
+            self.show_toast(f"监控任务 {len(pages)} 个，少于已选连接器 {len(cids)} 个，请减少连接器")
             return
         self.auto_enabled=True
         # Deliberately do NOT write start_auto or change the startup checkbox.
@@ -5400,6 +5699,42 @@ class MainWindow(QMainWindow):
         self._connector_dialog.refresh();self._connector_dialog.show()
         self._connector_dialog.raise_();self._connector_dialog.activateWindow()
 
+    def connector_selection_initialized(self):
+        return is_true(self.settings.value('connector/selection_initialized',0),False)
+
+    def configured_connector_ids(self,include_offline=False):
+        rows=self.connector.clients();by_id={r['instance_id']:r for r in rows if not r.get('blocked')}
+        online=[r['instance_id'] for r in rows if r['online'] and not r.get('blocked')][:10]
+        raw=str(self.settings.value('connector/selected_ids','') or '');ids=[]
+        if raw:
+            try:
+                value=json.loads(raw);ids=[str(x) for x in value if str(x) in by_id][:10] if isinstance(value,list) else []
+            except (ValueError,TypeError):ids=[]
+        if not ids:
+            legacy=str(self.settings.value('connector/selected_id','') or '')
+            if legacy in by_id:ids=[legacy]
+        # A single online connector is always zero-configuration: use it automatically.
+        # Only when multiple connectors are online do we respect/ask for a saved selection.
+        if len(online)==1:
+            ids=[online[0]]
+        elif len(online)>1 and not self.connector_selection_initialized():
+            ids=online[:10]
+        if include_offline:return list(dict.fromkeys(ids))[:10]
+        return [cid for cid in ids if cid in online][:10]
+
+    def set_connector_selection(self,ids,initialized=True):
+        ids=list(dict.fromkeys(str(x) for x in ids if x))[:10]
+        self.settings.setValue('connector/selected_ids',json.dumps(ids,ensure_ascii=False));self.settings.setValue('connector/selection_initialized',1 if initialized else 0)
+        self.settings.remove('connector/selected_id');self.settings.remove('connector/selection_mode');self.settings.sync();self.refresh_connector_summary()
+
+    def selected_connectors(self,require_all=False):
+        configured=self.configured_connector_ids(include_offline=True);active=self.configured_connector_ids(include_offline=False)
+        if require_all and configured and len(active)!=len(configured):return []
+        return active
+
+    def selected_connector(self):
+        active=self.selected_connectors();return active[0] if active else ''
+
     def refresh_connector_summary(self):
         if self._closing:return
         if not self.connector._running and not os.environ.get('FBPM_TEST_MODE'):
@@ -5408,31 +5743,23 @@ class MainWindow(QMainWindow):
                 self._connector_last_retry=now
                 try:self.connector.start()
                 except Exception as exc:self.connector.error=str(exc)
-        rows=self.connector.clients();cid=self.selected_connector()
-        row=next((r for r in rows if r['instance_id']==cid),None)
-        if row:
-            name=row['identity'].get('profile_name') or ('Chrome '+cid[:6])
-            text='\u5df2\u8fde\u63a5\uff1a'+name+'\uff0c\u53ef\u4ee5\u5f00\u59cb\u5de1\u68c0'
-        else:
-            chosen=str(self.settings.value('connector/selected_id','') or '')
-            mode=str(self.settings.value('connector/selection_mode','') or '')
-            _,reason=choose_connected_browser(rows,chosen,mode)
-            text={'multiple':'\u68c0\u6d4b\u5230\u591a\u4e2a\u6d4f\u89c8\u5668\uff0c\u70b9\u51fb\u201c\u6d4f\u89c8\u5668\u201d\u9009\u62e9',
-                  'offline_selected':'\u4e0a\u6b21\u9009\u62e9\u7684\u6d4f\u89c8\u5668\u5df2\u79bb\u7ebf\uff0c\u7b49\u5f85\u91cd\u8fde\uff1b\u4e0d\u81ea\u52a8\u6362\u53f7',
-                  'blocked':'\u5f53\u524d\u6d4f\u89c8\u5668\u8fde\u63a5\u5df2\u505c\u7528'}.get(reason,
-                  '\u7b49\u5f85\u81ea\u52a8\u8fde\u63a5\uff1a\u8bf7\u6253\u5f00\u5b89\u88c5\u4e86\u65b0\u63d2\u4ef6\u7684 Chrome')
-        if self.connector.error:text+='\n'+self.connector.error
-        self.settings_page.connector_summary.setText(text)
-        self.connector_button.setToolTip(text)
-
-    def selected_connector(self):
-        selected=str(self.settings.value('connector/selected_id','') or '')
-        mode=str(self.settings.value('connector/selection_mode','') or '')
-        cid,reason=choose_connected_browser(self.connector.clients(),selected,mode)
-        if cid and reason=='automatic':
-            self.settings.setValue('connector/selected_id',cid)
-            self.settings.setValue('connector/selection_mode','auto');self.settings.sync()
-        return cid
+        rows=self.connector.clients();online=[r for r in rows if r['online'] and not r.get('blocked')]
+        configured=self.configured_connector_ids(include_offline=True);active=self.configured_connector_ids(include_offline=False)
+        if self.connector.error:text='浏览器连接服务异常：'+self.connector.error;state='error'
+        elif not online:text='未检测到在线浏览器连接器';state='error'
+        elif len(online)==1:
+            name=online[0]['identity'].get('profile_name') or ('Chrome '+online[0]['instance_id'][:6]);text='已自动连接：'+name;state='ok'
+        elif configured and len(active)==len(configured):text=f'已连接 {len(active)} 个浏览器，任务将并行分配';state='ok'
+        elif configured:text=f'已配置 {len(configured)} 个浏览器，其中 {len(active)} 个在线';state='warn'
+        else:text=f'检测到 {len(online)} 个浏览器，请选择使用范围';state='warn'
+        try:self.settings_page.connector_summary.setText(text)
+        except Exception:pass
+        self.connector_button.setToolTip(text+'\n点击查看浏览器连接')
+        if hasattr(self,'connector_dot'):
+            color={'ok':'#26C281','warn':'#F0A43A','error':'#E75768'}[state];self.connector_dot.setStyleSheet(f'background:{color};border:2px solid {BG};border-radius:6px;');self.connector_dot.setToolTip(text)
+        if self.auto_enabled and not active:
+            if self.worker is not None:self.worker.stop()
+            self.stop_auto();self.dashboard.status.setText('所有可用浏览器连接均已中断，自动巡检已暂停')
 
     def activate_existing_window(self):
         # Restore this window and the user's current page; do not start a task.
@@ -5695,38 +6022,47 @@ class MainWindow(QMainWindow):
         self.apply_style()
         if hasattr(self,"theme_pill"):self.theme_pill.setText("主题 · "+name)
         if hasattr(self,"dashboard"):
-            for card,color in ((self.dashboard.metric_pages,ACCENT),(self.dashboard.metric_total,CYAN),
+            for card,color in ((self.dashboard.metric_pages,ACCENT),(self.dashboard.metric_total,CYAN),(self.dashboard.metric_yesterday,AMBER),
                 (self.dashboard.metric_growth,GREEN),(self.dashboard.metric_post,AMBER),(self.dashboard.metric_alerts,RED)):
                 card.icon_label.setPixmap(ui_icon(card.kind,color).pixmap(28,28))
-            for button in self.findChildren(QPushButton):
-                kind=button.property("iconKind")
-                if kind:button.setIcon(ui_icon(kind,"#FFFFFF" if button.objectName()=="HomePill" else None))
+            self._update_header_icons(sum(self.store.unread_totals()) if hasattr(self,"store") else 0)
             if refresh:self.refresh_all()
         for avatar in self.findChildren(AvatarWidget):avatar.update()
 
 
     def apply_style(self):
         p=THEME_PRESETS.get(getattr(self,"theme_name","深海蓝"),THEME_PRESETS["深海蓝"])
-        field=p["input"];hover=p["hover"];soft=p["soft"]
+        field=p["input"];hover=p["hover"];soft=p["soft"];light=bool(p.get("light"))
+        status_ok_bg="#E4F4ED" if light else "#103D39"
+        status_ok_border="#B8DCCF" if light else "#24584E"
+        status_alert_bg="#FBE7EA" if light else "#422438"
+        status_alert_border="#E8B6BE" if light else "#613447"
+        status_warn_bg="#FBF0DD" if light else "#3B3028"
+        status_warn_border="#E5C893" if light else "#665039"
+        danger_bg="#F9E5E8" if light else "#3B2333"
+        danger_border="#E3B4BC" if light else "#603A4D"
+        table_selection="#DCE4F6" if light else "#263D63"
+        disabled_text="#A09184" if light else "#667C95"
         self.setStyleSheet(f"""
             QMainWindow, QWidget#Root, QStackedWidget#MainStack, QWidget#DashboardPage,
             QWidget#ManagerPage, QWidget#AlertsPage {{ background:{BG}; color:{TEXT}; }}
             QWidget {{ color:{TEXT}; font-size:13px; }}
             QLabel {{ background:transparent; border:0; }}
             QDialog, QMessageBox {{ background:{BG}; }}
-            QFrame#HeaderBar {{ background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #0B1A30,stop:1 {BG}); border-bottom:1px solid {BORDER}; }}
+            QFrame#HeaderBar {{ background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {SIDEBAR},stop:1 {BG}); border-bottom:1px solid {BORDER}; }}
             QLabel#BrandName {{ font-size:21px;font-weight:800;color:{TEXT}; }}
             QLabel#BrandSub {{ font-size:11px;color:{MUTED};margin-left:10px; }}
             QFrame#HeaderDivider {{ background:{BORDER}; }}
             QPushButton#TopIconButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:0; }}
-            QPushButton#HeaderAction {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:0 10px;font-size:12px; }}
+            QPushButton#HeaderAction {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:0 10px;font-size:12px;font-weight:650; }}
+            QPushButton#HeaderAction:hover {{ background:{hover};border-color:{ACCENT}; }}
             QPushButton#HeaderAction[active='true'] {{ background:{soft};border-color:{ACCENT}; }}
             QPushButton#HomePill {{ background:#4443AD;border:1px solid #8C88FA;border-radius:20px;
                 color:#FFFFFF;padding:0 10px;font-size:13px;font-weight:750; }}
             QPushButton#HomePill[active='true'] {{ background:#5A55D6;border-color:#AAA6FF; }}
             QPushButton#HomePill:hover {{ background:#655FE4; }}
             QLabel#QuickTimingLabel {{ color:{MUTED};font-size:11px; }}
-            QSpinBox#QuickTimingSpin {{ padding:4px 6px;font-size:12px; }}
+            QSpinBox#QuickTimingSpin {{ padding:4px 3px;font-size:12px;font-weight:650; }}
             QPushButton#ThemePill {{ background:{soft};border:1px solid {ACCENT};border-radius:20px;padding:0 12px;font-size:12px;font-weight:750; }}
             QPushButton#ThemePill:hover {{ background:{hover}; }}
             QProgressBar {{ border:1px solid {BORDER};border-radius:6px;background:{PANEL_2};height:18px;text-align:center; }}
@@ -5748,6 +6084,12 @@ class MainWindow(QMainWindow):
                 background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {PANEL_2},stop:0.55 {PANEL},stop:1 {PANEL});
                 border:1px solid {BORDER};border-radius:15px;
             }}
+            QFrame#MetricCard[tone='pages'] {{ border-top:2px solid {ACCENT}; }}
+            QFrame#MetricCard[tone='people'] {{ border-top:2px solid {CYAN}; }}
+            QFrame#MetricCard[tone='history'] {{ border-top:2px solid {AMBER}; }}
+            QFrame#MetricCard[tone='trend'] {{ border-top:2px solid {GREEN}; }}
+            QFrame#MetricCard[tone='clock'] {{ border-top:2px solid {AMBER}; }}
+            QFrame#MetricCard[tone='bell'] {{ border-top:2px solid {RED}; }}
             QFrame#PageCard:hover {{ border:1px solid {ACCENT}; }}
             QFrame#MonitorPanel {{ background:{PANEL};border:1px solid {BORDER};border-radius:14px; }}
             QFrame#AlertRow {{ background:transparent;border-left:2px solid {BORDER}; }}
@@ -5762,10 +6104,10 @@ class MainWindow(QMainWindow):
             QLabel#GrowthDown {{ color:{RED};font-weight:750; }}
             QLabel#GrowthSoon {{ color:{AMBER};font-weight:700; }}
             QLabel#GrowthFlat {{ color:{MUTED};font-weight:650; }}
-            QLabel#StatusBadge {{ background:#103D39;color:{GREEN};border:1px solid #24584E;border-radius:7px;
+            QLabel#StatusBadge {{ background:{status_ok_bg};color:{GREEN};border:1px solid {status_ok_border};border-radius:7px;
                 padding:3px 7px;font-size:11px;font-weight:700; }}
-            QLabel#StatusBadge[state='alert'] {{ background:#422438;color:{RED};border-color:#613447; }}
-            QLabel#StatusBadge[state='warning'] {{ background:#3B3028;color:{AMBER};border-color:#665039; }}
+            QLabel#StatusBadge[state='alert'] {{ background:{status_alert_bg};color:{RED};border-color:{status_alert_border}; }}
+            QLabel#StatusBadge[state='warning'] {{ background:{status_warn_bg};color:{AMBER};border-color:{status_warn_border}; }}
             QLabel#StatusBadge[state='off'] {{ background:{PANEL_2};color:{MUTED};border-color:{BORDER}; }}
             QLabel#DetailNumber {{ color:{TEXT};font-size:20px;font-weight:800; }}
             QLabel#PathLabel {{ color:{CYAN};font-size:12px; }}
@@ -5773,13 +6115,18 @@ class MainWindow(QMainWindow):
             QPushButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:9px;padding:8px 13px;
                 color:{TEXT};font-weight:650; }}
             QPushButton:hover {{ background:{hover};border-color:{ACCENT}; }}
-            QPushButton:disabled {{ color:#667C95;border-color:{BORDER};background:{PANEL}; }}
+            QPushButton:disabled {{ color:{disabled_text};border-color:{BORDER};background:{PANEL}; }}
             QPushButton#PrimaryButton {{ background:{ACCENT};border:1px solid {ACCENT};color:#FFFFFF; }}
             QPushButton#PrimaryButton:hover {{ border-color:#A4A0FF; }}
             QPushButton#AutoButton {{ background:{PANEL_2};border:1px solid {BORDER}; }}
             QPushButton#AutoButton[autoEnabled='true'] {{ background:{soft};border-color:{ACCENT}; }}
-            QPushButton#DangerButton {{ background:#3B2333;color:{RED};border:1px solid #603A4D; }}
+            QPushButton#DangerButton {{ background:{danger_bg};color:{RED};border:1px solid {danger_border}; }}
             QPushButton#LinkButton {{ background:transparent;border:0;color:{CYAN};padding:4px 8px;font-size:11px; }}
+            QPushButton#NoticeModeButton, QPushButton#NoticeHistoryButton {{ background:{PANEL_2};border:1px solid {BORDER};padding:7px 12px; }}
+            QPushButton#NoticeModeButton[active='true'] {{ background:{soft};border-color:{ACCENT};color:{TEXT}; }}
+            QPushButton#NoticeHistoryButton {{ color:{MUTED}; }}
+            QPushButton#NoticeHistoryButton[active='true'] {{ background:{soft};border-color:{BORDER};color:{TEXT}; }}
+            QLabel#NoticeSummary {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:9px 12px;color:{TEXT};font-weight:650; }}
             QLineEdit, QPlainTextEdit, QSpinBox, QComboBox {{
                 background:{field};border:1px solid {BORDER};border-radius:8px;
                 padding:7px 9px;color:{TEXT};selection-background-color:{ACCENT};
@@ -5787,7 +6134,7 @@ class MainWindow(QMainWindow):
             QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus {{ border-color:{ACCENT}; }}
             QComboBox QAbstractItemView {{ background:{PANEL};border:1px solid {BORDER};color:{TEXT};selection-background-color:{soft}; }}
             QCheckBox {{ spacing:8px;color:{TEXT}; }}
-            QCheckBox::indicator {{ width:17px;height:17px;border:1px solid #637D9B;border-radius:4px;background:{field}; }}
+            QCheckBox::indicator {{ width:17px;height:17px;border:1px solid {BORDER};border-radius:4px;background:{field}; }}
             QCheckBox::indicator:checked {{ background:{ACCENT};border:2px solid #ABA8FF; }}
             QScrollArea {{ background:transparent;border:0; }}
             QWidget#CardCanvas {{ background:transparent; }}
@@ -5798,7 +6145,7 @@ class MainWindow(QMainWindow):
             QScrollBar::handle:horizontal {{ background:{BORDER};border-radius:4px;min-width:25px; }}
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width:0; }}
             QTableWidget {{ background:{PANEL};alternate-background-color:{PANEL_2};border:1px solid {BORDER};
-                border-radius:10px;gridline-color:transparent;selection-background-color:#263D63;selection-color:{TEXT}; }}
+                border-radius:10px;gridline-color:transparent;selection-background-color:{table_selection};selection-color:{TEXT}; }}
             QTableWidget::item {{ border-bottom:1px solid {BORDER};padding:6px; }}
             QHeaderView::section {{ background:{PANEL_2};border:0;border-bottom:1px solid {BORDER};color:{MUTED};padding:10px 6px;font-size:12px;font-weight:700; }}
             QTableWidget#IdManagerTable {{ font-size:12px; }}
@@ -5809,6 +6156,17 @@ class MainWindow(QMainWindow):
             QMenu {{ background:{PANEL};border:1px solid {BORDER};padding:5px;color:{TEXT}; }}
             QMenu::item {{ padding:8px 18px;border-radius:5px; }}
             QMenu::item:selected {{ background:{soft}; }}
+            QLabel#ConnectorDot {{ border-radius:6px; }}
+            QFrame#MonitorAlertPopup {{ background:{PANEL};border:2px solid {AMBER};border-radius:18px; }}
+            QLabel#MonitorAlertHeadline {{ font-size:18px;font-weight:850;color:{TEXT}; }}
+            QLabel#MonitorAlertSymbol {{ background:{AMBER};color:#16110A;border-radius:17px;font-size:22px;font-weight:900; }}
+            QFrame#MonitorAlertRow {{ background:{PANEL_2};border:1px solid {BORDER};border-left:4px solid {AMBER};border-radius:12px; }}
+            QLabel#MonitorAlertName {{ font-size:15px;font-weight:850;color:{TEXT}; }}
+            QLabel#MonitorAlertEvent {{ background:{soft};border:1px solid {BORDER};border-radius:7px;padding:3px 7px;font-size:11px;font-weight:800;color:{AMBER}; }}
+            QLabel#MonitorAlertEvent[kind='growth'] {{ color:{RED};background:{danger_bg};border-color:{RED}; }}
+            QLabel#MonitorAlertEvent[kind='post'] {{ color:{AMBER};background:{soft};border-color:{AMBER}; }}
+            QLabel#MonitorAlertMessage {{ color:{TEXT};font-size:12px; }}
+            QPushButton#AlertCloseButton {{ background:transparent;border:0;font-size:21px;padding:0;color:{MUTED}; }}
             QToolTip {{ background:{PANEL_2};color:{TEXT};border:1px solid {BORDER};padding:6px; }}
             QSizeGrip {{ background:transparent; }}
         """)
