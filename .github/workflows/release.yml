@@ -1,10 +1,14 @@
 name: Build and Release / 云端打包发布
 
-# 只在 GitHub 平台构建。用户电脑不运行 PyInstaller / Inno Setup / pkgbuild。
 on:
   workflow_dispatch:
+    inputs:
+      require_signing:
+        description: "正式发布：强制要求 Windows/Apple 数字签名与 macOS 公证"
+        required: true
+        type: boolean
+        default: false
 
-# Release 需要创建 tag / Release，因此给 GITHUB_TOKEN contents:write。
 permissions:
   contents: write
 
@@ -20,40 +24,41 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
       - name: 检查必需文件并读取版本
         id: version
         shell: bash
         run: |
           set -euo pipefail
-          for f in Page_Operations_Monitor.py PageOperationsMonitor.ico README.md browser-extension/manifest.json; do
+          for f in Page_Operations_Monitor.py PageOperationsMonitor.ico PageOperationsMonitor.icns README.md browser-extension/manifest.json tools/windows_deployer.py; do
             test -f "$f" || { echo "缺少必需文件: $f"; exit 1; }
           done
           VERSION=$(python - <<'PY'
           import re
           from pathlib import Path
-          text=Path('Page_Operations_Monitor.py').read_text(encoding='utf-8-sig')
-          m=re.search(r'APP_VERSION\s*=\s*["\']v?(\d+\.\d+\.\d+)["\']', text)
+          t=Path('Page_Operations_Monitor.py').read_text(encoding='utf-8-sig')
+          m=re.search(r'APP_VERSION\s*=\s*["\']v?(\d+\.\d+\.\d+)["\']',t)
           if not m: raise SystemExit('主程序找不到 APP_VERSION')
           print(m.group(1))
           PY
           )
           EXT_VERSION=$(python - <<'PY'
           import json
-          print(json.load(open('browser-extension/manifest.json', encoding='utf-8'))['version'])
+          print(json.load(open('browser-extension/manifest.json',encoding='utf-8'))['version'])
           PY
           )
-          if [ "$VERSION" != "$EXT_VERSION" ]; then
-            echo "主程序版本 $VERSION 与插件版本 $EXT_VERSION 不一致"
-            exit 1
-          fi
+          test "$VERSION" = "$EXT_VERSION" || { echo "主程序版本 $VERSION 与插件版本 $EXT_VERSION 不一致"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "准备发布 v$VERSION"
+          echo "准备构建 v$VERSION"
 
   windows:
     name: Windows x64 云端构建
     needs: validate
     runs-on: windows-latest
+    env:
+      REQUIRE_SIGNING: ${{ inputs.require_signing }}
+      WINDOWS_CERT_PFX_B64: ${{ secrets.WINDOWS_CERT_PFX_B64 }}
+      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+      WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -61,12 +66,7 @@ jobs:
           python-version: '3.12'
       - name: 安装构建依赖
         run: python -m pip install --upgrade "pyinstaller>=6.22.0,<7" PyQt6 playwright Pillow
-      - name: 安装 Inno Setup
-        shell: powershell
-        run: |
-          choco install innosetup -y --no-progress
-
-      - name: 云端生成 Windows 安装包
+      - name: 构建 Windows 自定义部署器
         run: python tools/cloud_build.py --target windows-x64
       - uses: actions/upload-artifact@v4
         with:
@@ -76,9 +76,20 @@ jobs:
           retention-days: 7
 
   mac_arm64:
-    name: macOS Apple Silicon 云端构建
+    name: macOS Apple Silicon / arm64
     needs: validate
     runs-on: macos-15
+    env:
+      REQUIRE_SIGNING: ${{ inputs.require_signing }}
+      APPLE_APP_CERT_P12_B64: ${{ secrets.APPLE_APP_CERT_P12_B64 }}
+      APPLE_APP_CERT_PASSWORD: ${{ secrets.APPLE_APP_CERT_PASSWORD }}
+      APPLE_INSTALLER_CERT_P12_B64: ${{ secrets.APPLE_INSTALLER_CERT_P12_B64 }}
+      APPLE_INSTALLER_CERT_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERT_PASSWORD }}
+      APPLE_APP_SIGN_IDENTITY: ${{ secrets.APPLE_APP_SIGN_IDENTITY }}
+      APPLE_INSTALLER_SIGN_IDENTITY: ${{ secrets.APPLE_INSTALLER_SIGN_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -86,7 +97,7 @@ jobs:
           python-version: '3.12'
       - name: 安装构建依赖
         run: python -m pip install --upgrade "pyinstaller>=6.22.0,<7" PyQt6 playwright Pillow
-      - name: 云端生成 Apple Silicon 安装包
+      - name: 构建 macOS arm64 PKG
         run: python tools/cloud_build.py --target macos-arm64
       - uses: actions/upload-artifact@v4
         with:
@@ -96,9 +107,20 @@ jobs:
           retention-days: 7
 
   mac_x64:
-    name: macOS Intel 云端构建
+    name: macOS Intel / x64
     needs: validate
     runs-on: macos-15-intel
+    env:
+      REQUIRE_SIGNING: ${{ inputs.require_signing }}
+      APPLE_APP_CERT_P12_B64: ${{ secrets.APPLE_APP_CERT_P12_B64 }}
+      APPLE_APP_CERT_PASSWORD: ${{ secrets.APPLE_APP_CERT_PASSWORD }}
+      APPLE_INSTALLER_CERT_P12_B64: ${{ secrets.APPLE_INSTALLER_CERT_P12_B64 }}
+      APPLE_INSTALLER_CERT_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERT_PASSWORD }}
+      APPLE_APP_SIGN_IDENTITY: ${{ secrets.APPLE_APP_SIGN_IDENTITY }}
+      APPLE_INSTALLER_SIGN_IDENTITY: ${{ secrets.APPLE_INSTALLER_SIGN_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -106,7 +128,7 @@ jobs:
           python-version: '3.12'
       - name: 安装构建依赖
         run: python -m pip install --upgrade "pyinstaller>=6.22.0,<7" PyQt6 playwright Pillow
-      - name: 云端生成 Intel 安装包
+      - name: 构建 macOS x64 PKG
         run: python tools/cloud_build.py --target macos-x64
       - uses: actions/upload-artifact@v4
         with:
@@ -116,7 +138,7 @@ jobs:
           retention-days: 7
 
   release:
-    name: 合并软件 + 插件并发布 Release
+    name: 组装三个用户下载包并发布
     needs: [validate, windows, mac_arm64, mac_x64]
     runs-on: ubuntu-latest
     env:
@@ -124,55 +146,34 @@ jobs:
       VERSION: ${{ needs.validate.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
           pattern: '*'
           path: artifacts
           merge-multiple: false
-
-      - name: 组装插件、完整包和更新清单
+      - name: 组装三个最终 ZIP
         run: python tools/assemble_release.py
-
-      - name: 检查 Release 文件
+      - name: 检查最终附件数量
         shell: bash
         run: |
           set -euo pipefail
-          ls -lah final-release
-          test -f "final-release/PageOperationsMonitor-${VERSION}-windows-x64-bundle.zip"
-          test -f "final-release/PageOperationsMonitor-${VERSION}-macos-arm64-bundle.zip"
-          test -f "final-release/PageOperationsMonitor-${VERSION}-macos-x64-bundle.zip"
-          test -f "final-release/POM-Browser-Connector-${VERSION}.zip"
-          test -f "final-release/update-manifest.json"
-
-      - name: 创建或更新 GitHub Release
+          test -f "final-release/ProfessionalMonitorTool-${VERSION}-windows-x64.zip"
+          test -f "final-release/ProfessionalMonitorTool-${VERSION}-macos-arm64.zip"
+          test -f "final-release/ProfessionalMonitorTool-${VERSION}-macos-x64.zip"
+          COUNT=$(find final-release -maxdepth 1 -type f | wc -l | tr -d ' ')
+          test "$COUNT" = "3" || { echo "应该只有 3 个 Release 文件，实际 $COUNT"; exit 1; }
+      - name: 创建或更新 Release
         shell: bash
         run: |
           set -euo pipefail
           TAG="v${VERSION}"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG 已存在：更新附件和说明"
-            gh release edit "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "主页运营监控工具 v${VERSION}" \
-              --notes-file release-meta/RELEASE_NOTES.md
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "专业监控工具 v${VERSION}" --notes-file release-meta/RELEASE_NOTES.md
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | while IFS= read -r asset; do
+              [ -n "$asset" ] || continue
+              gh release delete-asset "$TAG" "$asset" --repo "$GITHUB_REPOSITORY" -y
+            done
           else
-            echo "创建 Release $TAG"
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "主页运营监控工具 v${VERSION}" \
-              --notes-file release-meta/RELEASE_NOTES.md \
-              --latest
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "专业监控工具 v${VERSION}" --notes-file release-meta/RELEASE_NOTES.md --latest
           fi
-
-          # --clobber 允许同版本重新跑工作流时覆盖附件，避免需要手动删 Release。
-          gh release upload "$TAG" final-release/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: final-release-${{ needs.validate.outputs.version }}
-          path: final-release/*
-          retention-days: 14
+          gh release upload "$TAG" final-release/*.zip --repo "$GITHUB_REPOSITORY" --clobber
