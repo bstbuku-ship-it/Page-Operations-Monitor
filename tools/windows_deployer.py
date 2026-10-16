@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import zipfile
+import stat
 from pathlib import Path
 try:
     import winreg
@@ -19,6 +20,8 @@ APP_TITLE = "专业监控工具"
 APP_VERSION = "1.5.0"
 APP_EXE = "ProfessionalMonitorTool.exe"
 PORTABLE_MARKER = "portable.mode"
+INSTALL_MARKER = ".professional-monitor-install.json"
+PRODUCT_ID = "ProfessionalMonitorTool"
 REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\ProfessionalMonitorTool"
 SHORTCUT_NAME = APP_TITLE + ".lnk"
 
@@ -36,6 +39,114 @@ def default_target() -> Path:
 def deployment_mode(target: Path) -> str:
     drive = target.resolve().drive.upper() if target.exists() else Path(os.path.abspath(str(target))).drive.upper()
     return "standard" if drive == "C:" else "portable"
+
+
+def _resolved(target: Path) -> Path:
+    return Path(os.path.abspath(str(target))).resolve(strict=False)
+
+
+def _is_reparse(path: Path) -> bool:
+    try:
+        st = path.lstat()
+        attrs = getattr(st, "st_file_attributes", 0)
+        return bool(attrs & 0x400) or path.is_symlink()
+    except OSError:
+        return False
+
+
+def _protected_targets() -> set[Path]:
+    values = [Path.home()]
+    for key in ("SystemRoot","WINDIR","ProgramFiles","ProgramFiles(x86)","USERPROFILE","APPDATA","LOCALAPPDATA"):
+        value = os.environ.get(key)
+        if value:
+            values.append(Path(value))
+    for drive in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        values.append(Path(drive + ":\\"))
+    out=set()
+    for p in values:
+        try:out.add(_resolved(p))
+        except OSError:pass
+    return out
+
+
+def validate_target(target: Path) -> Path:
+    raw=Path(os.path.abspath(str(target)))
+    if raw.exists() and _is_reparse(raw):
+        raise RuntimeError("部署目录不能是符号链接、目录联接或其他重解析点。")
+    if raw.parent.exists() and _is_reparse(raw.parent):
+        raise RuntimeError("部署目录的上级目录不能是重解析点。")
+    target=_resolved(raw)
+    if target in _protected_targets():
+        raise RuntimeError("为防止误删系统或用户目录，请选择/新建一个专用的“专业监控工具”文件夹。")
+    return target
+
+
+def _registry_matches_target(target: Path) -> bool:
+    if winreg is None:
+        return False
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_READ) as key:
+            existing = winreg.QueryValueEx(key, "InstallLocation")[0]
+        return _resolved(Path(existing)) == _resolved(target)
+    except (OSError, ValueError):
+        return False
+
+
+def read_install_marker(target: Path) -> dict | None:
+    marker=target/INSTALL_MARKER
+    try:
+        if not marker.is_file() or marker.is_symlink() or marker.stat().st_size>4096:
+            return None
+        obj=json.loads(marker.read_text("utf-8"))
+        if not isinstance(obj,dict) or obj.get("product")!=PRODUCT_ID:
+            return None
+        if obj.get("mode") not in ("standard","portable"):
+            return None
+        if _resolved(Path(str(obj.get("path") or ""))) != _resolved(target):
+            return None
+        return obj
+    except (OSError,ValueError,TypeError,json.JSONDecodeError):
+        return None
+
+
+def write_install_marker(target: Path, mode: str) -> None:
+    marker=target/INSTALL_MARKER
+    temp=target/(INSTALL_MARKER+".tmp")
+    payload={"schema":1,"product":PRODUCT_ID,"mode":mode,"version":APP_VERSION,"path":str(_resolved(target))}
+    temp.write_text(json.dumps(payload,ensure_ascii=False,separators=(",",":")),encoding="utf-8")
+    os.replace(temp,marker)
+
+
+def owned_install(target: Path, mode: str | None = None) -> bool:
+    target=validate_target(target)
+    marker=read_install_marker(target)
+    if marker and (mode is None or marker.get("mode")==mode):
+        # Standard installs are registered in HKCU; require that second signal
+        # so a forged marker file alone cannot authorize destructive update/uninstall.
+        if marker.get("mode")=="standard":
+            return _registry_matches_target(target)
+        return True
+    if not (target/APP_EXE).is_file():
+        return False
+    legacy_portable=(target/PORTABLE_MARKER).is_file()
+    if mode=="portable":
+        return legacy_portable
+    if mode=="standard":
+        return (not legacy_portable) and _registry_matches_target(target)
+    return legacy_portable or _registry_matches_target(target)
+
+
+def ensure_safe_deploy_target(target: Path, mode: str, updating: bool) -> Path:
+    target=validate_target(target)
+    if target.exists():
+        entries=list(target.iterdir())
+        if entries:
+            if updating:
+                if not owned_install(target,mode):
+                    raise RuntimeError("更新目标不是本工具已登记的安装目录，已停止，避免误删其他文件。")
+            elif not owned_install(target):
+                raise RuntimeError("所选目录不是空目录，也不是已有的专业监控工具目录。请新建空文件夹后再部署。")
+    return target
 
 
 def ps_quote(value: str) -> str:
@@ -125,8 +236,9 @@ def remove_uninstall_registry_if_target(target: Path) -> None:
 
 
 def clear_program_files(target: Path, portable: bool) -> None:
+    target=validate_target(target)
     target.mkdir(parents=True, exist_ok=True)
-    keep = {"data", PORTABLE_MARKER} if portable else set()
+    keep = {"data", PORTABLE_MARKER, INSTALL_MARKER} if portable else {INSTALL_MARKER}
     current = Path(sys.executable).resolve()
     for child in list(target.iterdir()):
         if child.name in keep:
@@ -137,7 +249,13 @@ def clear_program_files(target: Path, portable: bool) -> None:
         except OSError:
             pass
         try:
-            if child.is_dir() and not child.is_symlink():
+            if _is_reparse(child):
+                # Never traverse a junction/reparse point inside the install tree.
+                if child.is_dir() and not child.is_symlink():
+                    os.rmdir(child)
+                else:
+                    child.unlink(missing_ok=True)
+            elif child.is_dir():
                 shutil.rmtree(child)
             else:
                 child.unlink(missing_ok=True)
@@ -147,43 +265,66 @@ def clear_program_files(target: Path, portable: bool) -> None:
 
 
 def extract_payload(target: Path) -> None:
+    target=validate_target(target)
     payload = resource_path("payload.zip")
     if not payload.is_file():
         raise RuntimeError("部署器内部缺少应用文件，请重新下载。")
+    root=target.resolve(strict=False)
+    total=0;files=0
     with zipfile.ZipFile(payload, "r") as zf:
         for info in zf.infolist():
             if info.is_dir():
                 continue
+            files+=1;total+=int(info.file_size)
+            if files>20000 or total>2*1024*1024*1024 or info.file_size>1024*1024*1024:
+                raise RuntimeError("部署包文件数量或大小异常，已停止。")
+            mode=(info.external_attr>>16)&0o170000
+            if mode==stat.S_IFLNK:
+                raise RuntimeError("部署包包含符号链接，已停止。")
             rel = Path(info.filename.replace("\\", "/"))
-            if rel.is_absolute() or ".." in rel.parts:
+            if rel.is_absolute() or ".." in rel.parts or not rel.parts:
                 raise RuntimeError("部署包路径异常，已停止。")
-            out = target / rel
+            if rel.parts[0] in ("data",PORTABLE_MARKER,INSTALL_MARKER):
+                raise RuntimeError("部署包试图覆盖用户数据或安装标记，已停止。")
+            out=(target/rel).resolve(strict=False)
+            try:
+                if os.path.commonpath([str(root),str(out)]) != str(root):
+                    raise RuntimeError("部署包路径越界，已停止。")
+            except ValueError:
+                raise RuntimeError("部署包路径越界，已停止。")
             out.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(info, "r") as src, out.open("wb") as dst:
                 shutil.copyfileobj(src, dst, 1024 * 1024)
 
 
-def deploy(target: Path, *, force_mode: str | None = None) -> str:
-    target = Path(os.path.abspath(str(target)))
+def deploy(target: Path, *, force_mode: str | None = None, updating: bool = False) -> str:
+    target = validate_target(target)
     mode = force_mode or deployment_mode(target)
+    if mode not in ("standard","portable"):
+        raise RuntimeError("部署模式无效")
     portable = mode == "portable"
+    target=ensure_safe_deploy_target(target,mode,updating)
     target.mkdir(parents=True, exist_ok=True)
     clear_program_files(target, portable)
     extract_payload(target)
     marker = target / PORTABLE_MARKER
     if portable:
         marker.write_text(json.dumps({"mode":"portable","version":APP_VERSION}, ensure_ascii=False), encoding="utf-8")
+        remove_uninstall_registry_if_target(target)
     else:
         marker.unlink(missing_ok=True)
         uninstaller = target / "卸载专业监控工具.exe"
         shutil.copy2(Path(sys.executable), uninstaller)
         write_uninstall_registry(target, uninstaller)
+    write_install_marker(target,mode)
     create_shortcut(target)
     return mode
 
 
 def uninstall(target: Path, silent: bool) -> int:
-    target = Path(os.path.abspath(str(target)))
+    target = validate_target(target)
+    if not owned_install(target,"standard"):
+        raise RuntimeError("卸载目标不是本工具已登记的标准安装目录，已停止。")
     if not silent:
         import tkinter as tk
         from tkinter import messagebox
@@ -198,9 +339,12 @@ def uninstall(target: Path, silent: bool) -> int:
 
 
 def silent_update(target: Path) -> int:
-    target = Path(os.path.abspath(str(target)))
-    mode = "portable" if (target / PORTABLE_MARKER).is_file() else "standard"
-    deploy(target, force_mode=mode)
+    target = validate_target(target)
+    marker=read_install_marker(target)
+    mode=(marker or {}).get("mode") or ("portable" if (target / PORTABLE_MARKER).is_file() else "standard")
+    if not owned_install(target,mode):
+        raise RuntimeError("更新目标不是本工具已有安装目录，已停止。")
+    deploy(target, force_mode=mode, updating=True)
     return 0
 
 
