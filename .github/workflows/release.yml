@@ -10,7 +10,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in Page_Operations_Monitor.py PageOperationsMonitor.ico PageOperationsMonitor.icns README.md browser-extension/manifest.json tools/windows_deployer.py; do
+          for f in Page_Operations_Monitor.py PageOperationsMonitor.ico PageOperationsMonitor.icns README.md tools/windows_deployer.py; do
             test -f "$f" || { echo "缺少必需文件: $f"; exit 1; }
           done
           VERSION=$(python - <<'PY'
@@ -41,12 +41,6 @@ jobs:
           print(m.group(1))
           PY
           )
-          EXT_VERSION=$(python - <<'PY'
-          import json
-          print(json.load(open('browser-extension/manifest.json',encoding='utf-8'))['version'])
-          PY
-          )
-          test "$VERSION" = "$EXT_VERSION" || { echo "主程序版本 $VERSION 与插件版本 $EXT_VERSION 不一致"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "准备构建 v$VERSION"
 
@@ -65,7 +59,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: 安装构建依赖
-        run: python -m pip install --upgrade "pyinstaller>=6.22.0,<7" PyQt6 playwright Pillow
+        run: python -m pip install --upgrade "setuptools==84.0.0" "pyinstaller==6.22.3" "pyinstaller-hooks-contrib==2026.8" "PyQt6==6.11.0" "PyQt6-Qt6==6.11.2" "PyQt6-sip==13.13.0" "playwright==1.64.0" "pyee==14.0.0" "greenlet==3.5.6" "Pillow==12.3.0"
       - name: 构建 Windows 自定义部署器
         run: python tools/cloud_build.py --target windows-x64
       - uses: actions/upload-artifact@v4
@@ -96,7 +90,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: 安装构建依赖
-        run: python -m pip install --upgrade "pyinstaller>=6.22.0,<7" PyQt6 playwright Pillow
+        run: python -m pip install --upgrade "setuptools==84.0.0" "pyinstaller==6.22.3" "pyinstaller-hooks-contrib==2026.8" "PyQt6==6.11.0" "PyQt6-Qt6==6.11.2" "PyQt6-sip==13.13.0" "playwright==1.64.0" "pyee==14.0.0" "greenlet==3.5.6" "Pillow==12.3.0"
       - name: 构建 macOS arm64 PKG
         run: python tools/cloud_build.py --target macos-arm64
       - uses: actions/upload-artifact@v4
@@ -127,7 +121,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: 安装构建依赖
-        run: python -m pip install --upgrade "pyinstaller>=6.22.0,<7" PyQt6 playwright Pillow
+        run: python -m pip install --upgrade "setuptools==84.0.0" "pyinstaller==6.22.3" "pyinstaller-hooks-contrib==2026.8" "PyQt6==6.11.0" "PyQt6-Qt6==6.11.2" "PyQt6-sip==13.13.0" "playwright==1.64.0" "pyee==14.0.0" "greenlet==3.5.6" "Pillow==12.3.0"
       - name: 构建 macOS x64 PKG
         run: python tools/cloud_build.py --target macos-x64
       - uses: actions/upload-artifact@v4
@@ -139,6 +133,8 @@ jobs:
 
   release:
     name: 组装三个用户下载包并发布
+    permissions:
+      contents: write
     needs: [validate, windows, mac_arm64, mac_x64]
     runs-on: ubuntu-latest
     env:
