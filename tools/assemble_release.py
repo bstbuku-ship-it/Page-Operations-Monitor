@@ -2,27 +2,35 @@
 from __future__ import annotations
 import re, shutil, zipfile
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];SOURCE=ROOT/'Page_Operations_Monitor.py';README=ROOT/'README.md';EXT=ROOT/'browser-extension';ART=ROOT/'artifacts';OUT=ROOT/'final-release';META=ROOT/'release-meta'
+ROOT=Path(__file__).resolve().parents[1]
+SOURCE=ROOT/'Page_Operations_Monitor.py'
+README=ROOT/'README.md'
+ART=ROOT/'artifacts'
+OUT=ROOT/'final-release'
+META=ROOT/'release-meta'
 TITLE='专业监控工具'
+
 def version():
-    t=SOURCE.read_text(encoding='utf-8-sig');m=re.search(r'APP_VERSION\s*=\s*["\']v?(\d+\.\d+\.\d+)["\']',t)
+    t=SOURCE.read_text(encoding='utf-8-sig')
+    m=re.search(r'APP_VERSION\s*=\s*["\']v?(\d+\.\d+\.\d+)["\']',t)
     if not m:raise RuntimeError('主程序找不到 APP_VERSION')
     return m.group(1)
+
 def locate(name):
     m=[p for p in ART.rglob(name) if p.is_file()]
     if len(m)!=1:raise RuntimeError(f'无法唯一找到 {name}: {m}')
     return m[0]
-def add_plugin(zf):
-    for p in sorted(EXT.rglob('*')):
-        if p.is_file():zf.write(p,(Path('浏览器插件')/p.relative_to(EXT)).as_posix())
+
 def bundle(path,installer):
     with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as zf:
-        zf.write(installer,installer.name);add_plugin(zf)
+        zf.write(installer,installer.name)
+
 def notes(ver):
     t=README.read_text(encoding='utf-8-sig') if README.exists() else ''
     m=re.search(rf'(?ms)^##\s+v?{re.escape(ver)}\s*$\n(.*?)(?=^##\s+|\Z)',t)
     body=m.group(1).strip() if m else '本版本更新详见项目说明。'
-    return f'# {TITLE} v{ver}\n\n{body}\n\n下载对应系统 ZIP；每个 ZIP 只包含部署/安装文件和浏览器插件。\n'
+    return f'# {TITLE} v{ver}\n\n{body}\n\n下载对应系统 ZIP；连接器已内置在软件中，可从“浏览器连接”窗口导出。\n'
+
 def main():
     ver=version();OUT.mkdir(parents=True,exist_ok=True);META.mkdir(parents=True,exist_ok=True)
     for p in OUT.iterdir():
