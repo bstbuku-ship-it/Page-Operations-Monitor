@@ -15,7 +15,11 @@ def run(args,cwd=None,secret_values=()):
         for s in secret_values:
             if s:masked=masked.replace(s,'***')
         shown.append(masked)
-    print('\n>',' '.join(shown),flush=True);subprocess.run(args,cwd=cwd or ROOT,check=True)
+    print('\n>',' '.join(shown),flush=True)
+    try:
+        subprocess.run(args,cwd=cwd or ROOT,check=True)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"构建命令失败（退出码 {exc.returncode}）：{' '.join(shown)}") from None
 def version():
     t=SOURCE.read_text(encoding='utf-8-sig');m=re.search(r'APP_VERSION\s*=\s*["\']v?(\d+\.\d+\.\d+)["\']',t)
     if not m:raise RuntimeError('主程序找不到 APP_VERSION')
@@ -33,7 +37,12 @@ def decode_secret(env_name,target):
     if not data:return None
     try:raw=base64.b64decode(data,validate=True)
     except Exception as e:raise RuntimeError(f'{env_name} 不是有效 Base64') from e
-    target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw);return target
+    target.parent.mkdir(parents=True,exist_ok=True)
+    target.write_bytes(raw)
+    if os.name!='nt':
+        try:target.chmod(0o600)
+        except OSError:pass
+    return target
 
 def find_signtool():
     direct=shutil.which('signtool.exe') or shutil.which('signtool')
@@ -75,19 +84,25 @@ def zip_payload(app_dir,payload):
             if p.is_file():zf.write(p,p.relative_to(app_dir).as_posix())
 def build_windows(ver):
     if not ICON_WIN.exists() or not DEPLOYER.exists():raise RuntimeError('缺少 Windows 图标或部署器源码')
-    material=windows_material();thumb=pfx_thumbprint(*material) if material else ''
-    patch_update_identity(win_thumb=thumb)
-    run(common(ICON_WIN)+[str(SOURCE)])
-    app_dir=DIST/APP_ID;exe=app_dir/(APP_ID+'.exe')
-    if not exe.exists():raise RuntimeError('主程序 EXE 未生成')
-    sign_windows(exe,material)
-    payload=BUILD/'payload.zip';zip_payload(app_dir,payload)
-    name=f'ProfessionalMonitorTool-{ver}-windows-x64-deployer'
-    run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--windowed','--onefile','--name',name,'--workpath',str(BUILD/'deployer-work'),'--distpath',str(OUT),'--specpath',str(BUILD/'deployer-spec'),'--icon',str(ICON_WIN),'--add-data',str(payload)+os.pathsep+'.','--add-data',str(ICON_WIN)+os.pathsep+'.',str(DEPLOYER)])
-    result=OUT/(name+'.exe')
-    if not result.exists():raise RuntimeError('Windows 自定义部署器未生成')
-    sign_windows(result,material)
-    return result
+    material=windows_material()
+    try:
+        thumb=pfx_thumbprint(*material) if material else ''
+        patch_update_identity(win_thumb=thumb)
+        run(common(ICON_WIN)+[str(SOURCE)])
+        app_dir=DIST/APP_ID;exe=app_dir/(APP_ID+'.exe')
+        if not exe.exists():raise RuntimeError('主程序 EXE 未生成')
+        sign_windows(exe,material)
+        payload=BUILD/'payload.zip';zip_payload(app_dir,payload)
+        name=f'ProfessionalMonitorTool-{ver}-windows-x64-deployer'
+        run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--windowed','--onefile','--name',name,'--workpath',str(BUILD/'deployer-work'),'--distpath',str(OUT),'--specpath',str(BUILD/'deployer-spec'),'--icon',str(ICON_WIN),'--add-data',str(payload)+os.pathsep+'.','--add-data',str(ICON_WIN)+os.pathsep+'.',str(DEPLOYER)])
+        result=OUT/(name+'.exe')
+        if not result.exists():raise RuntimeError('Windows 自定义部署器未生成')
+        sign_windows(result,material)
+        return result
+    finally:
+        if material:
+            try:material[0].unlink(missing_ok=True)
+            except OSError:pass
 
 def mac_config():
     names=('APPLE_APP_CERT_P12_B64','APPLE_APP_CERT_PASSWORD','APPLE_INSTALLER_CERT_P12_B64','APPLE_INSTALLER_CERT_PASSWORD','APPLE_APP_SIGN_IDENTITY','APPLE_INSTALLER_SIGN_IDENTITY')
@@ -129,6 +144,7 @@ def build_mac(ver,arch):
         return result
     finally:
         if key:subprocess.run(['security','delete-keychain',str(key)],check=False,capture_output=True)
+        shutil.rmtree(BUILD/'signing',ignore_errors=True)
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--target',required=True,choices=['windows-x64','macos-arm64','macos-x64']);a=ap.parse_args();ver=version();clean();print('APP_VERSION='+ver);print('RequireSigning='+str(require_signing()))
     if a.target=='windows-x64':
