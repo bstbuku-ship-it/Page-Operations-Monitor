@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-"""Page Operations Monitor 1.4.0 -- automatic multi-Chrome Connector edition.
+﻿# -*- coding: utf-8 -*-
+"""Page Operations Monitor 1.5.0 -- automatic multi-Chrome Connector edition.
 Run .py / .pyw; install PyQt6 Pillow (no connector network dependency).
 Unpack extension/ in Chrome. It connects automatically. Select only when several browsers are online.
 No remote-debugging switch, no cookie export, no unattended launch of the old default browser.
@@ -17,11 +17,12 @@ import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import parse_qs, urlsplit
 import hashlib
 import html
 import json
+import zipfile
 import shutil
 import subprocess
 import sys
@@ -39,9 +40,9 @@ import ssl
 import base64
 import shlex
 
-APP_TITLE = "主页运营监控工具"
-APP_VERSION = "1.4.0"
-APP_BUILD = "multi-connector-notification-ui-20261015"
+APP_TITLE = "专业监控工具"
+APP_VERSION = "1.5.0"
+APP_BUILD = "professional-portable-deployer-ui-v150-20261016"
 DEFAULT_INTERVAL_MINUTES = 120
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -66,10 +67,24 @@ def ensure_private_directory(path: Path) -> Path:
     return path
 
 
+def portable_install_root() -> Path | None:
+    """Application directory for explicit green/portable deployment only."""
+    if not getattr(sys, "frozen", False):
+        return None
+    try:
+        root = Path(sys.executable).resolve().parent
+        return root if (root / "portable.mode").is_file() else None
+    except OSError:
+        return None
+
+
 def app_data_dir() -> Path:
     override = os.environ.get("FBPM_DATA_DIR", "").strip()
     if override:
         return ensure_private_directory(Path(override).expanduser())
+    portable = portable_install_root()
+    if portable is not None:
+        return ensure_private_directory(portable / "data")
     if os.name == "nt":
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "FBGrowthRadar"
     else:
@@ -355,13 +370,14 @@ GENERIC_UI_NAMES = {
     "facebook - log in or sign up", "facebook – log in or sign up", "facebook - 登录或注册", "facebook – 登录或注册",
     "全部", "所有", "全部内容", "查看全部", "显示全部", "全部帖子", "全部动态", "all", "all posts",
     "see all", "show all", "overview", "timeline", "精选", "筛选", "排序", "最近", "最相关", "热门",
+    "查看所有照片", "查看全部照片", "所有照片", "see all photos", "view all photos", "all photos",
     "posts by", "more", "更多内容", "管理帖子", "筛选条件",
 }
 
 BAD_NAME_FRAGMENTS = [
     "followers", "follower", "粉丝", "pengikut", "seguidores", "abonn", "following", "likes", "people like this",
     "people follow this", "登录", "注册", "log in", "sign up", "notification", "通知中心", "详细信息", "个人资料详细信息",
-    "公开详情", "page details", "profile details",
+    "公开详情", "page details", "profile details", "查看所有照片", "查看全部照片", "see all photos", "view all photos",
 ]
 
 # Facebook 的页头区域同时会出现“关注 360 人 / 关注 0 人 / 1 人关注”等统计或操作文字。
@@ -1552,6 +1568,14 @@ class Store:
             c.execute("UPDATE alerts SET acknowledged=1")
             c.execute("UPDATE post_alerts SET acknowledged=1")
 
+    def acknowledge_notification(self,kind,alert_id):
+        table="post_alerts" if str(kind)=="post" else "alerts" if str(kind)=="growth" else ""
+        try:alert_id=int(alert_id)
+        except (TypeError,ValueError):return False
+        if not table or alert_id<=0:return False
+        with self.lock,self._connect() as c:
+            return bool(c.execute(f"UPDATE {table} SET acknowledged=1 WHERE id=? AND acknowledged=0",(alert_id,)).rowcount)
+
 
     def export_manager_csv(self,path):
         cols=["page_id","page_name","custom_name","monitor_growth","monitor_posts","post_limit_hours",
@@ -1814,7 +1838,7 @@ class BrowserCollector:
     def login_interactive(self):
         """Only an explicit login action may request a visible browser."""
         if not self.show_browser:
-            raise RuntimeError("后台巡检不会弹出登录窗口；请从设置中心打开默认专用浏览器登录。")
+            raise RuntimeError("后台巡检不会弹出登录窗口；请从设置打开默认专用浏览器登录。")
         if self.home_page is None or self.home_page.is_closed():
             self.ensure_home()
         self.home_page.bring_to_front()
@@ -2231,46 +2255,23 @@ def select_release_asset(release,manifest=None,system=None,machine=None,frozen=N
     assets=release.get("assets") or []
     if not isinstance(assets,list):raise UpdateError("版本资产列表无效")
     assets={str(a.get("name")):a for a in assets if isinstance(a,dict) and a.get("state","uploaded")=="uploaded"}
-    item=None;asset=None
-    if manifest:
-        if manifest.get("schema")!=1 or release_version(manifest.get("version",""))!=release_version(release.get("tag_name","")):
-            raise UpdateError("更新清单版本与 Release 不一致")
-        choices=manifest.get("platforms")
-        if not isinstance(choices,dict):raise UpdateError("更新清单缺少 platforms")
-        lookup=[key] if frozen else ["source",key]
-        for k in lookup:
-            if k and isinstance(choices.get(k),dict):
-                item=choices[k];asset=assets.get(str(item.get("asset") or ""));break
-        if item and not asset:raise UpdateError("清单指定的安装包尚未上传到 Release")
-    else:
-        # Exact, documented names only; do not accidentally download an OS-mismatched binary.
-        version=str(release["tag_name"]).lstrip("vV")
-        candidates=[]
-        if not frozen:candidates.append((f"PageOperationsMonitor-{version}-source.zip","source"))
-        if key.startswith("windows-"):
-            candidates += [(f"PageOperationsMonitor-{version}-{key}-setup.exe","inno"),
-                           (f"PageOperationsMonitor-{version}-{key}.msi","msi")]
-        if key.startswith("macos-"):candidates.append((f"PageOperationsMonitor-{version}-{key}.pkg","pkg"))
-        for filename,kind in candidates:
-            if filename in assets:asset=assets[filename];item={"installer":kind};break
+    version=str(release.get("tag_name") or "").lstrip("vV")
+    names={
+        "windows-x64":f"ProfessionalMonitorTool-{version}-windows-x64.zip",
+        "windows-arm64":f"ProfessionalMonitorTool-{version}-windows-arm64.zip",
+        "macos-arm64":f"ProfessionalMonitorTool-{version}-macos-arm64.zip",
+        "macos-x64":f"ProfessionalMonitorTool-{version}-macos-x64.zip",
+    }
+    name=names.get(key);asset=assets.get(name) if name else None
     if not asset:return None
-    name=str(asset["name"])
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,180}\.(?:exe|msi|pkg|zip|dmg)",name):
-        raise UpdateError("不安全的更新文件名")
     url=str(asset.get("browser_download_url") or "")
-    if not _trusted_update_url(url,asset=True):raise UpdateError("安装包不属于指定仓库的 Release")
+    if not _trusted_update_url(url,asset=True):raise UpdateError("更新包不属于指定仓库的 Release")
     try:size=int(asset.get("size",0))
     except (ValueError,TypeError):raise UpdateError("更新包大小无效")
-    if not 0<size<=MAX_UPDATE_BYTES:raise UpdateError("安装包大小超出允许范围")
-    installer=str((item or {}).get("installer") or "")
-    allowed={"inno":".exe","msi":".msi","pkg":".pkg","source":".zip","manual-dmg":".dmg"}
-    if allowed.get(installer)!=Path(name).suffix.lower():raise UpdateError("安装类型与文件扩展名不一致")
-    if frozen and not ((key.startswith("windows-") and installer in ("inno","msi")) or
-                       (key.startswith("macos-") and installer in ("pkg","manual-dmg"))):
-        raise UpdateError("安装包与当前系统不匹配")
-    sha=_asset_digest(asset,item)
-    return {"name":name,"url":url,"size":size,"sha256":sha,"installer":installer,"platform":key,
-            "version":str(release["tag_name"]).lstrip("vV"),"source_mode":not frozen}
+    if not 0<size<=MAX_UPDATE_BYTES:raise UpdateError("更新包大小超出允许范围")
+    sha=_asset_digest(asset,None)
+    return {"name":name,"url":url,"size":size,"sha256":sha,"installer":"platform-bundle","platform":key,
+            "version":version,"source_mode":not frozen}
 
 def query_latest_release(open_fn=None,system=None,machine=None,frozen=None):
     try:
@@ -2362,22 +2363,59 @@ def validate_staged_update(plan,path,updates_dir):
     return path.resolve()
 
 def signed_install_available(plan):
-    if not getattr(sys,"frozen",False):return False,"当前是 Python 源码运行方式，不自动覆盖脚本；下载后请按说明手动替换，或使用安装版。"
-    if sys.platform=="win32" and plan.get("installer") in ("inno","msi"):
+    if not getattr(sys,"frozen",False):return False,"当前是 Python 源码运行方式，不自动覆盖脚本；下载当前系统更新包后请手动运行其中的部署文件。"
+    installer=str(plan.get("installer") or "")
+    platform_key=str(plan.get("platform") or "")
+    if sys.platform=="win32" and installer in ("inno","msi","deployer","platform-bundle") and platform_key.startswith("windows-"):
         if not re.fullmatch(r"[0-9A-Fa-f]{40,64}",UPDATE_WINDOWS_PUBLISHER_THUMBPRINT):
             return False,"安装版尚未配置 Windows 发布者签名指纹，不能自动执行安装。"
         return True,""
-    if sys.platform=="darwin" and plan.get("installer")=="pkg":
+    if sys.platform=="darwin" and installer in ("pkg","platform-bundle") and platform_key.startswith("macos-"):
         if not re.fullmatch(r"[A-Z0-9]{10}",UPDATE_MACOS_TEAM_ID):
             return False,"安装版尚未配置 Apple Developer Team ID，不能自动执行安装。"
         return True,""
     return False,"当前平台或包格式不支持自动安装；可打开下载目录手动安装。"
 
+def _extract_platform_bundle_installer(plan,path,updates_dir):
+    """Extract only the installer/deployer for this running platform."""
+    path=validate_staged_update(plan,path,updates_dir)
+    key=str(plan.get("platform") or "");version=str(plan.get("version") or "")
+    if key.startswith("windows-"):
+        expected=f"ProfessionalMonitorTool-{version}-{key}-deployer.exe";kind="deployer"
+    elif key.startswith("macos-"):
+        expected=f"ProfessionalMonitorTool-{version}-{key}.pkg";kind="pkg"
+    else:raise UpdateError("更新包与当前系统不匹配")
+    try:
+        with zipfile.ZipFile(path,"r") as zf:
+            matches=[i for i in zf.infolist() if (not i.is_dir()) and PurePosixPath(i.filename.replace("\\","/")).name==expected]
+            if len(matches)!=1:raise UpdateError("更新包中找不到唯一的当前系统部署文件")
+            info=matches[0]
+            if info.file_size<=0 or info.file_size>MAX_UPDATE_BYTES:raise UpdateError("更新包内部署文件大小异常")
+            folder=ensure_private_directory(Path(updates_dir)/"extracted"/version);target=folder/expected;temp=folder/(expected+".part")
+            h=hashlib.sha256();written=0
+            with zf.open(info,"r") as src,temp.open("wb") as dst:
+                while True:
+                    block=src.read(128*1024)
+                    if not block:break
+                    written+=len(block)
+                    if written>info.file_size:raise UpdateError("解压后的部署文件长度异常")
+                    dst.write(block);h.update(block)
+                dst.flush();os.fsync(dst.fileno())
+            if written!=info.file_size:raise UpdateError("部署文件解压不完整")
+            os.replace(temp,target)
+    except zipfile.BadZipFile as exc:raise UpdateError("下载的更新包不是有效 ZIP") from exc
+    return {"name":expected,"size":target.stat().st_size,"sha256":h.hexdigest(),"installer":kind,
+            "platform":key,"version":version,"source_mode":False},target
+
+
 def prepare_install_helper(plan,path,updates_dir):
     """Static OS helper: wait for this app to exit, recheck hash/signature, install, relaunch.
     Called ONLY after an explicit user confirmation. It never disables OS security checks.
     """
-    path=validate_staged_update(plan,path,updates_dir)
+    if str(plan.get("installer") or "")=="platform-bundle":
+        plan,path=_extract_platform_bundle_installer(plan,path,updates_dir)
+    else:
+        path=validate_staged_update(plan,path,updates_dir)
     allowed,reason=signed_install_available(plan)
     if not allowed:raise UpdateError(reason)
     folder=ensure_private_directory(Path(updates_dir)/"helper")
@@ -2386,7 +2424,8 @@ def prepare_install_helper(plan,path,updates_dir):
     job={"pid":os.getpid(),"path":str(path),"sha256":plan["sha256"],
          "installer":plan["installer"],"result":str(result),
          "thumbprint":UPDATE_WINDOWS_PUBLISHER_THUMBPRINT,"team":UPDATE_MACOS_TEAM_ID,
-         "relaunch":str(Path(sys.executable).resolve()),"version":plan["version"]}
+         "relaunch":str(Path(sys.executable).resolve()),"target_dir":str(Path(sys.executable).resolve().parent),
+         "version":plan["version"]}
     if sys.platform=="win32":
         script=folder/"apply-update.ps1"
         script.write_text(WINDOWS_UPDATE_HELPER,encoding="utf-8-sig")
@@ -2395,7 +2434,6 @@ def prepare_install_helper(plan,path,updates_dir):
         return [str(powershell),"-NoProfile","-NonInteractive","-File",str(script),"-PlanPath",str(jobfile)]
     bundle=next((p for p in Path(sys.executable).resolve().parents if p.suffix==".app"),None)
     if bundle is None:raise UpdateError("找不到当前 macOS 应用包，不能自动重启")
-    # Static shell commands; all paths shell-quoted, then AppleScript-quoted.
     def aq(value):return json.dumps(str(value),ensure_ascii=False)
     sig=("/usr/sbin/pkgutil --check-signature "+shlex.quote(str(path))+
          " && /usr/sbin/spctl --assess --type install --verbose=2 "+shlex.quote(str(path)))
@@ -2408,15 +2446,19 @@ def prepare_install_helper(plan,path,updates_dir):
     code="\n".join([
         "try","  do shell script "+aq(wait),
         "  set digestResult to do shell script "+aq(sha),
-        "  if digestResult does not start with "+aq(plan["sha256"])+' then error "Update hash mismatch"',
+        "  if digestResult does not contain "+aq(plan["sha256"])+" then error \"SHA mismatch\"",
         "  set signatureResult to do shell script "+aq(sig),
         "  if signatureResult does not contain "+aq("("+UPDATE_MACOS_TEAM_ID+")")+' then error "Publisher mismatch"',
         "  do shell script "+aq(install)+" with administrator privileges",
         "  do shell script "+aq(status_ok),
-        "on error","  do shell script "+aq(status_bad),"end try",
-        "do shell script "+aq("/usr/bin/open "+shlex.quote(str(bundle)))])
+        "  tell application \"System Events\" to open file POSIX file "+aq(str(bundle)),
+        "on error errText number errNum",
+        "  try","    do shell script "+aq(status_bad),"  end try",
+        "end try",
+    ])
     script.write_text(code,encoding="utf-8")
     return ["/usr/bin/osascript",str(script)]
+
 
 WINDOWS_UPDATE_HELPER = r"""
 param([Parameter(Mandatory=$true)][string]$PlanPath)
@@ -2437,6 +2479,9 @@ try {
     } elseif ($j.installer -eq 'msi') {
         $args = '/i "' + $j.path + '" /passive /norestart'
         $p = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $args -Wait -PassThru
+    } elseif ($j.installer -eq 'deployer') {
+        $args = @('--silent-update','--target',[string]$j.target_dir)
+        $p = Start-Process -FilePath $j.path -ArgumentList $args -Wait -PassThru
     } else { throw 'Unsupported installer type' }
     if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { throw "Installer exit code: $($p.ExitCode)" }
     @{status='installed';version=$j.version;reboot_required=($p.ExitCode -eq 3010)} |
@@ -2491,7 +2536,7 @@ import queue
 from dataclasses import dataclass, field
 from pathlib import PureWindowsPath
 
-CONNECTOR_VERSION = '1.4.0'
+CONNECTOR_VERSION = '1.5.0'
 CONNECTOR_PROTOCOL = 1
 CONNECTOR_PORT = 17831
 CONNECTOR_EXTENSION_ID = 'lpjmbcclokpbgfogjhjepmnpoplgheoh'
@@ -3283,6 +3328,65 @@ def connector_record(row, payload, purpose='monitor'):
     return result
 
 
+def record_needs_recheck(row, record, purpose='monitor'):
+    """Second-pass only for identity/post uncertainty, never merely for a growth miss."""
+    row=dict(row);record=dict(record or {});pid=str(row.get('page_id') or '')
+    name_ok=bool(normalize_name(record.get('page_name'),pid) or normalize_name(row.get('page_name'),pid))
+    if not name_ok:
+        return True
+    if purpose=='monitor' and row.get('monitor_posts') and not record.get('posts_ok'):
+        return True
+    return False
+
+
+def merge_recheck_record(first, second, row, purpose='monitor'):
+    """Merge an automatic recheck without discarding a successful first observation.
+
+    Growth data from the first pass is intentionally preserved so the corrective pass
+    cannot create a second follower sample. Identity/avatar and post fields prefer the
+    recheck only when it produced a confirmed value.
+    """
+    row=dict(row);first=dict(first or {});second=dict(second or {});out=dict(first)
+    pid=str(row.get('page_id') or first.get('page_id') or second.get('page_id') or '')
+    second_name=normalize_name(second.get('page_name'),pid)
+    first_name=normalize_name(first.get('page_name'),pid)
+    if second_name:
+        out['page_name']=second_name;out['name_error']=''
+    elif first_name:
+        out['page_name']=first_name
+    else:
+        out['page_name']='';out['name_error']=str(second.get('name_error') or first.get('name_error') or '自动复检后仍未读取到可信主页名称')[:300]
+    if second.get('avatar_fresh') and second.get('avatar_path'):
+        out['avatar_path']=second.get('avatar_path');out['avatar_fresh']=True
+    elif not out.get('avatar_path') and second.get('avatar_path'):
+        out['avatar_path']=second.get('avatar_path')
+    out['metadata_ok']=bool(normalize_name(out.get('page_name'),pid) or out.get('avatar_path'))
+
+    # Keep the first successful growth sample exactly as-is.
+    for key in ('growth_ok','followers_count','approx','matched_text','growth_error'):
+        if key in first:out[key]=first[key]
+
+    if purpose=='monitor' and row.get('monitor_posts'):
+        if second.get('posts_ok'):
+            for key in ('posts_ok','last_post_ts','post_precision_seconds','post_source','post_url'):
+                if key in second:out[key]=second[key]
+            out['posts_error']=''
+        elif first.get('posts_ok'):
+            for key in ('posts_ok','last_post_ts','post_precision_seconds','post_source','post_url','posts_error'):
+                if key in first:out[key]=first[key]
+        else:
+            out['posts_ok']=False
+            detail=str(second.get('posts_error') or first.get('posts_error') or '未读取到可确认的主页自发贴文时间')
+            out['posts_error']=(detail+'；已自动复检一次仍无法确认')[:300]
+    out['rechecked']=True
+    out['recheck_ok']=not record_needs_recheck(row,out,purpose)
+    out['collected_ts']=max(float(first.get('collected_ts') or 0),float(second.get('collected_ts') or 0),time.time())
+    out['collected_at']=now_iso()
+    if out.get('recheck_ok'):
+        out.pop('error',None)
+    return out
+
+
 # ========== PyQt6 dashboard and application ==========
 import sys
 import uuid
@@ -3296,12 +3400,12 @@ except ModuleNotFoundError as exc:
         "缺少 PyQt6 图形界面依赖。\n\n请在命令行运行：\n"
         "python -m pip install PyQt6 Pillow\n"
         ""
-        "安装后再启动 Page_Operations_Monitor_1.4.0.pyw。"
+        "安装后再启动 Page_Operations_Monitor_1.5.0.pyw。"
     )
     if os.name == "nt":
         try:
             import ctypes
-            ctypes.windll.user32.MessageBoxW(0, message, "主页运营监控工具 · 依赖未安装", 0x10)
+            ctypes.windll.user32.MessageBoxW(0, message, APP_TITLE + " · 依赖未安装", 0x10)
         except Exception:
             pass
     if sys.stderr is not None:
@@ -3326,37 +3430,33 @@ from PyQt6.QtWidgets import (
     QStyledItemDelegate, QStyleOptionViewItem, QAbstractSpinBox, QProxyStyle, QProgressBar,
 )
 
-# 5 distinct, high-contrast, modern palettes (4 light/dark concepts + 1 neutral).
-# All labels are Chinese; the internal keys remain stable for saved settings.
+# Focused palettes. Blue-Orange Obsidian is the default theme.
 THEME_PRESETS = {
-    "深海蓝": dict(bg="#081222",sidebar="#07101E",panel="#0E2038",panel_2="#142B46",
-        border="#234666",text="#EEF5FF",muted="#91ABC6",accent="#6261F3",green="#22D6AD",
-        red="#FA637C",amber="#F7B451",cyan="#39C7F0",input="#0B1B30",hover="#1C3654",soft="#252D59",light=False),
     "石墨黑": dict(bg="#10151C",sidebar="#0D1117",panel="#19222D",panel_2="#253343",
         border="#35495E",text="#EEF4FC",muted="#9CAFBF",accent="#8280FF",green="#40D6AC",
         red="#F87186",amber="#F8BC65",cyan="#5CBEDC",input="#141D27",hover="#2D3F52",soft="#303153",light=False),
-    "极光紫": dict(bg="#131222",sidebar="#111020",panel="#1D1D35",panel_2="#292A47",
-        border="#444463",text="#F3F1FE",muted="#ACABCA",accent="#A18AF8",green="#54DBB7",
-        red="#FA7C9A",amber="#EDC185",cyan="#86CAF2",input="#191B30",hover="#363752",soft="#39325D",light=False),
-    "暖米白": dict(bg="#F5F0E7",sidebar="#EEE5D7",panel="#FFFDFC",panel_2="#F2EADF",
-        border="#D8C9B8",text="#3B332C",muted="#7D6E61",accent="#7668D7",green="#248A6A",
-        red="#C84B5A",amber="#B77825",cyan="#287E9C",input="#FFF9F1",hover="#E9DED0",soft="#E7E0FA",light=True),
-    "雾杏米色": dict(bg="#EFE8DD",sidebar="#E8DFD2",panel="#FAF6F0",panel_2="#F0E6D8",
-        border="#D1C0AD",text="#3A342F",muted="#786B60",accent="#5F73C8",green="#2A846B",
-        red="#BF5961",amber="#A96E2D",cyan="#357D93",input="#FFF9F2",hover="#E5D8C8",soft="#DCE4F8",light=True)
+    "蓝橙曜石": dict(bg="#071421",sidebar="#06101B",panel="#0C2032",panel_2="#14314A",
+        border="#244D68",text="#F3F7FB",muted="#93AFC2",accent="#2F86F6",green="#2CD5A7",
+        red="#F06475",amber="#FF9F43",cyan="#47C4E8",input="#0A1B2A",hover="#173A55",soft="#173654",light=False),
+    "清爽白": dict(bg="#F5F7FA",sidebar="#FFFFFF",panel="#FFFFFF",panel_2="#F1F4F8",
+        border="#D7DEE8",text="#1E293B",muted="#66758A",accent="#356DF3",green="#16866A",
+        red="#D9485F",amber="#C67B1B",cyan="#187FA8",input="#FFFFFF",hover="#EAF0F7",soft="#E6EEFF",light=True),
+    "护眼绿": dict(bg="#EEF3EA",sidebar="#E5EDE1",panel="#F8FBF5",panel_2="#EAF2E5",
+        border="#C6D6BF",text="#26332A",muted="#66766A",accent="#3D7D5A",green="#2E8A58",
+        red="#C94E5C",amber="#B9792E",cyan="#3B7F88",input="#FFFFFF",hover="#DEE9D9",soft="#D4E6D5",light=True),
 }
-BG = THEME_PRESETS["深海蓝"]["bg"]
-SIDEBAR = THEME_PRESETS["深海蓝"]["sidebar"]
-PANEL = THEME_PRESETS["深海蓝"]["panel"]
-PANEL_2 = THEME_PRESETS["深海蓝"]["panel_2"]
-BORDER = THEME_PRESETS["深海蓝"]["border"]
-TEXT = THEME_PRESETS["深海蓝"]["text"]
-MUTED = THEME_PRESETS["深海蓝"]["muted"]
-ACCENT = THEME_PRESETS["深海蓝"]["accent"]
-GREEN = THEME_PRESETS["深海蓝"]["green"]
-RED = THEME_PRESETS["深海蓝"]["red"]
-AMBER = THEME_PRESETS["深海蓝"]["amber"]
-CYAN = THEME_PRESETS["深海蓝"]["cyan"]
+BG = THEME_PRESETS["蓝橙曜石"]["bg"]
+SIDEBAR = THEME_PRESETS["蓝橙曜石"]["sidebar"]
+PANEL = THEME_PRESETS["蓝橙曜石"]["panel"]
+PANEL_2 = THEME_PRESETS["蓝橙曜石"]["panel_2"]
+BORDER = THEME_PRESETS["蓝橙曜石"]["border"]
+TEXT = THEME_PRESETS["蓝橙曜石"]["text"]
+MUTED = THEME_PRESETS["蓝橙曜石"]["muted"]
+ACCENT = THEME_PRESETS["蓝橙曜石"]["accent"]
+GREEN = THEME_PRESETS["蓝橙曜石"]["green"]
+RED = THEME_PRESETS["蓝橙曜石"]["red"]
+AMBER = THEME_PRESETS["蓝橙曜石"]["amber"]
+CYAN = THEME_PRESETS["蓝橙曜石"]["cyan"]
 
 
 
@@ -3882,7 +3982,7 @@ class PersistentMonitorAlert(QDialog):
         close=QPushButton('×');close.setObjectName('AlertCloseButton');close.setFixedSize(32,32);close.clicked.connect(self.close);head.addWidget(close);root.addLayout(head)
         for entry in self.entries[:5]:
             row=QFrame();row.setObjectName('MonitorAlertRow');hl=QHBoxLayout(row);hl.setContentsMargins(10,9,10,9);hl.setSpacing(12)
-            hl.addWidget(AvatarWidget(entry.get('name') or entry.get('page_name',''),entry.get('avatar_path',''),56),0,Qt.AlignmentFlag.AlignTop)
+            hl.addWidget(AvatarWidget(entry.get('name') or entry.get('page_name',''),entry.get('avatar_path',''),56,page_id=entry.get('page_id','')),0,Qt.AlignmentFlag.AlignTop)
             texts=QVBoxLayout();texts.setSpacing(4);page_name=entry.get('name') or entry.get('page_name') or '名称待获取';name=ElideLabel(page_name)
             name.setObjectName('MonitorAlertName');name.setMinimumHeight(22);name.setToolTip(page_name);texts.addWidget(name)
             meta=QHBoxLayout();event='发帖时间超标' if entry.get('kind')=='post' else '粉丝增长超标';badge=QLabel(event);badge.setObjectName('MonitorAlertEvent')
@@ -3961,6 +4061,14 @@ class CollectWorker(QObject):
                     except Exception as exc:
                         record={"page_id":row["page_id"],"error":str(exc)[:260],
                                 "growth_ok":False,"posts_ok":False,"metadata_ok":False}
+                    if record_needs_recheck(row,record,self.purpose) and not self._stop.is_set():
+                        self.progress.emit(index,total,"自动复检 "+display_name(row))
+                        try:
+                            retry=collector.fetch_page(row,purpose=self.purpose)
+                        except Exception as exc:
+                            retry={"page_id":row["page_id"],"error":str(exc)[:260],
+                                   "growth_ok":False,"posts_ok":False,"metadata_ok":False}
+                        record=merge_recheck_record(record,retry,row,self.purpose)
                     checks=[]
                     if self.purpose=="metadata":checks=[bool(record.get("metadata_ok"))]
                     else:
@@ -3988,29 +4096,39 @@ class CollectWorker(QObject):
 
 
 class ConnectorCollectWorker(CollectWorker):
-    """Distribute a round across up to 10 selected Chrome connectors in parallel.
+    """Distribute one round across up to 10 connector browsers and auto-recheck ambiguity.
 
-    Every connector receives at least one task when task_count >= connector_count.
-    If one connector drops during a round, its unfinished task returns to the shared
-    queue and the remaining selected connectors continue. Only when all selected
-    connectors are unavailable does the round stop.
+    A name/post result that cannot be confirmed is retried once.  When another selected
+    browser is online the recheck prefers that browser; with only one browser it retries
+    the same connector.  A successful first-pass follower observation is preserved so the
+    corrective pass never creates a duplicate follower sample.
     """
     def __init__(self,pages,bridge,instance_ids,gap=8,purpose='monitor',gap_range=None):
         super().__init__(pages,gap=gap,purpose=purpose,gap_range=gap_range)
         if isinstance(instance_ids,str):instance_ids=[instance_ids]
         self.bridge=bridge;self.instance_ids=list(dict.fromkeys(str(x) for x in instance_ids if x))[:10]
 
+    def _record_good(self,row,record):
+        checks=[]
+        if self.purpose=='metadata':checks=[bool(record.get('metadata_ok'))]
+        else:
+            if row.get('monitor_growth'):checks.append(bool(record.get('growth_ok')))
+            if row.get('monitor_posts'):checks.append(bool(record.get('posts_ok')))
+        return bool(checks and all(checks))
+
+    def _recheck_connector(self,source_cid):
+        online=[cid for cid in self.instance_ids if self.bridge.online(cid)]
+        others=[cid for cid in online if cid!=source_cid]
+        if others:return random.choice(others)
+        return source_cid if source_cid in online else (online[0] if online else '')
+
     def run(self):
-        total=len(self.pages);success=0;failure=0;completed=0
+        total=len(self.pages);success=0;failure=0;finalized=0
         if not self.instance_ids:
             self.finished.emit(False,'没有可用浏览器连接器');return
-        if total < len(self.instance_ids):
-            self.finished.emit(False,f'任务数 {total} 少于已选择连接器 {len(self.instance_ids)} 个，请减少连接器或增加监控主页');return
         online=[cid for cid in self.instance_ids if self.bridge.online(cid)]
         if not online:
             self.finished.emit(False,'连接器中断：所有已选择浏览器均已离线');return
-        # If a previously selected browser is temporarily offline, use the remaining
-        # online selected browsers. We never route work to an unselected connector.
         self.instance_ids=online
         if total < len(self.instance_ids):
             self.finished.emit(False,f'任务数 {total} 少于当前在线连接器 {len(self.instance_ids)} 个，请减少连接器');return
@@ -4023,7 +4141,6 @@ class ConnectorCollectWorker(CollectWorker):
 
         def mark_done():
             with lock:remaining['count']-=1
-
         def remaining_count():
             with lock:return remaining['count']
 
@@ -4050,14 +4167,9 @@ class ConnectorCollectWorker(CollectWorker):
                     except ConnectorError as exc:
                         if not self.bridge.online(cid):
                             workq.put(row);row=None;outq.put(('offline',cid,str(exc)));break
-                        record={'page_id':row['page_id'],'error':str(exc),'growth_ok':False,'posts_ok':False,'metadata_ok':False}
-                    checks=[]
-                    if self.purpose=='metadata':checks=[bool(record.get('metadata_ok'))]
-                    else:
-                        if row.get('monitor_growth'):checks.append(bool(record.get('growth_ok')))
-                        if row.get('monitor_posts'):checks.append(bool(record.get('posts_ok')))
-                    good=bool(checks and all(checks));record['ok']=good;record['purpose']=self.purpose
-                    mark_done();outq.put(('result',cid,record,good));row=None
+                        record={'page_id':row['page_id'],'error':str(exc),'growth_ok':False,'posts_ok':False,'metadata_ok':False,
+                                'name_error':str(exc),'posts_error':str(exc)}
+                    mark_done();outq.put(('result',cid,dict(row),record));row=None
                     if remaining_count()<=0:break
                     remaining_wait=self.current_gap()
                     while remaining_wait>0 and not self._stop.is_set():
@@ -4068,8 +4180,10 @@ class ConnectorCollectWorker(CollectWorker):
             finally:outq.put(('done',cid))
 
         for cid in self.instance_ids:
-            t=threading.Thread(target=lane_worker,args=(cid,initial[cid]),name='POM-connector-'+cid[:8],daemon=True);threads.append(t);t.start()
-        done=0;offline=set()
+            t=threading.Thread(target=lane_worker,args=(cid,initial[cid]),name='POM-connector-'+cid[:8],daemon=True)
+            threads.append(t);t.start()
+
+        done=0;offline=set();first_seen=0;rechecks=[]
         while done<len(threads):
             try:item=outq.get(timeout=.25)
             except queue.Empty:
@@ -4078,22 +4192,52 @@ class ConnectorCollectWorker(CollectWorker):
             kind=item[0]
             if kind=='done':done+=1;continue
             if kind=='offline':offline.add(item[1]);continue
-            _,cid,record,good=item;completed+=1;self.result.emit(record)
+            _,cid,row,record=item;first_seen+=1
+            if record_needs_recheck(row,record,self.purpose) and not self._stop.is_set():
+                rechecks.append((cid,row,record))
+                self.progress.emit(first_seen,total,f'首检 {first_seen} / {total} · 待自动复检')
+                continue
+            good=self._record_good(row,record);record['ok']=good;record['purpose']=self.purpose
+            self.result.emit(record);finalized+=1
             if good:success+=1
             else:failure+=1
-            try:browser_no=self.instance_ids.index(cid)+1
-            except ValueError:browser_no=1
-            self.progress.emit(completed,total,f'并行巡检 {completed} / {total} · 浏览器 {browser_no}/{len(self.instance_ids)}')
+            self.progress.emit(first_seen,total,f'并行巡检 {first_seen} / {total}')
+
         for t in threads:t.join(timeout=1)
-        aborted=self._stop.is_set() and completed<total
-        if completed<total and not aborted:
+
+        # Recheck only the ambiguous subset. Prefer another browser when possible.
+        for source_cid,row,first in rechecks:
+            if self._stop.is_set():break
+            target=self._recheck_connector(source_cid)
+            second={'page_id':row['page_id'],'metadata_ok':False,'growth_ok':False,'posts_ok':False}
+            if target:
+                retry_row=dict(row)
+                retry_purpose='metadata'
+                if self.purpose=='monitor' and row.get('monitor_posts') and not first.get('posts_ok'):
+                    retry_purpose='monitor';retry_row['monitor_growth']=False;retry_row['monitor_posts']=True
+                try:
+                    self.progress.emit(finalized+1,total,'自动复检 '+display_name(row)+(' · 换浏览器' if target!=source_cid else ' · 当前浏览器'))
+                    payload=self.bridge.request(target,retry_row,retry_purpose,self._stop,timeout=120)
+                    second=connector_record(retry_row,payload,retry_purpose)
+                except ConnectorError as exc:
+                    second.update(error=str(exc),name_error=str(exc),posts_error=str(exc))
+            merged=merge_recheck_record(first,second,row,self.purpose)
+            merged['recheck_connector_changed']=bool(target and target!=source_cid)
+            good=self._record_good(row,merged);merged['ok']=good;merged['purpose']=self.purpose
+            self.result.emit(merged);finalized+=1
+            if good:success+=1
+            else:failure+=1
+
+        aborted=self._stop.is_set() and finalized<total
+        if finalized<total and not aborted:
             active=[cid for cid in self.instance_ids if self.bridge.online(cid)]
             if not active:
-                self.finished.emit(False,f'连接器中断：所有已选择浏览器均已离线，当前轮次已停止 · 已处理 {completed}/{total}');return
-            self.finished.emit(False,f'浏览器连接异常，本轮未完成 · 已处理 {completed}/{total}');return
+                self.finished.emit(False,f'连接器中断：所有已选择浏览器均已离线，当前轮次已停止 · 已处理 {finalized}/{total}');return
+            self.finished.emit(False,f'浏览器连接异常，本轮未完成 · 已处理 {finalized}/{total}');return
         task='资料同步' if self.purpose=='metadata' else '主页巡检'
-        extra=f' · {len(offline)} 个浏览器中途离线，任务已由其余浏览器接续' if offline else ''
-        self.finished.emit(not aborted and failure==0 and completed==total,
+        extra=f' · {len(offline)} 个浏览器中途离线' if offline else ''
+        if rechecks:extra+=f' · 自动复检 {len(rechecks)} 个主页'
+        self.finished.emit(not aborted and failure==0 and finalized==total,
             f"{task}{'已停止' if aborted else '完成'} · 完整成功 {success} / 部分或失败 {failure} / 共 {total} · 使用 {len(self.instance_ids)} 个浏览器{extra}")
 
 
@@ -4157,6 +4301,13 @@ class BrowserConnectionsDialog(QDialog):
             if not self.bridge._running:self.bridge.start()
         except Exception as exc:self.bridge.error=str(exc)
         rows=sorted(self.bridge.clients(),key=lambda r:(r.get('blocked',False),not r['online'],r['identity'].get('profile_name',''),r['instance_id']))
+        # Keep the compact default for up to three records; expand automatically when
+        # several browser profiles are connected so every choice remains visible.
+        row_count=len(rows)
+        target_w=650 if row_count<=3 else 760
+        target_h=390 if row_count<=3 else min(720,390+(row_count-3)*46)
+        if getattr(self,'_auto_size_rows',None)!=row_count:
+            self.resize(target_w,target_h);self._auto_size_rows=row_count
         saved=set(self.owner.configured_connector_ids(include_offline=True));signature=json.dumps(rows,sort_keys=True)+json.dumps(sorted(saved))+str(self.owner.connector_selection_initialized())
         if signature==self._signature:return
         self._signature=signature;current=self.selected_row()['instance_id'] if self.selected_row() else '';self.rows=rows
@@ -4258,15 +4409,32 @@ class DraggableHeader(QFrame):
         super().mouseDoubleClickEvent(event)
 
 
+def resolve_avatar_path(page_id="", preferred=""):
+    """Resolve the live page avatar first, then the shared ID cache."""
+    preferred=str(preferred or "").strip()
+    if preferred:
+        try:
+            p=Path(preferred)
+            if p.is_file() and p.stat().st_size>100:return str(p)
+        except OSError:pass
+    pid=str(page_id or "").strip()
+    if pid:
+        try:
+            cached=AVATAR_DIR/(pid+".png")
+            if cached.is_file() and cached.stat().st_size>100:return str(cached)
+        except OSError:pass
+    return ""
+
+
 class AvatarWidget(QWidget):
-    def __init__(self, name="", path="", size=52, parent=None):
+    def __init__(self, name="", path="", size=52, parent=None, page_id=""):
         super().__init__(parent)
         self.name = name or "P"
-        self.path = str(path or "")
+        self.path = resolve_avatar_path(page_id,path)
         self.setFixedSize(size,size)
-        self.image = QPixmap(self.path) if self.path and Path(self.path).is_file() else QPixmap()
+        self.image = QPixmap(self.path) if self.path else QPixmap()
         if self.image.isNull():
-            self.setToolTip("头像与专业 ID 管理共用同一缓存；正常巡检时自动更新。")
+            self.setToolTip("头像与 FB专业ID管理共用同一缓存；正常巡检时自动更新。")
         else:
             self.setToolTip("已缓存的真实主页头像")
 
@@ -4301,7 +4469,7 @@ class MetricCard(QFrame):
         self.icon_label.setObjectName("MetricIcon");layout.addWidget(self.icon_label)
         self.kind=kind;self.accent=accent or ACCENT
         col=QVBoxLayout();col.setSpacing(1);col.setContentsMargins(0,0,0,0)
-        self.label=ElideLabel(title);self.label.setObjectName("MetricLabel");self.label.setMinimumHeight(19)
+        self.label=ElideLabel(title);self.label.setObjectName("MetricLabel");self.label.setMinimumHeight(22)
         self.value=ValueLabel("—",28);self.value.setObjectName("MetricValue");self.value.setMinimumHeight(33)
         self.note=ElideLabel("");self.note.setObjectName("SmallMuted");self.note.setMinimumHeight(18)
         col.addWidget(self.label);col.addWidget(self.value);col.addWidget(self.note);layout.addLayout(col,1)
@@ -4332,10 +4500,10 @@ class PageCard(QFrame):
         pid=str(row["page_id"]);name=display_name(row);post=row.get("post_view") or post_view(row)
         layout=QVBoxLayout(self);layout.setContentsMargins(14,12,14,10);layout.setSpacing(8)
         header=QHBoxLayout();header.setSpacing(9)
-        header.addWidget(AvatarWidget(name,row.get("avatar_path",""),42),0,Qt.AlignmentFlag.AlignTop)
+        header.addWidget(AvatarWidget(name,row.get("avatar_path",""),42,page_id=pid),0,Qt.AlignmentFlag.AlignTop)
         identity=QVBoxLayout();identity.setSpacing(2)
         title=CopyLabel(name);title.setObjectName("CardTitle");title.setMinimumHeight(22)
-        title.setToolTip(name+"\n真实名称："+(normalize_name(row.get("page_name"),pid) or "尚未获取")+"\n点击复制名称")
+        title.setToolTip("专业名称："+(normalize_name(row.get("page_name"),pid) or name or "尚未获取")+"\n点击复制名称")
         ident=CopyLabel("ID  "+pid,pid);ident.setObjectName("CardId");ident.setMinimumHeight(18)
         ident.setToolTip("公共主页编号："+pid+"\n点击复制完整 ID")
         identity.addWidget(title);identity.addWidget(ident);header.addLayout(identity,1)
@@ -4394,8 +4562,6 @@ class PageCard(QFrame):
         pid=self.row["page_id"]
         menu=QMenu(self)
         menu.addAction("编辑监控模块 / 发帖标准",lambda:self.manage_requested.emit(pid))
-        menu.addAction("复制专业 ID",lambda:QApplication.clipboard().setText(pid))
-        menu.addAction("复制名称",lambda:QApplication.clipboard().setText(display_name(self.row)))
         menu.addSeparator()
         menu.addAction("打开主页",lambda:self.open_requested.emit(pid))
         url=self.row.get("post_url")
@@ -4664,9 +4830,9 @@ class DashboardPage(QWidget):
         if not cards:
             empty=QFrame();empty.setObjectName("EmptyState");layout=QVBoxLayout(empty);layout.setContentsMargins(20,30,20,30)
             title=QLabel("尚无匹配主页");title.setObjectName("SectionTitle");layout.addWidget(title)
-            msg=QLabel("在右上角「专业 ID 管理」添加 ID，并勾选粉丝监控、发帖监控或两者。")
+            msg=QLabel("在右上角「FB专业ID管理」添加 ID，并勾选粉丝监控、发帖监控或两者。")
             msg.setWordWrap(True);msg.setObjectName("SmallMuted");layout.addWidget(msg)
-            add=QPushButton("打开专业 ID 管理");add.setObjectName("PrimaryButton");add.clicked.connect(lambda:self.open_manager.emit(""))
+            add=QPushButton("打开 FB专业ID管理");add.setObjectName("PrimaryButton");add.clicked.connect(lambda:self.open_manager.emit(""))
             layout.addWidget(add,0,Qt.AlignmentFlag.AlignLeft);cards=[empty]
         scroll=self.scroll.verticalScrollBar().value()
         self.cards.set_cards(cards)
@@ -4679,7 +4845,7 @@ class DashboardPage(QWidget):
         self.notice_panel.setVisible(bool(entries))
         for entry in entries:
             frame=QFrame();frame.setObjectName("AlertRow");layout=QHBoxLayout(frame);layout.setContentsMargins(9,5,9,5);layout.setSpacing(9)
-            avatar=AvatarWidget(entry["page_name"],entry.get("avatar_path",""),40)
+            avatar=AvatarWidget(entry["page_name"],entry.get("avatar_path",""),40,page_id=entry.get("page_id",""))
             avatar.setToolTip(entry["page_name"]+" · ID "+entry["page_id"]);layout.addWidget(avatar)
             texts=QVBoxLayout();texts.setSpacing(2)
             title=ElideLabel(("发帖超时 · " if entry["kind"]=="post" else "增长超标 · ")+entry["page_name"])
@@ -4691,74 +4857,91 @@ class DashboardPage(QWidget):
 
 
 class AlertsPage(QWidget):
-    export_requested=pyqtSignal()
     ack_requested=pyqtSignal()
+    read_changed=pyqtSignal()
     def __init__(self,store):
         super().__init__();self.store=store;self.setObjectName("AlertsPage");self.mode="current";self._highlight_key=None
         root=QVBoxLayout(self);root.setContentsMargins(24,22,24,18);root.setSpacing(12)
-        head=QHBoxLayout();title=QLabel("通知与预警");title.setObjectName("PageTitle");head.addWidget(title);head.addStretch()
-        self.current_btn=QPushButton("当前 · 未读+今日");self.current_btn.setObjectName("NoticeModeButton");self.current_btn.clicked.connect(lambda:self.set_mode("current"));head.addWidget(self.current_btn)
-        self.history_btn=QPushButton("历史记录");self.history_btn.setObjectName("NoticeHistoryButton");self.history_btn.clicked.connect(lambda:self.set_mode("history"));head.addWidget(self.history_btn)
+        head=QHBoxLayout();title=QLabel("通知");title.setObjectName("PageTitle");head.addWidget(title);head.addStretch()
+        self.history_btn=QPushButton("历史记录");self.history_btn.setObjectName("NoticeHistoryButton");self.history_btn.clicked.connect(self.toggle_history);head.addWidget(self.history_btn)
         self.filter=QComboBox()
         for text,key in (("全部类型","all"),("粉丝增长","growth"),("发帖超时","post")):self.filter.addItem(text,key)
         self.filter.currentIndexChanged.connect(lambda _:self.refresh());self.filter.setFixedWidth(112);head.addWidget(self.filter)
-        self.ack_btn=QPushButton("全部未读标为已读");self.ack_btn.setObjectName("PrimaryButton");self.ack_btn.clicked.connect(self.ack_requested.emit);head.addWidget(self.ack_btn);root.addLayout(head)
+        self.ack_btn=QPushButton("全部标为已读");self.ack_btn.setObjectName("SecondaryButton");self.ack_btn.clicked.connect(self.ack_requested.emit);head.addWidget(self.ack_btn);root.addLayout(head)
         self.summary=QLabel();self.summary.setObjectName("NoticeSummary");self.summary.setWordWrap(True);root.addWidget(self.summary)
-        note=QLabel("默认只显示：全部未读通知 + 今天发生的通知。较早且已读的记录仍永久保留在「历史记录」中。")
+        note=QLabel("默认只显示未读通知；点击任意一条即视为已读并移入历史记录。历史数据长期保留，不会因已读而删除。")
         note.setObjectName("SmallMuted");note.setWordWrap(True);root.addWidget(note)
-        self.table=QTableWidget(0,7);self.table.setObjectName("AlertsTable");self.table.setHorizontalHeaderLabels(("头像","类型","专业名称","专业 ID","预警内容","记录时间","状态"))
+        self.table=QTableWidget(0,7);self.table.setObjectName("AlertsTable");self.table.setHorizontalHeaderLabels(("头像","类型","专业名称","专业 ID","通知内容","记录时间","状态"))
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection);self.table.verticalHeader().setVisible(False);self.table.setAlternatingRowColors(True);self.table.setShowGrid(False)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         for col,width in ((0,58),(1,100),(2,190),(3,170),(5,150),(6,75)):self.table.setColumnWidth(col,width)
         self.table.horizontalHeader().setSectionResizeMode(4,QHeaderView.ResizeMode.Stretch)
-        root.addWidget(self.table,1);self.set_mode("current",refresh=False);self.refresh()
+        self.table.cellClicked.connect(self._row_clicked)
+        root.addWidget(self.table,1);self.open_current()
 
-    def set_mode(self,mode,refresh=True):
-        self.mode="history" if mode=="history" else "current"
-        self.current_btn.setProperty("active",self.mode=="current");self.history_btn.setProperty("active",self.mode=="history")
-        for button in (self.current_btn,self.history_btn):button.style().unpolish(button);button.style().polish(button)
-        self.ack_btn.setVisible(self.mode=="current")
-        if refresh:self.refresh()
+    def open_current(self):
+        self.mode="current";self._highlight_key=None
+        self.history_btn.setText("历史记录");self.history_btn.setProperty("active",False)
+        self.history_btn.style().unpolish(self.history_btn);self.history_btn.style().polish(self.history_btn)
+        self.ack_btn.setVisible(True);self.refresh()
 
-    @staticmethod
-    def _is_today(row):
-        try:return datetime.fromtimestamp(float(row.get("alerted_ts") or 0)).astimezone().date()==datetime.now().astimezone().date()
-        except (ValueError,TypeError,OSError):return False
+    def toggle_history(self):
+        if self.mode=="history":
+            self.open_current();return
+        self.mode="history";self._highlight_key=None
+        self.history_btn.setText("返回当前");self.history_btn.setProperty("active",True)
+        self.history_btn.style().unpolish(self.history_btn);self.history_btn.style().polish(self.history_btn)
+        self.ack_btn.setVisible(False);self.refresh()
 
     def _visible_rows(self):
         rows=self.store.combined_alerts(limit=5000);kind=self.filter.currentData()
         if kind!="all":rows=[r for r in rows if r["kind"]==kind]
-        if self.mode=="current":rows=[r for r in rows if not bool(r.get("acknowledged")) or self._is_today(r)]
-        else:rows=[r for r in rows if bool(r.get("acknowledged")) and not self._is_today(r)]
+        if self.mode=="current":rows=[r for r in rows if not bool(r.get("acknowledged"))]
+        else:rows=[r for r in rows if bool(r.get("acknowledged"))]
         return rows
 
     def refresh(self):
         rows=self._visible_rows();self.table.clearContents();self.table.setRowCount(len(rows));matched=None
         for i,r in enumerate(rows):
             cell=QWidget();layout=QHBoxLayout(cell);layout.setContentsMargins(9,3,9,3);layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(AvatarWidget(r["page_name"],r.get("avatar_path",""),36));self.table.setCellWidget(i,0,cell)
+            layout.addWidget(AvatarWidget(r["page_name"],r.get("avatar_path",""),36,page_id=r.get("page_id","")));self.table.setCellWidget(i,0,cell)
             values=("发帖超时" if r["kind"]=="post" else "粉丝增长",r["page_name"],r["page_id"],r["message"],local_time_label(r["alerted_at"]),"已读" if r["acknowledged"] else "未读")
+            key=(r["kind"],int(r.get("id") or 0),r["page_id"])
             for j,text in enumerate(values,1):
                 item=QTableWidgetItem(str(text));item.setToolTip(str(text));item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if j in (1,3,5,6) else Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft)
-                item.setData(Qt.ItemDataRole.UserRole,(r["kind"],int(r.get("id") or 0),r["page_id"]))
+                item.setData(Qt.ItemDataRole.UserRole,key)
                 if j==1:item.setForeground(QColor(AMBER if r["kind"]=="post" else RED))
                 self.table.setItem(i,j,item)
             self.table.setRowHeight(i,50)
             if self._highlight_key==(r["kind"],int(r.get("id") or 0)):matched=i
-        g,p=self.store.unread_totals();today=sum(self._is_today(r) for r in self.store.combined_alerts(limit=5000))
-        if self.mode=="current":self.summary.setText(f"当前：未读 {g+p} 条（增长 {g} · 发帖 {p}） · 今天 {today} 条")
-        else:self.summary.setText(f"历史记录：{len(rows)} 条较早且已读的预警 · 数据不会因默认隐藏而删除")
+        g,p=self.store.unread_totals()
+        if self.mode=="current":
+            self.summary.setText(f"当前未读 {g+p} 条 · 粉丝增长 {g} · 发帖超时 {p}" if g+p else "当前没有未读通知")
+        else:self.summary.setText(f"历史记录 {len(rows)} 条 · 已读通知永久保留")
         if matched is not None:
-            self.table.selectRow(matched);item=self.table.item(matched,1)
+            self.table.setCurrentCell(matched,1);self.table.selectRow(matched);item=self.table.item(matched,1)
             if item:self.table.scrollToItem(item,QAbstractItemView.ScrollHint.PositionAtCenter)
+
+    def _row_clicked(self,row,col):
+        if self.mode!="current":return
+        item=self.table.item(row,1) or self.table.item(row,col)
+        if not item:return
+        key=item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(key,(tuple,list)) or len(key)<2:return
+        kind,alert_id=key[0],key[1]
+        if self.store.acknowledge_notification(kind,alert_id):
+            self._highlight_key=None;self.read_changed.emit();self.refresh()
 
     def focus_alert(self,entry):
         try:self._highlight_key=(str(entry.get("kind") or ""),int(entry.get("id") or 0))
         except (TypeError,ValueError):self._highlight_key=(str(entry.get("kind") or ""),0)
-        # A previously selected type filter must not hide the alert opened from the popup.
+        self.mode="current";self.history_btn.setText("历史记录");self.history_btn.setProperty("active",False)
+        self.history_btn.style().unpolish(self.history_btn);self.history_btn.style().polish(self.history_btn)
+        self.ack_btn.setVisible(True)
+        # A previous type filter must not hide the notification opened from the popup.
         self.filter.blockSignals(True);self.filter.setCurrentIndex(0);self.filter.blockSignals(False)
-        self.set_mode("current",refresh=True)
+        self.refresh()
         if self.table.currentRow()>=0:self.table.setFocus(Qt.FocusReason.OtherFocusReason)
 
 
@@ -4773,7 +4956,7 @@ class PageEditDialog(QDialog):
     def __init__(self,row,parent=None):
         super().__init__(parent);self.row=row;self.setWindowTitle("编辑专业 ID");self.resize(560,450)
         root=QVBoxLayout(self);root.setContentsMargins(22,20,22,20);root.setSpacing(14)
-        head=QHBoxLayout();head.addWidget(AvatarWidget(display_name(row),row.get("avatar_path",""),54))
+        head=QHBoxLayout();head.addWidget(AvatarWidget(display_name(row),row.get("avatar_path",""),54,page_id=row.get("page_id","")))
         texts=QVBoxLayout()
         name=QLabel(display_name(row));name.setWordWrap(True);name.setObjectName("SectionTitle");texts.addWidget(name)
         pid=CopyLabel("公共主页编号："+row["page_id"],row["page_id"]);pid.setMinimumHeight(23);texts.addWidget(pid)
@@ -4810,15 +4993,14 @@ class PageManagementPage(QWidget):
 
     def build_ui(self):
         root=QVBoxLayout(self);root.setContentsMargins(24,20,24,16);root.setSpacing(13)
-        title=QLabel("专业 ID 管理");title.setObjectName("PageTitle");root.addWidget(title)
+        title=QLabel("FB专业ID管理");title.setObjectName("PageTitle");root.addWidget(title)
         desc=QLabel("一次添加，多模块共用。直接勾选监控模块；双击名称、标准、排序或备注即可编辑。")
         desc.setObjectName("Subtitle");desc.setWordWrap(True);root.addWidget(desc)
         actions=QHBoxLayout();actions.setSpacing(8)
-        self.add_btn=QPushButton("添加 ID");self.add_btn.setObjectName("PrimaryButton");self.add_btn.clicked.connect(self.add_requested.emit)
+        self.add_btn=QPushButton("添加 ID");self.add_btn.setObjectName("PrimaryButton");self.add_btn.clicked.connect(self._request_add)
         self.batch_btn=QPushButton("批量设置");self.batch_btn.clicked.connect(self.batch_settings)
         self.delete_btn=QPushButton("批量删除");self.delete_btn.setObjectName("DangerButton");self.delete_btn.clicked.connect(self.delete_selected)
-        self.export_btn=QPushButton("导出 ID 清单");self.export_btn.clicked.connect(self.export_ids)
-        for btn in (self.add_btn,self.batch_btn,self.delete_btn,self.export_btn):
+        for btn in (self.add_btn,self.batch_btn,self.delete_btn):
             btn.setFixedHeight(38);actions.addWidget(btn)
         actions.addStretch();root.addLayout(actions)
         tools=QHBoxLayout();tools.setSpacing(10)
@@ -4872,7 +5054,9 @@ class PageManagementPage(QWidget):
 
     def set_busy(self,busy):
         self._busy=bool(busy)
-        for b in (self.add_btn,self.batch_btn,self.delete_btn):b.setEnabled(not busy)
+        # Keep action buttons clickable during collection so the user gets an immediate
+        # bottom toast explaining why an edit cannot run yet.
+        for b in (self.add_btn,self.batch_btn,self.delete_btn):b.setEnabled(True)
         # Selection/copying is harmless during collection. Disabling the whole table made
         # single checkbox clicks fail while the external Select All checkbox still worked.
         self.table.setEnabled(True)
@@ -4888,7 +5072,15 @@ class PageManagementPage(QWidget):
                     item.setFlags(flags)
         finally:self.table.blockSignals(blocked)
         self.table.viewport().update()
-        if busy:self.summary.setText("\u6b63\u5728\u91c7\u96c6\uff0c\u53ef\u52fe\u9009\u548c\u590d\u5236 ID\uff1b\u914d\u7f6e\u4fee\u6539\u5728\u672c\u8f6e\u7ed3\u675f\u540e\u6062\u590d")
+        if busy:self.summary.setText("正在巡检 · 可查看和复制 ID，修改操作将在本轮结束后恢复")
+
+    def _busy_notice(self):
+        show_hint(self,"正在巡检，请等待本轮巡检结束后再修改专业 ID。")
+
+    def _request_add(self):
+        if self._busy:
+            self._busy_notice();return
+        self.add_requested.emit()
 
     def ids(self):
         checked=[]
@@ -4917,6 +5109,8 @@ class PageManagementPage(QWidget):
         self.select_all.setToolTip("\u5df2\u52fe\u9009 %s / %s \u4e2a" % (chosen,count))
 
     def _clicked(self,row,col):
+        if self._busy and col in (2,4,5,6,7,8,9):
+            self._busy_notice();return
         if col==3:
             text=self.table.item(row,col).text()
             QApplication.clipboard().setText(text)
@@ -4924,10 +5118,13 @@ class PageManagementPage(QWidget):
 
     def _double_clicked(self,row,col):
         if col==2:
+            if self._busy:
+                self._busy_notice();return
             pid=self.table.item(row,0).data(Qt.ItemDataRole.UserRole);self.edit_id(pid)
 
     def edit_id(self,pid):
-        if self._busy:return
+        if self._busy:
+            self._busy_notice();return
         row=self.store.page(pid)
         if not row:return
         dlg=PageEditDialog(row,self)
@@ -4939,11 +5136,15 @@ class PageManagementPage(QWidget):
 
 
     def delete_selected(self):
+        if self._busy:
+            self._busy_notice();return
         ids=self.ids()
         if not ids:show_hint(self,"请选择需要删除的专业 ID。");return
         self.delete_requested.emit(ids)
 
     def batch_settings(self):
+        if self._busy:
+            self._busy_notice();return
         ids=self.ids()
         if not ids:show_hint(self,"请选择一个或多个专业 ID。");return
         dlg=QDialog(self);dlg.setWindowTitle(f"批量设置 {len(ids)} 个专业 ID");dlg.resize(470,310)
@@ -4962,13 +5163,6 @@ class PageManagementPage(QWidget):
         if limit_flag.isChecked():fields["post_limit_hours"]=hours.value()
         if fields:
             self.store.update_config(ids,**fields);self.refresh();self.config_changed.emit()
-
-    def export_ids(self):
-        path,_=QFileDialog.getSaveFileName(self,"导出专业 ID 清单",str(Path.home()/"FB_professional_IDs.csv"),"CSV (*.csv)")
-        if path:
-            try:self.store.export_manager_csv(path)
-            except Exception as exc:QMessageBox.warning(self,"导出失败",str(exc));return
-            show_hint(self,"专业 ID、模块、发帖标准、排序及备注已导出。")
 
     def _item_changed(self,item):
         if self._loading:return
@@ -5034,7 +5228,7 @@ class PageManagementPage(QWidget):
             self.table.item(i,0).setCheckState(Qt.CheckState.Checked if pid in checked else Qt.CheckState.Unchecked)
             wrapper=QWidget();avatar_layout=QHBoxLayout(wrapper);avatar_layout.setContentsMargins(0,0,0,0)
             avatar_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            avatar_layout.addWidget(AvatarWidget(display_name(row),row["avatar_path"],36))
+            avatar_layout.addWidget(AvatarWidget(display_name(row),row["avatar_path"],36,page_id=pid))
             self.table.setCellWidget(i,1,wrapper)
             for col,text in ((2,display_name(row)),(3,pid),(6,str(row["post_limit_hours"])),(7,str(row["sort_order"])),(8,row["notes"])):
                 item=self.table.item(i,col);item.setText(text);item.sort_key=int(text) if col in (6,7) else text.casefold()
@@ -5064,6 +5258,7 @@ class SettingsPage(QWidget):
     export_requested=pyqtSignal()
     backup_requested=pyqtSignal()
     data_dir_requested=pyqtSignal()
+    cleanup_requested=pyqtSignal()
 
     def __init__(self,store:Store,settings:QSettings):
         super().__init__();self.store=store;self.settings=settings
@@ -5088,8 +5283,8 @@ class SettingsPage(QWidget):
 
     def build_ui(self):
         root=QVBoxLayout(self);root.setContentsMargins(30,24,30,20);root.setSpacing(16)
-        title=QLabel("设置中心");title.setObjectName("PageTitle");root.addWidget(title)
-        note=QLabel("浏览器连接器、巡检和提醒设置；专业 ID 请使用右上角「ID管理」。")
+        title=QLabel("设置");title.setObjectName("PageTitle");root.addWidget(title)
+        note=QLabel("浏览器连接、巡检、提醒、数据与维护设置；FB 专业 ID 请使用右上角「ID管理」。")
         note.setObjectName("Subtitle");note.setWordWrap(True);root.addWidget(note)
         tabs=QTabWidget();tabs.setObjectName("SettingsTabs");root.addWidget(tabs,1)
         def make_tab(label):
@@ -5156,16 +5351,22 @@ class SettingsPage(QWidget):
         buttons.addWidget(backup);buttons.addStretch();dl.addLayout(buttons);data_layout.addWidget(data)
 
         updates,ul=self.section("版本更新与保存",
-            "更新源："+REPOSITORY+"；仅检查正式 Release。所有设置保存在当前数据目录的 settings.ini。")
+            "仅检查正式稳定版本；所有设置保存在当前数据目录的 settings.ini。更新下载完成后仍需用户确认才会执行。")
         self.auto_update=QCheckBox("启动后自动检查新版本，并在发现新版时提示")
         ul.addWidget(self.auto_update)
         self.settings_path_label=QLabel(self.settings.fileName());self.settings_path_label.setObjectName("PathLabel");self.settings_path_label.setWordWrap(True)
-        ul.addWidget(self.settings_path_label);data_layout.addWidget(updates);data_layout.addStretch()
-        savebar=QHBoxLayout()
-        self.save_note=QLabel("更改自动保存，下次启动保留");self.save_note.setObjectName("SmallMuted")
-        savebar.addWidget(self.save_note);savebar.addStretch()
-        save=QPushButton("立即保存");save.setObjectName("PrimaryButton")
-        save.clicked.connect(lambda _=False:self.save_requested.emit(True));savebar.addWidget(save);root.addLayout(savebar)
+        ul.addWidget(self.settings_path_label);data_layout.addWidget(updates)
+
+        maintenance,ml=self.section("智能维护",
+            "只清理可重新生成的更新缓存、残留临时文件和过大的运行日志；不会删除专业 ID、通知、头像、设置或浏览器连接记录。")
+        maintenance_row=QHBoxLayout();maintenance_row.setSpacing(10)
+        clean_btn=QPushButton("智能清理缓存");clean_btn.setObjectName("PrimaryButton")
+        clean_btn.clicked.connect(self.cleanup_requested.emit);maintenance_row.addWidget(clean_btn)
+        self.cleanup_status=QLabel("扫描后会先显示可清理内容和预计释放空间，再由你确认。")
+        self.cleanup_status.setObjectName("SmallMuted");self.cleanup_status.setWordWrap(True)
+        maintenance_row.addWidget(self.cleanup_status,1);ml.addLayout(maintenance_row);data_layout.addWidget(maintenance);data_layout.addStretch()
+        self.save_note=QLabel("所有设置修改后自动保存，下次启动继续使用");self.save_note.setObjectName("SmallMuted")
+        root.addWidget(self.save_note)
 
     def refresh_data_path(self):
         self.data_path_label.setText(str(DATA_DIR));self.settings_path_label.setText(self.settings.fileName())
@@ -5251,23 +5452,21 @@ class UpdateDialog(QDialog):
         self.setWindowTitle("发现新版本 · "+APP_TITLE);self.resize(630,530)
         root=QVBoxLayout(self);root.setContentsMargins(24,22,24,20);root.setSpacing(13)
         heading=QLabel("新版本 V"+str(info.get("version","")));heading.setObjectName("PageTitle");root.addWidget(heading)
-        repo=QLabel("当前 V"+APP_VERSION+"   →   V"+str(info.get("version",""))+"\n"+REPOSITORY)
+        repo=QLabel("当前 V"+APP_VERSION+"   →   V"+str(info.get("version","")))
         repo.setObjectName("SmallMuted");root.addWidget(repo)
         title=QLabel(str(info.get("title") or "版本更新"));title.setTextFormat(Qt.TextFormat.PlainText);title.setWordWrap(True);root.addWidget(title)
         self.notes=QPlainTextEdit();self.notes.setReadOnly(True);self.notes.setPlainText(str(info.get("notes") or "暂无更新日志"))
         root.addWidget(self.notes,1)
         self.status=QLabel();self.status.setWordWrap(True);self.status.setObjectName("SmallMuted");root.addWidget(self.status)
         self.progress=QProgressBar();self.progress.setRange(0,100);self.progress.setValue(0);self.progress.hide();root.addWidget(self.progress)
-        row=QHBoxLayout()
-        release=QPushButton("查看发布页");release.clicked.connect(lambda:QDesktopServices.openUrl(QUrl(REPOSITORY_URL+"/releases")));row.addWidget(release)
-        row.addStretch()
-        self.cancel_btn=QPushButton("取消下载");self.cancel_btn.hide();self.cancel_btn.clicked.connect(self.cancel_requested.emit);row.addWidget(self.cancel_btn)
-        self.later=QPushButton("稍后更新");self.later.clicked.connect(self._later);row.addWidget(self.later)
-        self.action=QPushButton("后台下载");self.action.setObjectName("PrimaryButton");self.action.clicked.connect(self._action);row.addWidget(self.action)
+        row=QHBoxLayout();row.addStretch()
+        self.cancel_btn=QPushButton();self.cancel_btn.hide()
+        self.later=QPushButton("以后再说");self.later.clicked.connect(self._later);row.addWidget(self.later)
+        self.action=QPushButton("升级");self.action.setObjectName("PrimaryButton");self.action.clicked.connect(self._action);row.addWidget(self.action)
         root.addLayout(row)
         asset=info.get("asset")
         if not asset:
-            self.action.setEnabled(False);self.status.setText("此版本尚未上传适合当前系统的更新包；仍可查看更新日志和发布页。")
+            self.action.setEnabled(False);self.status.setText("此版本尚未上传适合当前系统的更新包。")
         elif not asset.get("sha256"):
             self.action.setEnabled(False);self.status.setText("发布包缺少 SHA-256，自动下载暂不可用，请发布者完善 Release 资产校验信息。")
         else:
@@ -5279,18 +5478,33 @@ class UpdateDialog(QDialog):
     def _later(self):
         self.later_requested.emit();self.hide()
     def downloading(self):
-        self.action.setEnabled(False);self.cancel_btn.show();self.progress.show()
-        self.status.setText("正在后台下载。可以选择“稍后更新”关闭窗口，下载不会中断。")
+        self.action.setEnabled(False);self.progress.show()
+        self.status.setText("正在后台下载。可以选择“以后再说”关闭窗口，下载会继续。")
     def set_progress(self,done,total):
         self.progress.setValue(int(100*int(done)/max(1,int(total))))
         self.status.setText(f"已下载 {int(done)/1048576:.1f} / {int(total)/1048576:.1f} MB，完成后校验 SHA-256。")
     def ready(self,path):
-        self.ready_path=str(path);self.cancel_btn.hide();self.progress.show();self.progress.setValue(100);self.action.setEnabled(True)
+        self.ready_path=str(path);self.progress.show();self.progress.setValue(100);self.action.setEnabled(True)
         allowed,reason=signed_install_available(self.info.get("asset") or {})
-        self.action.setText("退出并更新" if allowed else "打开下载目录")
-        self.status.setText("下载和完整性校验完成。\n"+("点击“退出并更新”后安全结束巡检、退出程序，再由系统安装器安装并重启。" if allowed else reason))
+        self.action.setText("现在更新" if allowed else "打开下载目录")
+        self.status.setText("下载和完整性校验完成。\n"+("下载完成，是否现在更新？点击“现在更新”会安全结束巡检并重启；也可以选择“以后再说”。" if allowed else reason))
     def error(self,text):
-        self.status.setText(str(text));self.cancel_btn.hide();self.action.setEnabled(bool((self.info.get("asset") or {}).get("sha256")))
+        self.status.setText(str(text));self.action.setEnabled(bool((self.info.get("asset") or {}).get("sha256")))
+
+
+class WindowResizeHandle(QWidget):
+    """Transparent native resize edge for the frameless main window."""
+    def __init__(self,edges,cursor,parent=None):
+        super().__init__(parent);self.edges=edges;self.setCursor(cursor);self.setMouseTracking(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground,False)
+    def mousePressEvent(self,event):
+        if event.button()==Qt.MouseButton.LeftButton and not self.window().isMaximized():
+            handle=self.window().windowHandle()
+            try:
+                if handle and handle.startSystemResize(self.edges):
+                    event.accept();return
+            except Exception:pass
+        super().mousePressEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -5330,11 +5544,11 @@ class MainWindow(QMainWindow):
         self.count_timer=QTimer(self);self.count_timer.setInterval(1000);self.count_timer.timeout.connect(self.update_countdown)
         self.paint_timer=QTimer(self);self.paint_timer.setSingleShot(True);self.paint_timer.timeout.connect(self.refresh_all)
         self.notice_timer=QTimer(self);self.notice_timer.setSingleShot(True);self.notice_timer.timeout.connect(self.flush_notices)
-        self.apply_theme(str(self.settings.value("ui_theme","深海蓝")),refresh=False)
+        self.apply_theme(str(self.settings.value("ui_theme","蓝橙曜石")),refresh=False)
         app_icon=make_app_icon()
         QApplication.instance().setWindowIcon(app_icon)
         self.setWindowIcon(app_icon);self.setWindowTitle(APP_TITLE+" · "+APP_VERSION)
-        self.resize(1536,1024);self.setMinimumSize(1180,800)
+        self.resize(1536,1024);self.setMinimumSize(980,680)
         self.tray=QSystemTrayIcon(make_app_icon(),self);self.tray.setToolTip(APP_TITLE)
         self.tray_menu=QMenu(self)
         self.tray_menu.addAction("打开监控看板",self.show_dashboard)
@@ -5354,6 +5568,7 @@ class MainWindow(QMainWindow):
         self._connector_timer.start();self.refresh_connector_summary()
         self.size_grip=QSizeGrip(self);self.size_grip.setFixedSize(16,16)
         self.size_grip.move(self.width()-18,self.height()-18);self.size_grip.raise_()
+        self._create_resize_handles()
         QTimer.singleShot(0,self.restore_ui_state)
         if not os.environ.get("FBPM_TEST_MODE") and "--diagnose" not in sys.argv:
             QTimer.singleShot(1800,self.startup_update_check);self._updates_timer.start()
@@ -5379,7 +5594,7 @@ class MainWindow(QMainWindow):
         tagline.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);bar.addWidget(tagline);bar.addStretch()
         self.brand_caption=tagline
         self.page_nav_buttons={}
-        for index,kind,tip in ((0,"home","返回主界面"),(3,"pages","专业 ID 管理")):
+        for index,kind,tip in ((0,"home","返回主界面"),(3,"pages","FB专业ID管理")):
             btn=icon_button(kind,tip,self)
             if index==0:
                 btn.setText("主页");btn.setObjectName("HomePill");btn.setFixedSize(90,40)
@@ -5396,10 +5611,10 @@ class MainWindow(QMainWindow):
         self.connector_dot.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         connector_grid.addWidget(self.connector_dot,0,0,Qt.AlignmentFlag.AlignTop|Qt.AlignmentFlag.AlignRight);bar.addWidget(connector_wrap)
         self.theme_pill=QPushButton("主题 · "+self.theme_name);self.theme_pill.setObjectName("ThemePill");self.theme_pill.setProperty("iconKind","theme");self.theme_pill.setIcon(ui_icon("theme",ACCENT));self.theme_pill.setIconSize(QSize(18,18))
-        self.theme_pill.setFixedSize(140,40);self.theme_pill.setToolTip("切换主题：深海蓝、石墨黑、极光紫、暖米白、雾杏米色")
+        self.theme_pill.setFixedSize(140,40);self.theme_pill.setToolTip("切换主题：蓝橙曜石、石墨黑、清爽白、护眼绿")
         self.theme_pill.clicked.connect(self.show_theme_menu);bar.addWidget(self.theme_pill)
         wrap=QWidget();wrap.setFixedSize(84,42);grid=QGridLayout(wrap);grid.setContentsMargins(0,0,0,0)
-        self.notification_btn=icon_button("bell","通知与预警",wrap)
+        self.notification_btn=icon_button("bell","通知",wrap)
         self.notification_btn.setText("通知");self.notification_btn.setObjectName("HeaderAction");self.notification_btn.setFixedSize(80,40)
         self.notification_btn.clicked.connect(lambda:self.switch_page(2));grid.addWidget(self.notification_btn,0,0)
         self.notification_badge=QLabel();self.notification_badge.setObjectName("NotificationBadge")
@@ -5407,9 +5622,10 @@ class MainWindow(QMainWindow):
         self.notification_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         grid.addWidget(self.notification_badge,0,0,Qt.AlignmentFlag.AlignTop|Qt.AlignmentFlag.AlignRight);bar.addWidget(wrap)
         self.page_nav_buttons[2]=self.notification_btn
-        self.settings_btn=icon_button("settings","设置中心",self);self.settings_btn.setText("设置");self.settings_btn.setObjectName("HeaderAction");self.settings_btn.setFixedSize(80,40);self.settings_btn.clicked.connect(lambda:self.switch_page(4));bar.addWidget(self.settings_btn)
+        self.settings_btn=icon_button("settings","设置",self);self.settings_btn.setText("设置");self.settings_btn.setObjectName("HeaderAction");self.settings_btn.setFixedSize(80,40);self.settings_btn.clicked.connect(lambda:self.switch_page(4));bar.addWidget(self.settings_btn)
         self.page_nav_buttons[4]=self.settings_btn
-        update=icon_button("update","检查更新",self);update.clicked.connect(lambda _=False:self.check_for_updates(True));bar.addWidget(update)
+        self.update_btn=icon_button("update","检查更新",self);self.update_btn.setObjectName("UpdateButton")
+        self.update_btn.setProperty("hasUpdate",False);self.update_btn.clicked.connect(lambda _=False:self.check_for_updates(True));bar.addWidget(self.update_btn)
         line=QFrame();line.setObjectName("HeaderDivider");line.setFixedSize(1,26);bar.addWidget(line)
         minimum=icon_button("min","最小化",self,34);minimum.clicked.connect(self.showMinimized);bar.addWidget(minimum)
         self.max_btn=icon_button("max","最大化 / 还原",self,34);self.max_btn.clicked.connect(self.toggle_maximized);bar.addWidget(self.max_btn)
@@ -5431,11 +5647,11 @@ class MainWindow(QMainWindow):
         m=self.page_manager;m.add_requested.connect(self.open_batch_dialog)
         m.delete_requested.connect(self.delete_ids)
         m.config_changed.connect(self.refresh_dashboard)
-        self.alerts.ack_requested.connect(self.ack_alerts)
+        self.alerts.ack_requested.connect(self.ack_alerts);self.alerts.read_changed.connect(self.refresh_dashboard)
         settings=self.settings_page;settings.login_requested.connect(self.open_login_browser)
         settings.save_requested.connect(self.save_settings)
         settings.export_requested.connect(self.export_csv);settings.backup_requested.connect(self.backup_db)
-        settings.data_dir_requested.connect(self.move_data_directory)
+        settings.data_dir_requested.connect(self.move_data_directory);settings.cleanup_requested.connect(self.smart_cleanup_cache)
 
     def switch_page(self,index):
         if index not in (0,2,3,4):index=0
@@ -5445,7 +5661,7 @@ class MainWindow(QMainWindow):
         for idx,button in self.page_nav_buttons.items():
             button.setProperty("active",idx==index);button.style().unpolish(button);button.style().polish(button)
         if index==0:self.refresh_dashboard()
-        elif index==2:self.alerts.refresh()
+        elif index==2:self.alerts.open_current()
         elif index==3:self.page_manager.refresh()
         elif index==4:self.settings_page.refresh_data_path()
 
@@ -5462,14 +5678,23 @@ class MainWindow(QMainWindow):
             if button.objectName()=="HomePill":color="#FFFFFF"
             elif kind=="bell":color=RED if (unread or 0)>0 else CYAN
             elif kind=="browser":color=GREEN if (hasattr(self,"connector") and self.selected_connectors()) else RED
+            elif kind=="update" and getattr(self,"_update_available",False):color=AMBER
             else:color=colors.get(kind,MUTED)
             button.setIcon(ui_icon(kind,color))
+
+    def set_update_attention(self,active,version=""):
+        self._update_available=bool(active)
+        if not hasattr(self,"update_btn"):return
+        self.update_btn.setProperty("hasUpdate",bool(active))
+        self.update_btn.setToolTip(("有新版本 V"+str(version)+" 待更新") if active else "检查更新")
+        self.update_btn.style().unpolish(self.update_btn);self.update_btn.style().polish(self.update_btn)
+        self._update_header_icons(sum(self.store.unread_totals()) if hasattr(self,"store") else 0)
 
     def refresh_dashboard(self):
         self.dashboard.refresh();self.dashboard.set_running(self.auto_enabled,self.worker_thread is not None)
         g,p=self.store.unread_totals();n=g+p
         self.notification_badge.setText(str(n) if n<100 else "99+");self.notification_badge.setVisible(n>0)
-        self.notification_btn.setToolTip(f"通知与预警 · {n} 条未读")
+        self.notification_btn.setToolTip(f"通知 · {n} 条未读")
         self._update_header_icons(n)
 
     def refresh_all(self):
@@ -5479,7 +5704,7 @@ class MainWindow(QMainWindow):
         elif index==3:self.page_manager.refresh()
 
     def open_alert_notification(self,entry):
-        self.showNormal();self.raise_();self.activateWindow();self.switch_page(2)
+        self.show();self.showNormal();self.raise_();self.activateWindow();self.switch_page(2)
         self.alerts.focus_alert(entry or {})
 
     def schedule_refresh(self):
@@ -5540,7 +5765,7 @@ class MainWindow(QMainWindow):
         pages=self.store.list_pages(enabled_only=True)
         if not pages:
             self.stop_auto()
-            if once:show_hint(self,"请在专业 ID 管理中添加 ID，并至少勾选一个监控模块。")
+            if once:show_hint(self,"请在 FB专业ID管理中添加 ID，并至少勾选一个监控模块。")
             return
         self._start_worker(pages,"monitor")
 
@@ -5839,8 +6064,51 @@ class MainWindow(QMainWindow):
         self._toast.show_message(str(text),duration_ms)
 
 
+    def _create_resize_handles(self):
+        specs={
+            "left":(Qt.Edge.LeftEdge,Qt.CursorShape.SizeHorCursor),
+            "right":(Qt.Edge.RightEdge,Qt.CursorShape.SizeHorCursor),
+            "top":(Qt.Edge.TopEdge,Qt.CursorShape.SizeVerCursor),
+            "bottom":(Qt.Edge.BottomEdge,Qt.CursorShape.SizeVerCursor),
+            "tl":(Qt.Edge.TopEdge|Qt.Edge.LeftEdge,Qt.CursorShape.SizeFDiagCursor),
+            "tr":(Qt.Edge.TopEdge|Qt.Edge.RightEdge,Qt.CursorShape.SizeBDiagCursor),
+            "bl":(Qt.Edge.BottomEdge|Qt.Edge.LeftEdge,Qt.CursorShape.SizeBDiagCursor),
+            "br":(Qt.Edge.BottomEdge|Qt.Edge.RightEdge,Qt.CursorShape.SizeFDiagCursor),
+        }
+        self._resize_handles={}
+        for key,(edges,cursor) in specs.items():
+            handle=WindowResizeHandle(edges,cursor,self);self._resize_handles[key]=handle;handle.raise_()
+        self._layout_resize_handles()
+
+    def _layout_resize_handles(self):
+        if not hasattr(self,"_resize_handles"):return
+        w,h=self.width(),self.height();edge=7;corner=15
+        geo={
+            "left":QRect(0,corner,edge,max(0,h-2*corner)),
+            "right":QRect(max(0,w-edge),corner,edge,max(0,h-2*corner)),
+            "top":QRect(corner,0,max(0,w-2*corner),edge),
+            "bottom":QRect(corner,max(0,h-edge),max(0,w-2*corner),edge),
+            "tl":QRect(0,0,corner,corner),
+            "tr":QRect(max(0,w-corner),0,corner,corner),
+            "bl":QRect(0,max(0,h-corner),corner,corner),
+            "br":QRect(max(0,w-corner),max(0,h-corner),corner,corner),
+        }
+        visible=not self.isMaximized()
+        for key,handle in self._resize_handles.items():
+            handle.setGeometry(geo[key]);handle.setVisible(visible);handle.raise_()
+        if hasattr(self,"size_grip"):self.size_grip.raise_()
+
     def show_dashboard(self):
         self.showNormal();self.raise_();self.activateWindow();self.switch_page(0)
+
+    def reset_ui_layout(self):
+        for key in ("ui/geometry","ui/maximized","ui/page","dashboard/scroll","manager/header","alerts/header"):
+            self.settings.remove(key)
+        self.settings.sync();self.showNormal();self.resize(1360,880)
+        screen=QApplication.screenAt(self.frameGeometry().center()) or QApplication.primaryScreen()
+        if screen:
+            area=screen.availableGeometry();self.move(area.center()-self.rect().center())
+        self.switch_page(0);self.show_toast("窗口布局已恢复默认")
 
     def resizeEvent(self,event):
         super().resizeEvent(event)
@@ -5850,11 +6118,13 @@ class MainWindow(QMainWindow):
             self._toast.reposition()
         if hasattr(self,"size_grip"):
             self.size_grip.move(self.width()-18,self.height()-18);self.size_grip.setVisible(not self.isMaximized())
+        self._layout_resize_handles()
 
     def changeEvent(self,event):
         super().changeEvent(event)
         if event.type()==QEvent.Type.WindowStateChange and hasattr(self,"max_btn"):
             self.max_btn.setToolTip("还原" if self.isMaximized() else "最大化")
+            QTimer.singleShot(0,self._layout_resize_handles)
 
     def toggle_maximized(self):
         if self.isMaximized():self.showNormal()
@@ -5880,7 +6150,7 @@ class MainWindow(QMainWindow):
         old=DATA_DIR.resolve()
         parent=QFileDialog.getExistingDirectory(self,"选择新数据文件夹的上级目录",str(old.parent))
         if not parent:return
-        name,ok=QInputDialog.getText(self,"新文件夹名称","在所选位置创建的文件夹：",QLineEdit.EchoMode.Normal,"主页运营监控数据")
+        name,ok=QInputDialog.getText(self,"新文件夹名称","在所选位置创建的文件夹：",QLineEdit.EchoMode.Normal,"专业监控工具数据")
         if not ok:return
         name=name.strip()
         if not name or name in (".","..") or any(ch in name for ch in '/\\:*?"<>|'):
@@ -5916,13 +6186,65 @@ class MainWindow(QMainWindow):
             self.refresh_all();QMessageBox.information(self,"迁移完成",str(moved["target"])+"\n\n"+note)
         if self.auto_enabled:self.next_run_at=time.time()+30;self.auto_timer.start(30000)
 
+    def smart_cleanup_cache(self):
+        if self._tasks_busy():
+            self.show_toast("正在巡检，请等待本轮结束后再清理缓存");return
+        if self._update_thread is not None:
+            self.show_toast("版本检查或下载进行中，暂不能清理更新缓存");return
+        candidates=[];updates=DATA_DIR/"updates"
+        if updates.exists():candidates.append(("更新下载与解压缓存",updates))
+        for root in (DATA_DIR,AVATAR_DIR):
+            if not root.exists():continue
+            for p in root.rglob("*"):
+                if p.is_file() and p.name.lower().endswith((".part",".tmp",".connector.tmp")):
+                    candidates.append(("残留临时文件",p))
+        log=DATA_DIR/"error.log";log_trim=log.is_file() and log.stat().st_size>2*1024*1024
+        total=0;seen=set();items=[]
+        for label,path in candidates:
+            try:
+                rp=path.resolve()
+                if rp in seen:continue
+                seen.add(rp)
+                size=sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.is_dir() else path.stat().st_size
+                total+=size;items.append((label,path,size))
+            except OSError:pass
+        if log_trim:
+            try:total+=max(0,log.stat().st_size-512*1024)
+            except OSError:pass
+        if total<=0:
+            self.show_toast("缓存状态良好，没有发现需要清理的垃圾文件");return
+        labels=[]
+        if any(x[0]=="更新下载与解压缓存" for x in items):labels.append("旧更新下载/解压缓存")
+        if any(x[0]=="残留临时文件" for x in items):labels.append("中断留下的临时文件")
+        if log_trim:labels.append("过大的运行日志（保留最近约 512KB）")
+        answer=QMessageBox.question(self,"确认智能清理",
+            f"检测到约 {total/1048576:.1f} MB 可安全清理内容：\n"+"、".join(labels)+
+            "\n\n不会删除专业 ID、通知、头像、设置、数据库或浏览器连接记录。\n\n现在清理吗？",
+            QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)
+        if answer!=QMessageBox.StandardButton.Yes:return
+        released=0
+        for _label,path,size in sorted(items,key=lambda x:len(str(x[1])),reverse=True):
+            try:
+                if path.is_dir():shutil.rmtree(path)
+                else:path.unlink(missing_ok=True)
+                released+=size
+            except OSError:pass
+        if log_trim:
+            try:
+                data=log.read_bytes();keep=data[-512*1024:];log.write_bytes(keep);released+=len(data)-len(keep)
+            except OSError:pass
+        ensure_private_directory(DATA_DIR/"updates")
+        if hasattr(self.settings_page,"cleanup_status"):
+            self.settings_page.cleanup_status.setText(f"上次清理释放约 {released/1048576:.1f} MB；核心数据未改动。")
+        self.show_toast(f"智能清理完成 · 释放约 {released/1048576:.1f} MB")
+
     def open_page(self,pid):
         QDesktopServices.openUrl(QUrl(f"https://www.facebook.com/{pid}"))
 
 
     def export_csv(self,kind=None):
         if kind not in ("current","alerts"):
-            choice,ok=QInputDialog.getItem(self,"导出数据","内容：",["主页当前状态","通知与预警"],0,False)
+            choice,ok=QInputDialog.getItem(self,"导出数据","内容：",["主页当前状态","通知"],0,False)
             if not ok:return
             kind="current" if choice=="主页当前状态" else "alerts"
         filename="pages.csv" if kind=="current" else "notifications.csv"
@@ -5933,7 +6255,7 @@ class MainWindow(QMainWindow):
 
     def backup_db(self):
         stamp=datetime.now().strftime("%Y%m%d_%H%M")
-        path,_=QFileDialog.getSaveFileName(self,"备份数据库",str(Path.home()/f"FBGrowthRadar_backup_{stamp}.db"),"本地数据库数据库 (*.db)")
+        path,_=QFileDialog.getSaveFileName(self,"备份数据库",str(Path.home()/f"ProfessionalMonitor_backup_{stamp}.db"),"本地数据库数据库 (*.db)")
         if not path:return
         try:
             self.store.backup(Path(path))
@@ -5947,7 +6269,7 @@ class MainWindow(QMainWindow):
 
     def on_tray_hint(self):
         if is_true(self.settings.value("silent_to_tray",1),True):return
-        self.tray.showMessage(APP_TITLE,"\u7a97\u53e3\u5df2\u6536\u8d77\u5230\u6258\u76d8\uff0c\u7ee7\u7eed\u540e\u53f0\u8fd0\u884c\u3002\u53cc\u51fb\u6258\u76d8\u56fe\u6807\u53ef\u6253\u5f00\uff1b\u5b8c\u5168\u9000\u51fa\u8bf7\u7528\u6258\u76d8\u83dc\u5355\u3002",QSystemTrayIcon.MessageIcon.Information,4000)
+        self.tray.showMessage(APP_TITLE,"窗口已收起到托盘，继续后台运行。双击托盘图标可打开；完全退出请使用托盘菜单。",QSystemTrayIcon.MessageIcon.Information,4000)
 
     def exit_application(self):
         self._closing=True;self.auto_enabled=False;self.auto_timer.stop();self.next_run_at=None
@@ -5996,8 +6318,8 @@ class MainWindow(QMainWindow):
 
     def apply_theme(self,theme_name=None,refresh=True):
         global BG,SIDEBAR,PANEL,PANEL_2,BORDER,TEXT,MUTED,ACCENT,GREEN,RED,AMBER,CYAN
-        name=str(theme_name or "深海蓝")
-        if name not in THEME_PRESETS:name="深海蓝"
+        name=str(theme_name or "蓝橙曜石")
+        if name not in THEME_PRESETS:name="蓝橙曜石"
         self.theme_name=name;p=THEME_PRESETS[name]
         for key,target in (("bg","BG"),("sidebar","SIDEBAR"),("panel","PANEL"),("panel_2","PANEL_2"),
                 ("border","BORDER"),("text","TEXT"),("muted","MUTED"),("accent","ACCENT"),
@@ -6031,7 +6353,7 @@ class MainWindow(QMainWindow):
 
 
     def apply_style(self):
-        p=THEME_PRESETS.get(getattr(self,"theme_name","深海蓝"),THEME_PRESETS["深海蓝"])
+        p=THEME_PRESETS.get(getattr(self,"theme_name","蓝橙曜石"),THEME_PRESETS["蓝橙曜石"])
         field=p["input"];hover=p["hover"];soft=p["soft"];light=bool(p.get("light"))
         status_ok_bg="#E4F4ED" if light else "#103D39"
         status_ok_border="#B8DCCF" if light else "#24584E"
@@ -6065,6 +6387,9 @@ class MainWindow(QMainWindow):
             QSpinBox#QuickTimingSpin {{ padding:4px 3px;font-size:12px;font-weight:650; }}
             QPushButton#ThemePill {{ background:{soft};border:1px solid {ACCENT};border-radius:20px;padding:0 12px;font-size:12px;font-weight:750; }}
             QPushButton#ThemePill:hover {{ background:{hover}; }}
+            QPushButton#UpdateButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:0; }}
+            QPushButton#UpdateButton:hover {{ background:{hover};border-color:{ACCENT}; }}
+            QPushButton#UpdateButton[hasUpdate='true'] {{ background:{status_warn_bg};border:1px solid {AMBER}; }}
             QProgressBar {{ border:1px solid {BORDER};border-radius:6px;background:{PANEL_2};height:18px;text-align:center; }}
             QProgressBar::chunk {{ background:{ACCENT};border-radius:5px; }}
             QPushButton#TopIconButton:hover {{ background:{hover};border-color:{BORDER}; }}
@@ -6095,7 +6420,7 @@ class MainWindow(QMainWindow):
             QFrame#AlertRow {{ background:transparent;border-left:2px solid {BORDER}; }}
             QLabel#AlertRowTitle {{ color:{AMBER};font-size:12px;font-weight:650; }}
             QLabel#MetricIcon {{ background:{PANEL_2};border-radius:13px; }}
-            QLabel#MetricLabel {{ color:{MUTED};font-size:12px; }}
+            QLabel#MetricLabel {{ color:{TEXT};font-size:15px;font-weight:800; }}
             QLabel#MetricValue {{ color:{TEXT};font-weight:800; }}
             QLabel#CardTitle {{ font-size:14px;font-weight:750;color:{TEXT}; }}
             QLabel#CardId {{ color:{MUTED};font-size:11px; }}
@@ -6233,6 +6558,7 @@ class MainWindow(QMainWindow):
             try:
                 info=json.loads(pending.read_text("utf-8"))
                 if release_version(info.get("version",""))>release_version(APP_VERSION):
+                    self.set_update_attention(True,info.get("version",""))
                     self._update_manual=False;self._start_update_task("verify",info);return
                 pending.unlink(missing_ok=True)
             except (ValueError,OSError,UpdateError):pass
@@ -6267,6 +6593,7 @@ class MainWindow(QMainWindow):
         status=result.get("status")
         if self._closing:return
         if status=="new":
+            self.set_update_attention(True,result.get("version",""))
             self.settings.setValue("update/last_checked",now_iso());self.settings.sync()
             version=result.get("version","")
             snoozed=str(self.settings.value("update/snooze_version",""))==version
@@ -6276,6 +6603,7 @@ class MainWindow(QMainWindow):
                 self.dashboard.status.setText("发现新版 V"+version+" · 已设置稍后提醒")
             else:self._show_update_dialog(result)
         elif status=="ready":
+            self.set_update_attention(True,(result.get("info") or {}).get("version",""))
             info=dict(result["info"]);info["path"]=result["path"]
             save_json_atomic(DATA_DIR/"updates/pending.json",info)
             dlg=self._show_update_dialog(info);dlg.ready(result["path"])
@@ -6289,6 +6617,7 @@ class MainWindow(QMainWindow):
                 if status=="cancelled":self.show_toast("下载已取消")
                 else:QMessageBox.warning(self,"版本检查未完成",message)
         elif status=="current":
+            self.set_update_attention(False)
             self.settings.setValue("update/last_checked",now_iso());self.settings.sync()
             message="当前已是最新版本（V"+APP_VERSION+"）"
             self.dashboard.status.setText(message)
@@ -6370,7 +6699,7 @@ def main():
         if sys.stderr is not None:
             try:sys.stderr.write(text)
             except Exception:pass
-        QMessageBox.critical(None,"主页运营监控工具发生错误",
+        QMessageBox.critical(None,APP_TITLE + "发生错误",
             "详细信息已记录到当前数据目录的 error.log。\n\n"+str(exc)[:600])
     sys.excepthook=exception_hook
     try:window=MainWindow()
