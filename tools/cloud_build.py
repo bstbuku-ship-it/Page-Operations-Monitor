@@ -61,9 +61,12 @@ def windows_material():
     cert=decode_secret('WINDOWS_CERT_PFX_B64',BUILD/'signing/windows.pfx');return cert,password
 def pfx_thumbprint(cert,password):
     env=dict(os.environ);env['POM_PFX_PASSWORD']=password
+    # Keep this compatible with Python 3.10/3.11 too: do not use nested same-quote
+    # expressions inside an f-string (PEP 701 changed parsing in Python 3.12).
+    cert_ps=str(cert).replace("'","''")
     ps=("$p=ConvertTo-SecureString $env:POM_PFX_PASSWORD -AsPlainText -Force; "
-        f"$d=Get-PfxData -FilePath '{str(cert).replace("'","''")}' -Password $p; "
-        "$c=$d.EndEntityCertificates | Select-Object -First 1; if(-not $c){exit 2}; $c.Thumbprint")
+        + "$d=Get-PfxData -FilePath '" + cert_ps + "' -Password $p; "
+        + "$c=$d.EndEntityCertificates | Select-Object -First 1; if(-not $c){exit 2}; $c.Thumbprint")
     p=subprocess.run(['powershell.exe','-NoProfile','-Command',ps],capture_output=True,text=True,encoding='utf-8',errors='replace',env=env)
     thumb=(p.stdout or '').strip().replace(' ','')
     if p.returncode!=0 or not re.fullmatch(r'[0-9A-Fa-f]{40,64}',thumb):raise RuntimeError('无法读取 Windows 代码签名证书指纹')
