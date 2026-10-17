@@ -44,9 +44,46 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "准备构建 v$VERSION"
 
+
+  signing_precheck:
+    name: 发布模式与签名配置预检
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      WINDOWS_CERT_PFX_B64: ${{ secrets.WINDOWS_CERT_PFX_B64 }}
+      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+      APPLE_APP_CERT_P12_B64: ${{ secrets.APPLE_APP_CERT_P12_B64 }}
+      APPLE_APP_CERT_PASSWORD: ${{ secrets.APPLE_APP_CERT_PASSWORD }}
+      APPLE_INSTALLER_CERT_P12_B64: ${{ secrets.APPLE_INSTALLER_CERT_P12_B64 }}
+      APPLE_INSTALLER_CERT_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERT_PASSWORD }}
+      APPLE_APP_SIGN_IDENTITY: ${{ secrets.APPLE_APP_SIGN_IDENTITY }}
+      APPLE_INSTALLER_SIGN_IDENTITY: ${{ secrets.APPLE_INSTALLER_SIGN_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - name: 检查发布模式与签名 Secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.require_signing }}" != "true" ]; then
+            echo "普通构建模式：不强制要求签名 Secrets。"
+            exit 0
+          fi
+          missing=()
+          for name in WINDOWS_CERT_PFX_B64 WINDOWS_CERT_PASSWORD APPLE_APP_CERT_P12_B64 APPLE_APP_CERT_PASSWORD APPLE_INSTALLER_CERT_P12_B64 APPLE_INSTALLER_CERT_PASSWORD APPLE_APP_SIGN_IDENTITY APPLE_INSTALLER_SIGN_IDENTITY APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD
+          do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::正式签名发布缺少 GitHub Secrets：${missing[*]}"
+            exit 1
+          fi
+          echo "正式签名发布 Secrets 名称检查通过。"
+
   windows:
     name: Windows x64 云端构建
-    needs: validate
+    needs: [validate, signing_precheck]
     runs-on: windows-latest
     env:
       REQUIRE_SIGNING: ${{ inputs.require_signing }}
@@ -71,7 +108,7 @@ jobs:
 
   mac_arm64:
     name: macOS Apple Silicon / arm64
-    needs: validate
+    needs: [validate, signing_precheck]
     runs-on: macos-15
     env:
       REQUIRE_SIGNING: ${{ inputs.require_signing }}
@@ -102,7 +139,7 @@ jobs:
 
   mac_x64:
     name: macOS Intel / x64
-    needs: validate
+    needs: [validate, signing_precheck]
     runs-on: macos-15-intel
     env:
       REQUIRE_SIGNING: ${{ inputs.require_signing }}
