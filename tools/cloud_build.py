@@ -26,7 +26,8 @@ def version():
     return m.group(1)
 def clean():
     shutil.rmtree(BUILD,ignore_errors=True);shutil.rmtree(DIST,ignore_errors=True);shutil.rmtree(OUT,ignore_errors=True)
-    BUILD.mkdir(parents=True,exist_ok=True);OUT.mkdir(parents=True,exist_ok=True)
+    for p in (BUILD, BUILD/'spec', BUILD/'deployer-spec', BUILD/'deployer-work', DIST, OUT):
+        p.mkdir(parents=True,exist_ok=True)
 def common(icon=None):
     cmd=[sys.executable,'-m','PyInstaller','--noconfirm','--clean','--windowed','--onedir','--name',APP_ID,'--workpath',str(BUILD/'pyinstaller'),'--distpath',str(DIST),'--specpath',str(BUILD/'spec'),'--collect-all','playwright']
     if icon and icon.exists():cmd+=['--icon',str(icon)]
@@ -54,10 +55,20 @@ def find_signtool():
     return sorted(matches,key=lambda p:p.as_posix(),reverse=True)[0]
 def windows_material():
     b64=str(os.environ.get('WINDOWS_CERT_PFX_B64','') or '').strip();password=str(os.environ.get('WINDOWS_CERT_PASSWORD','') or '')
-    if bool(b64)!=bool(password):raise RuntimeError('WINDOWS_CERT_PFX_B64 / WINDOWS_CERT_PASSWORD 必须同时设置')
-    if not b64:
-        if require_signing():raise RuntimeError('正式发布要求 Windows 代码签名证书')
-        print('::warning::未配置 Windows 签名证书，本次为测试包');return None
+    complete=bool(b64) and bool(password)
+    partial=bool(b64)!=bool(password)
+    if require_signing():
+        if not complete:
+            missing=[]
+            if not b64:missing.append('WINDOWS_CERT_PFX_B64')
+            if not password:missing.append('WINDOWS_CERT_PASSWORD')
+            raise RuntimeError('正式签名发布缺少 Windows Secrets：'+', '.join(missing))
+    if partial:
+        print('::warning::Windows 签名 Secrets 配置不完整；普通构建将忽略签名配置并继续。')
+        return None
+    if not complete:
+        print('::warning::未配置 Windows 签名证书；普通构建将生成未签名测试包。')
+        return None
     cert=decode_secret('WINDOWS_CERT_PFX_B64',BUILD/'signing/windows.pfx');return cert,password
 def pfx_thumbprint(cert,password):
     env=dict(os.environ);env['POM_PFX_PASSWORD']=password
@@ -108,14 +119,29 @@ def build_windows(ver):
             except OSError:pass
 
 def mac_config():
-    names=('APPLE_APP_CERT_P12_B64','APPLE_APP_CERT_PASSWORD','APPLE_INSTALLER_CERT_P12_B64','APPLE_INSTALLER_CERT_PASSWORD','APPLE_APP_SIGN_IDENTITY','APPLE_INSTALLER_SIGN_IDENTITY')
-    cfg={n:str(os.environ.get(n,'') or '').strip() for n in names}
-    if any(cfg.values()) and not all(cfg.values()):raise RuntimeError('macOS 签名 Secrets 配置不完整')
-    if not all(cfg.values()):
-        if require_signing():raise RuntimeError('正式发布要求 Apple Developer ID 证书')
-        print('::warning::未配置 macOS 签名证书，本次为测试包');return None
-    for n in ('APPLE_ID','APPLE_TEAM_ID','APPLE_APP_PASSWORD'):cfg[n]=str(os.environ.get(n,'') or '').strip()
-    if require_signing() and not all(cfg[n] for n in ('APPLE_ID','APPLE_TEAM_ID','APPLE_APP_PASSWORD')):raise RuntimeError('正式发布要求 Apple 公证凭据')
+    cert_names=('APPLE_APP_CERT_P12_B64','APPLE_APP_CERT_PASSWORD','APPLE_INSTALLER_CERT_P12_B64','APPLE_INSTALLER_CERT_PASSWORD','APPLE_APP_SIGN_IDENTITY','APPLE_INSTALLER_SIGN_IDENTITY')
+    cfg={n:str(os.environ.get(n,'') or '').strip() for n in cert_names}
+    cert_complete=all(cfg.values())
+    cert_partial=any(cfg.values()) and not cert_complete
+    if require_signing():
+        if not cert_complete:
+            missing=[n for n in cert_names if not cfg[n]]
+            raise RuntimeError('正式签名发布缺少 macOS Secrets：'+', '.join(missing))
+    elif cert_partial:
+        print('::warning::macOS 签名 Secrets 配置不完整；普通构建将忽略签名配置并继续。')
+        return None
+    elif not cert_complete:
+        print('::warning::未配置 macOS 签名证书；普通构建将生成未签名测试包。')
+        return None
+    for n in ('APPLE_ID','APPLE_TEAM_ID','APPLE_APP_PASSWORD'):
+        cfg[n]=str(os.environ.get(n,'') or '').strip()
+    notarization_complete=all(cfg[n] for n in ('APPLE_ID','APPLE_TEAM_ID','APPLE_APP_PASSWORD'))
+    if require_signing() and not notarization_complete:
+        missing=[n for n in ('APPLE_ID','APPLE_TEAM_ID','APPLE_APP_PASSWORD') if not cfg[n]]
+        raise RuntimeError('正式签名发布缺少 Apple 公证 Secrets：'+', '.join(missing))
+    if not require_signing() and not notarization_complete:
+        print('::warning::Apple 公证凭据不完整；普通构建只做代码签名，不执行公证。')
+        cfg['APPLE_ID']=cfg['APPLE_TEAM_ID']=cfg['APPLE_APP_PASSWORD']=''
     return cfg
 def prepare_keychain(cfg):
     sd=BUILD/'signing';sd.mkdir(parents=True,exist_ok=True);a=decode_secret('APPLE_APP_CERT_P12_B64',sd/'app.p12');i=decode_secret('APPLE_INSTALLER_CERT_P12_B64',sd/'installer.p12');key=sd/'sign.keychain-db';pwd=secrets.token_urlsafe(24)
@@ -149,7 +175,7 @@ def build_mac(ver,arch):
         if key:subprocess.run(['security','delete-keychain',str(key)],check=False,capture_output=True)
         shutil.rmtree(BUILD/'signing',ignore_errors=True)
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('--target',required=True,choices=['windows-x64','macos-arm64','macos-x64']);a=ap.parse_args();ver=version();clean();print('APP_VERSION='+ver);print('RequireSigning='+str(require_signing()))
+    ap=argparse.ArgumentParser();ap.add_argument('--target',required=True,choices=['windows-x64','macos-arm64','macos-x64']);a=ap.parse_args();ver=version();clean();print('APP_VERSION='+ver);print('RequireSigning='+str(require_signing()));print('Python='+sys.version.replace(chr(10),' '));print('Platform='+platform.platform());print('Machine='+platform.machine())
     if a.target=='windows-x64':
         if os.name!='nt':raise RuntimeError('Windows 目标必须在 Windows runner 构建')
         result=build_windows(ver)
