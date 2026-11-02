@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import argparse, base64, glob, os, platform, re, secrets, shutil, subprocess, sys, zipfile
+import argparse, base64, glob, json, os, platform, re, secrets, shutil, subprocess, sys
 from pathlib import Path
 
 def _ensure_utf8_output():
@@ -17,8 +17,8 @@ def _ensure_utf8_output():
 _ensure_utf8_output()
 
 ROOT=Path(__file__).resolve().parents[1]
-SOURCE=ROOT/'Page_Operations_Monitor.py';ICON_WIN=ROOT/'PageOperationsMonitor.ico';ICON_MAC=ROOT/'PageOperationsMonitor.icns';DEPLOYER=ROOT/'tools/windows_deployer.py'
-BUILD=ROOT/'build';DIST=ROOT/'dist';OUT=ROOT/'cloud-release';APP_ID='ProfessionalMonitorTool';BUNDLE_ID='com.bstbuku.pageoperationsmonitor';DEFAULT_TIMESTAMP_URL='http://timestamp.digicert.com'
+SOURCE=ROOT/'Page_Operations_Monitor.py';ICON_WIN=ROOT/'PageOperationsMonitor.ico';ICON_MAC=ROOT/'PageOperationsMonitor.icns';ISS_SCRIPT=ROOT/'tools/windows_setup.iss'
+BUILD=ROOT/'build';DIST=ROOT/'dist';OUT=ROOT/'cloud-release';PORTABLE_OUT=ROOT/'cloud-release-portable';PORTABLE_MARKER='portable.mode';APP_ID='ProfessionalMonitorTool';BUNDLE_ID='com.bstbuku.pageoperationsmonitor';DEFAULT_TIMESTAMP_URL='http://timestamp.digicert.com'
 
 def truthy(v):return str(v or '').strip().lower() in {'1','true','yes','on'}
 def require_signing():return truthy(os.environ.get('REQUIRE_SIGNING'))
@@ -39,8 +39,8 @@ def version():
     if not m:raise RuntimeError('主程序找不到 APP_VERSION')
     return m.group(1)
 def clean():
-    shutil.rmtree(BUILD,ignore_errors=True);shutil.rmtree(DIST,ignore_errors=True);shutil.rmtree(OUT,ignore_errors=True)
-    for p in (BUILD, BUILD/'spec', BUILD/'deployer-spec', BUILD/'deployer-work', DIST, OUT):
+    shutil.rmtree(BUILD,ignore_errors=True);shutil.rmtree(DIST,ignore_errors=True);shutil.rmtree(OUT,ignore_errors=True);shutil.rmtree(PORTABLE_OUT,ignore_errors=True)
+    for p in (BUILD, BUILD/'spec', DIST, OUT, PORTABLE_OUT):
         p.mkdir(parents=True,exist_ok=True)
 def common(icon=None):
     cmd=[sys.executable,'-m','PyInstaller','--noconfirm','--clean','--windowed','--onedir','--name',APP_ID,'--workpath',str(BUILD/'pyinstaller'),'--distpath',str(DIST),'--specpath',str(BUILD/'spec'),'--collect-all','playwright']
@@ -106,12 +106,43 @@ def sign_windows(path,material):
     cert,password=material;tool=find_signtool();timestamp=str(os.environ.get('WINDOWS_TIMESTAMP_URL') or DEFAULT_TIMESTAMP_URL)
     run([str(tool),'sign','/fd','SHA256','/td','SHA256','/tr',timestamp,'/f',str(cert),'/p',password,str(path)],secret_values=(password,))
     run([str(tool),'verify','/pa','/v',str(path)])
-def zip_payload(app_dir,payload):
-    with zipfile.ZipFile(payload,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as zf:
-        for p in sorted(app_dir.rglob('*')):
-            if p.is_file():zf.write(p,p.relative_to(app_dir).as_posix())
+def find_iscc():
+    """Locate ISCC.exe (Inno Setup 6 compiler). Fail loudly if absent."""
+    direct = shutil.which('ISCC.exe') or shutil.which('iscc')
+    if direct:
+        return Path(direct)
+    roots = []
+    for key in ('ProgramFiles(x86)', 'ProgramFiles'):
+        value = os.environ.get(key)
+        if value:
+            roots.append(Path(value))
+    roots += [Path(r'C:\Program Files (x86)'), Path(r'C:\Program Files')]
+    seen = set()
+    for root in roots:
+        candidates = [root / 'Inno Setup 6' / 'ISCC.exe']
+        try:
+            candidates += sorted(root.glob('Inno Setup */ISCC.exe'))
+        except OSError:
+            pass
+        for cand in candidates:
+            key = str(cand).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            if cand.is_file():
+                return cand
+    raise RuntimeError('找不到 Inno Setup 的 ISCC.exe，请先安装 Inno Setup 6（choco install innosetup -y）')
+
+def find_inno_language(iscc_path):
+    """Official Simplified Chinese language file. Fail loudly if missing:
+    never silently fall back to an English wizard."""
+    lang = Path(iscc_path).resolve().parent / 'Languages' / 'ChineseSimplified.isl'
+    if not lang.is_file():
+        raise RuntimeError(f'找不到 Inno Setup 官方简体中文语言文件：{lang}；拒绝静默回退英文界面。')
+    return lang
+
 def build_windows(ver):
-    if not ICON_WIN.exists() or not DEPLOYER.exists():raise RuntimeError('缺少 Windows 图标或部署器源码')
+    if not ICON_WIN.exists() or not ISS_SCRIPT.exists():raise RuntimeError('缺少 Windows 图标或 Inno Setup 脚本')
     material=windows_material()
     try:
         thumb=pfx_thumbprint(*material) if material else ''
@@ -120,13 +151,36 @@ def build_windows(ver):
         app_dir=DIST/APP_ID;exe=app_dir/(APP_ID+'.exe')
         if not exe.exists():raise RuntimeError('主程序 EXE 未生成')
         sign_windows(exe,material)
-        payload=BUILD/'payload.zip';zip_payload(app_dir,payload)
+        # Stage the exact file set the installer ships. No portable.mode here:
+        # a standard install must never be detected as portable.
+        stage=BUILD/'inno-stage'
+        shutil.rmtree(stage,ignore_errors=True)
+        shutil.copytree(app_dir,stage)
+        if not (stage/(APP_ID+'.exe')).is_file():raise RuntimeError('安装文件 staging 不完整')
+        # Portable artifact: same app files + portable.mode marker (exact
+        # format the retired deployer wrote; the app detects portable mode
+        # by the marker file next to its exe).
+        shutil.rmtree(PORTABLE_OUT,ignore_errors=True)
+        shutil.copytree(app_dir,PORTABLE_OUT)
+        (PORTABLE_OUT/PORTABLE_MARKER).write_text(
+            json.dumps({"mode":"portable","version":ver},ensure_ascii=False),encoding="utf-8")
+        # Compile the Chinese Inno Setup installer. ISCC and the official
+        # Simplified Chinese language file must both exist; both helpers
+        # fail loudly instead of producing an English installer.
+        iscc=find_iscc();find_inno_language(iscc)
+        OUT.mkdir(parents=True,exist_ok=True)
         name=f'ProfessionalMonitorTool-{ver}-windows-x64-deployer'
-        run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--windowed','--onefile','--name',name,'--workpath',str(BUILD/'deployer-work'),'--distpath',str(OUT),'--specpath',str(BUILD/'deployer-spec'),'--icon',str(ICON_WIN),'--add-data',str(payload)+os.pathsep+'.','--add-data',str(ICON_WIN)+os.pathsep+'.',str(DEPLOYER)])
+        run([str(iscc),
+             f'/DAppVersion={ver}',
+             f'/DStageDir={stage}',
+             f'/DOutputDir={OUT}',
+             f'/DOutputName={name}',
+             f'/DAppIcon={ICON_WIN}',
+             str(ISS_SCRIPT)])
         result=OUT/(name+'.exe')
-        if not result.exists():raise RuntimeError('Windows 自定义部署器未生成')
+        if not result.exists():raise RuntimeError('Inno Setup 安装程序未生成')
         sign_windows(result,material)
-        return result
+        return result,PORTABLE_OUT
     finally:
         if material:
             try:material[0].unlink(missing_ok=True)
@@ -192,11 +246,12 @@ def main():
     ap=argparse.ArgumentParser();ap.add_argument('--target',required=True,choices=['windows-x64','macos-arm64','macos-x64']);a=ap.parse_args();ver=version();clean();print('APP_VERSION='+ver);print('RequireSigning='+str(require_signing()));print('Python='+sys.version.replace(chr(10),' '));print('Platform='+platform.platform());print('Machine='+platform.machine())
     if a.target=='windows-x64':
         if os.name!='nt':raise RuntimeError('Windows 目标必须在 Windows runner 构建')
-        result=build_windows(ver)
+        result,portable_dir=build_windows(ver)
+        print('BUILD_OUTPUT='+str(result));print('PORTABLE_OUTPUT='+str(portable_dir));return 0
     else:
         if sys.platform!='darwin':raise RuntimeError('macOS 目标必须在 macOS runner 构建')
         want='arm64' if a.target.endswith('arm64') else 'x64';actual='arm64' if platform.machine().lower() in ('arm64','aarch64') else 'x64'
         if actual!=want:raise RuntimeError(f'Runner 架构不匹配：需要 {want}，实际 {actual}')
         result=build_mac(ver,want)
-    print('BUILD_OUTPUT='+str(result));return 0
+        print('BUILD_OUTPUT='+str(result));return 0
 if __name__=='__main__':raise SystemExit(main())

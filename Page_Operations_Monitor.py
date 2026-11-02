@@ -42,7 +42,7 @@ import shlex
 
 APP_TITLE = "专业监控工具"
 APP_VERSION = "1.6.1"
-APP_BUILD = "professional-portable-deployer-ui-v161-20261102-fix2"
+APP_BUILD = "professional-portable-deployer-ui-v161-20261102-fix4"
 DEFAULT_INTERVAL_MINUTES = 120
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -2961,7 +2961,7 @@ def _extract_platform_bundle_installer(plan,path,updates_dir):
     if key not in allowed_platforms or key!=update_platform_key():
         raise UpdateError("更新包与当前系统不匹配")
     if key.startswith("windows-"):
-        expected=f"ProfessionalMonitorTool-{version}-{key}-deployer.exe";kind="deployer"
+        expected=f"ProfessionalMonitorTool-{version}-{key}-deployer.exe";kind="inno"
     else:
         expected=f"ProfessionalMonitorTool-{version}-{key}.pkg";kind="pkg"
 
@@ -3115,6 +3115,12 @@ try {
   $loc = (Get-ItemProperty __REGKEY__ -ErrorAction Stop).InstallLocation
   if ($loc -and $loc -eq $target) { Remove-Item __REGKEY__ -Recurse -Force }
 } catch {}
+try {
+  $k2 = Get-ItemProperty __REGKEY_INNO__ -ErrorAction Stop
+  $loc2 = $k2.InstallLocation
+  $un2 = $k2.UninstallString
+  if (($loc2 -and $loc2 -eq $target) -or ($un2 -and $un2.StartsWith('"' + $target, [System.StringComparison]::OrdinalIgnoreCase))) { Remove-Item __REGKEY_INNO__ -Recurse -Force }
+} catch {}
 $desktop = [Environment]::GetFolderPath('Desktop')
 Remove-Item (Join-Path $desktop __SHORTCUT__) -Force
 for ($i = 0; $i -lt 8; $i++) {
@@ -3153,6 +3159,7 @@ def build_uninstall_script(target, mode, data_dir, delete_data, show_final, wait
     script = script.replace("__KEEP_BACKUP__", "$true" if keep_backup else "$false")
     script = script.replace("__BACKUP__", _ps_quote(str(backup)))
     script = script.replace("__REGKEY__", _ps_quote("HKCU:\\" + UNINSTALL_REG_PATH))
+    script = script.replace("__REGKEY_INNO__", _ps_quote("HKCU:\\" + UNINSTALL_REG_PATH + "_is1"))
     script = script.replace("__SHORTCUT__", _ps_quote(APP_TITLE + ".lnk"))
     script = script.replace("__DELETE_DATA__", "$true" if delete_data else "$false")
     script = script.replace("__SHOW_FINAL__", "$true" if show_final else "$false")
@@ -3353,7 +3360,10 @@ try {
         }
     }
     if ($j.installer -eq 'inno') {
-        $p = Start-Process -FilePath $j.path -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' -Wait -PassThru
+        $dir = $j.target_dir -replace '"',''
+        if ($dir.Length -gt 3) { $dir = $dir.TrimEnd('\') }
+        $args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR="' + $dir + '" /TASKS="desktopicon"'
+        $p = Start-Process -FilePath $j.path -ArgumentList $args -Wait -PassThru
     } elseif ($j.installer -eq 'msi') {
         $args = '/i "' + $j.path + '" /passive /norestart'
         $p = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $args -Wait -PassThru

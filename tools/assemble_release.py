@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import re, shutil, zipfile
+import json, re, shutil, zipfile
 
 from pathlib import Path
 
@@ -40,18 +40,47 @@ def locate(name):
     return m[0]
 
 
+def bundle_files(path,entries):
+    # entries: (source_path, archive_name) pairs, written in given order.
+    with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as zf:
+        for src,arc in entries:
+            zf.write(src,arc)
+
+
 def bundle(path,installer,plugin_files):
     # ZIP 内只有两样：当前系统的安装文件 + 浏览器插件。不放 README，不放图标。
-    with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as zf:
-        zf.write(installer,installer.name)
-        for src,arc in plugin_files:
-            zf.write(src,arc)
+    bundle_files(path,[(installer,installer.name)]+list(plugin_files))
+
+
+def portable_files(ver):
+    """Staged portable tree (artifact `windows-x64-portable`): same app files
+    as the installer payload, plus the portable.mode marker at the top level.
+    The marker is validated: mode must be portable and version must match."""
+    root=ART/'windows-x64-portable'
+    if not root.is_dir():
+        markers=[p for p in ART.rglob('portable.mode') if p.is_file()]
+        if len(markers)!=1:raise RuntimeError(f'无法唯一找到便携版目录: {markers}')
+        root=markers[0].parent
+    marker=root/'portable.mode'
+    try:
+        obj=json.loads(marker.read_text(encoding='utf-8'))
+    except (OSError,ValueError) as exc:
+        raise RuntimeError('便携版标记 portable.mode 无效') from exc
+    if not isinstance(obj,dict) or obj.get('mode')!='portable' or str(obj.get('version'))!=ver:
+        raise RuntimeError(f'便携版标记内容不符：{obj}')
+    files=[]
+    for q in sorted(root.rglob('*')):
+        if q.is_file():
+            files.append((q,q.relative_to(root).as_posix()))
+    if not files:
+        raise RuntimeError('便携版目录为空')
+    return files
 
 
 def plugin_files():
     """浏览器插件/ contents, sorted for deterministic zips."""
     if not PLUGIN_DIR.is_dir():
-        return []
+        raise RuntimeError('browser-extension/ 目录不存在，无法组装浏览器插件')
     files=[]
     for p in sorted(PLUGIN_DIR.rglob('*')):
         if p.is_file():
@@ -94,8 +123,11 @@ def main():
 
     for out,installer in bundles:bundle(out,installer,plugins)
 
+    portable_zip=OUT/f'ProfessionalMonitorTool-{ver}-windows-x64-portable.zip'
+    bundle_files(portable_zip,portable_files(ver)+plugins)
+
     (META/'RELEASE_NOTES.md').write_text(notes(ver),encoding='utf-8')
 
-    print('\n'.join(str(x[0]) for x in bundles));return 0
+    print('\n'.join([str(x[0]) for x in bundles]+[str(portable_zip)]));return 0
 
 if __name__=='__main__':raise SystemExit(main())
