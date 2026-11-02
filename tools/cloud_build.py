@@ -2,6 +2,20 @@
 from __future__ import annotations
 import argparse, base64, glob, os, platform, re, secrets, shutil, subprocess, sys, zipfile
 from pathlib import Path
+
+def _ensure_utf8_output():
+    # Windows runner stdout/stderr default to cp1252, which cannot encode the
+    # Chinese warning text printed below (UnicodeEncodeError before PyInstaller
+    # even starts). Force UTF-8 so the build script works on any runner locale.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+_ensure_utf8_output()
+
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'Page_Operations_Monitor.py';ICON_WIN=ROOT/'PageOperationsMonitor.ico';ICON_MAC=ROOT/'PageOperationsMonitor.icns';DEPLOYER=ROOT/'tools/windows_deployer.py'
 BUILD=ROOT/'build';DIST=ROOT/'dist';OUT=ROOT/'cloud-release';APP_ID='ProfessionalMonitorTool';BUNDLE_ID='com.bstbuku.pageoperationsmonitor';DEFAULT_TIMESTAMP_URL='http://timestamp.digicert.com'
