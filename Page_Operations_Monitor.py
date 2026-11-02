@@ -1,5 +1,5 @@
-﻿# -*- coding: utf-8 -*-
-"""Page Operations Monitor 1.5.0 -- automatic multi-Chrome Connector edition.
+# -*- coding: utf-8 -*-
+"""Page Operations Monitor 1.5.2 -- automatic multi-Chrome Connector edition.
 Run .py / .pyw; install PyQt6 Pillow (no connector network dependency).
 Unpack extension/ in Chrome. It connects automatically. Select only when several browsers are online.
 No remote-debugging switch, no cookie export, no unattended launch of the old default browser.
@@ -41,8 +41,8 @@ import base64
 import shlex
 
 APP_TITLE = "专业监控工具"
-APP_VERSION = "1.5.0"
-APP_BUILD = "professional-portable-deployer-ui-v150-20261016"
+APP_VERSION = "1.6.0"
+APP_BUILD = "professional-portable-deployer-ui-v160-20261102"
 DEFAULT_INTERVAL_MINUTES = 120
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -65,6 +65,52 @@ def ensure_private_directory(path: Path) -> Path:
         except OSError:
             pass
     return path
+
+
+def _atomic_write_bytes(path: Path, data: bytes, mode: int = 0o600, *,
+                        private_parent: bool = True) -> Path:
+    """Write bytes through an exclusive, unpredictable temporary file.
+
+    Refuse a symlink destination and never follow a pre-created temporary path.
+    Application data is kept private; user-selected export folders are not chmodded.
+    """
+    path = Path(path)
+    if not isinstance(data, (bytes, bytearray, memoryview)):
+        raise TypeError("data must be bytes-like")
+    if private_parent:
+        ensure_private_directory(path.parent)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise RuntimeError("拒绝写入符号链接目标")
+
+    temp = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    fd = None
+    try:
+        fd = os.open(str(temp), flags, mode)
+        with os.fdopen(fd, "wb") as stream:
+            fd = None  # fdopen owns the descriptor now
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp, path)
+        if os.name == "posix":
+            try:
+                path.chmod(mode)
+            except OSError:
+                pass
+        return path
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def portable_install_root() -> Path | None:
@@ -95,6 +141,420 @@ DATA_DIR = app_data_dir()
 DB_PATH = DATA_DIR / "fb_growth_radar_v1.db"
 BROWSER_PROFILE_DIR = DATA_DIR / "browser_profile"
 AVATAR_DIR = DATA_DIR / "avatars"
+TOAST_AVATAR_SIZE = 96
+TOAST_AVATAR_MAX_BYTES = 200000
+
+
+def toast_avatar_dir():
+    """Short, stable directory for toast-ready avatar copies."""
+    d = DATA_DIR / "toast_avatars"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return d
+
+
+def _validate_toast_image(path):
+    """True only if the file is a readable, square-ish PNG/JPEG under the limit."""
+    try:
+        p = Path(path)
+        if not p.is_file() or p.stat().st_size <= 0 or p.stat().st_size > TOAST_AVATAR_MAX_BYTES:
+            return False
+        from PIL import Image
+        with Image.open(p) as im:
+            im.verify()
+        with Image.open(p) as im:
+            fmt = (im.format or "").upper()
+            w, h = im.size
+        if fmt not in ("PNG", "JPEG", "JPG"):
+            return False
+        if w < 48 or h < 48 or max(w, h) / max(1, min(w, h)) > 1.3:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _draw_logo_c_png(path, size=96):
+    """Logo C (pulse) rendered with PIL only, so the toast fallback works
+    without a QApplication and is identical in every theme."""
+    from PIL import Image, ImageDraw
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=int(size * 0.25), fill=(29, 78, 216, 255))
+    pts = [(.208, .50), (.354, .50), (.438, .312), (.521, .667), (.604, .396), (.688, .50), (.812, .50)]
+    xy = [(x * size, y * size) for x, y in pts]
+    draw.line(xy, fill=(255, 255, 255, 255), width=max(2, int(size * 0.052)), joint="curve")
+    img.save(path, format="PNG", optimize=True)
+    return path
+
+
+def prepare_toast_avatar(page_id, avatar_path=""):
+    """Prepare a toast-ready avatar, trying several paths in order.
+
+    1. Re-encode the cached avatar (or avatar_path) into a 96x96 PNG under
+       a short ASCII filename in DATA_DIR/toast_avatars — this avoids the
+       classic failure modes: Chinese/space/long paths, oversized or
+       non-square images, and formats Windows cannot display.
+    2. Use the original file directly, but only after PIL validation.
+    3. Fall back to a freshly rendered Logo C PNG (always available).
+
+    Returns (path, source). The outcome is recorded in toast_check.json so
+    a failed avatar can be diagnosed on the real machine instead of
+    silently showing a blank toast.
+    """
+    pid = re.sub(r"[^0-9]", "", str(page_id or "")) or "unknown"
+    out_dir = toast_avatar_dir()
+    out = out_dir / ("toast-" + pid + ".png")
+    candidates = []
+    for raw in (avatar_path, str(AVATAR_DIR / (pid + ".png"))):
+        if raw:
+            candidates.append(Path(str(raw)))
+    for src in candidates:
+        try:
+            if not src.is_file():
+                continue
+            from PIL import Image, ImageOps
+            with Image.open(src) as im:
+                im.load()
+                fitted = ImageOps.fit(im.convert("RGBA"), (TOAST_AVATAR_SIZE, TOAST_AVATAR_SIZE), Image.LANCZOS)
+            tmp = out.with_suffix(".tmp.png")
+            fitted.save(tmp, format="PNG", optimize=True)
+            if _validate_toast_image(tmp):
+                tmp.replace(out)
+                _record_toast_avatar(pid, out, "avatar-reencoded")
+                return out, "avatar-reencoded"
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            if _validate_toast_image(src):
+                _record_toast_avatar(pid, src, "avatar-direct")
+                return src, "avatar-direct"
+        except Exception:
+            continue
+    logo = out_dir / "logo-c.png"
+    try:
+        if not _validate_toast_image(logo):
+            _draw_logo_c_png(logo)
+        _record_toast_avatar(pid, logo, "logo")
+        return logo, "logo"
+    except Exception:
+        return logo, "logo"
+
+
+def _record_toast_avatar(pid, path, source):
+    try:
+        record = toast_avatar_dir() / "toast_check.json"
+        data = {}
+        if record.is_file() and record.stat().st_size < 200000:
+            data = json.loads(record.read_text("utf-8")) or {}
+        avatars = data.get("avatars") or {}
+        try:
+            size = Path(path).stat().st_size
+        except OSError:
+            size = -1
+        avatars[str(pid)] = {"path": str(path), "source": source, "bytes": size, "at": now_iso()}
+        data["avatars"] = dict(list(avatars.items())[-200:])
+        record.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _window_label(seconds):
+    try:
+        seconds = int(seconds)
+    except (TypeError, ValueError):
+        return ""
+    if seconds >= 3600:
+        hours = seconds / 3600
+        return ("%g 小时" % hours) if hours != int(hours) else ("%d 小时" % int(hours))
+    if seconds >= 60:
+        return "%d 分钟" % (seconds // 60)
+    return "%d 秒" % seconds
+
+
+def _age_label(ts, ref=None):
+    if ts is None:
+        return "待获取"
+    ref = time.time() if ref is None else float(ref)
+    seconds = max(0.0, ref - float(ts))
+    if seconds < 60:
+        return "不足1分钟"
+    if seconds < 3600:
+        return "%d分钟" % int(seconds // 60)
+    if seconds < 48 * 3600:
+        return "%g小时" % (seconds / 3600)
+    return "%d天" % round(seconds / 86400)
+
+
+def _toast_body_parts(entry):
+    """Structured (growth_part, post_part) for one alert entry.
+
+    Structured fields win; a legacy free-text message is used only as a
+    fallback (with any trailing ' ID <digits>' stripped). The page ID is
+    never part of a toast body.
+    """
+    growth_part = None
+    post_part = None
+    kind = str(entry.get("kind") or "")
+    if kind == "growth" or entry.get("growth") is not None:
+        try:
+            growth = int(entry.get("growth"))
+        except (TypeError, ValueError):
+            growth = None
+        if growth is not None:
+            window = _window_label(entry.get("window_seconds"))
+            threshold = entry.get("threshold")
+            single = "新增 %s" % format_delta(growth)
+            if window:
+                single += " · " + window
+            if threshold is not None:
+                single += " · 标准 %s" % threshold
+                combined = "粉丝新增 %s（标准 %s）" % (format_delta(growth), threshold)
+            else:
+                combined = "粉丝新增 %s" % format_delta(growth)
+            growth_part = (single, combined)
+    if kind == "post" or entry.get("last_post_ts") is not None:
+        ref = entry.get("alerted_ts")
+        try:
+            ref = float(ref) if ref is not None else None
+        except (TypeError, ValueError):
+            ref = None
+        age = _age_label(entry.get("last_post_ts"), ref)
+        limit = entry.get("limit_hours")
+        if limit is not None:
+            post_part = ("最近贴文 %s 前 · 标准 %s 小时" % (age, limit),
+                         "最近贴文 %s 前（标准 %s 小时）" % (age, limit))
+    if growth_part is None and post_part is None:
+        message = str(entry.get("message") or "").strip()
+        message = re.sub(r"\s*ID \d+\s*$", "", message)
+        return message, None
+    return growth_part, post_part
+
+
+def build_toast_payload(entries):
+    """Pure payload for one system toast covering a flush of alerts.
+
+    One toast per flush (not one per entry): the first entry supplies the
+    avatar and message, extra entries are counted in the message, and the
+    button opens the full notification list. The body carries only numbers
+    and thresholds — never the page ID. When the first page has both a
+    growth and a post alert, one combined template covers both.
+    """
+    entries = list(entries or [])
+    first = dict(entries[0]) if entries else {}
+    pid = str(first.get("page_id") or "")
+    name = str(first.get("name") or first.get("page_name") or "名称待获取")
+    same_page = [dict(e) for e in entries if str(e.get("page_id") or "") == pid] if pid else [first]
+    kinds = {str(e.get("kind") or "") for e in same_page}
+    consumed = len(same_page)
+    if "growth" in kinds and "post" in kinds:
+        title = "两项预警 · " + name
+        growth_entry = next(e for e in same_page if str(e.get("kind")) == "growth")
+        post_entry = next(e for e in same_page if str(e.get("kind")) == "post")
+        growth_text, _ = _toast_body_parts(growth_entry)
+        _, post_text = _toast_body_parts(post_entry)
+        growth_text = growth_text[1] if isinstance(growth_text, tuple) else (growth_text or "")
+        post_text = post_text[1] if isinstance(post_text, tuple) else (post_text or "")
+        message = "；".join(part for part in (growth_text, post_text) if part)
+    elif str(first.get("kind") or "growth") == "post":
+        title = "发帖超时 · " + name
+        _, part = _toast_body_parts(first)
+        message = part[0] if isinstance(part, tuple) else (part or "")
+    else:
+        title = "粉丝增长超标 · " + name
+        part, _ = _toast_body_parts(first)
+        message = part[0] if isinstance(part, tuple) else (part or "")
+    remaining = len(entries) - consumed
+    if remaining > 0:
+        message = (message + " · 另有 %d 条预警" % remaining).strip()
+    image, source = prepare_toast_avatar(pid, str(first.get("avatar_path") or ""))
+    return {"title": title, "message": message, "image_path": image,
+            "image_source": source, "page_id": pid, "count": len(entries)}
+
+_SYSTEM_TOASTERS = []
+_SYSTEM_TOASTS = []
+_AUMID_REGISTER_STATE = {"done": False, "ok": False, "detail": ""}
+
+
+def _ensure_toast_aumid_registered():
+    """Register this app's AUMID under HKCU so Windows shows its toasts.
+
+    Unpackaged apps get their toasts silently dropped when neither a Start
+    shortcut carrying the AUMID nor this registry entry exists, and
+    WinRT's Show() does not raise in that case. This mirrors the
+    windows-toasts register_hkey_aumid script: HKCU
+    SOFTWARE\\Classes\\AppUserModelId\\<AUMID> with DisplayName and,
+    when an .ico can be produced, IconUri. Best effort, once per process.
+    """
+    if _AUMID_REGISTER_STATE["done"]:
+        return _AUMID_REGISTER_STATE["ok"], _AUMID_REGISTER_STATE["detail"]
+    _AUMID_REGISTER_STATE["done"] = True
+    if os.name != "nt":
+        _AUMID_REGISTER_STATE.update(ok=False, detail="not-windows")
+        return False, "not-windows"
+    try:
+        import winreg
+        icon_path = None
+        try:
+            logo = toast_avatar_dir() / "logo-c.png"
+            if not _validate_toast_image(logo):
+                _draw_logo_c_png(logo)
+            from PIL import Image
+            ico = toast_avatar_dir() / "app-icon.ico"
+            with Image.open(logo) as im:
+                im.convert("RGBA").save(ico, format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])
+            icon_path = ico
+        except Exception:
+            icon_path = None
+        key_path = "SOFTWARE\\Classes\\AppUserModelId\\" + APP_USER_MODEL_ID
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_path) as key:
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, APP_TITLE)
+            if icon_path is not None:
+                winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, str(icon_path.resolve()))
+        _AUMID_REGISTER_STATE.update(ok=True, detail="registered" + ("+icon" if icon_path is not None else ""))
+        return True, _AUMID_REGISTER_STATE["detail"]
+    except Exception as exc:
+        _AUMID_REGISTER_STATE.update(ok=False, detail=str(exc)[:160])
+        return False, _AUMID_REGISTER_STATE["detail"]
+
+
+def _record_toast_failed(detail):
+    try:
+        record = toast_avatar_dir() / "toast_check.json"
+        data = {}
+        if record.is_file() and record.stat().st_size < 200000:
+            data = json.loads(record.read_text("utf-8")) or {}
+        last = data.get("last_send") or {}
+        last["failed_event"] = {"detail": str(detail)[:200], "at": now_iso()}
+        data["last_send"] = last
+        record.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def send_system_toast(entries, on_activated=None, silent=False):
+    """Send the native Windows toast. Returns (ok, detail).
+
+    Windows only. If windows-toasts is missing or the send fails, the
+    caller must NOT show the old custom popup (removed by user decision);
+    the alert itself stays in the notification list and the failure is
+    recorded in toast_check.json for diagnosis.
+    """
+    if os.name != "nt":
+        return False, "not-windows"
+    try:
+        payload = build_toast_payload(entries)
+    except Exception as exc:
+        return False, "payload:" + str(exc)[:160]
+    try:
+        from windows_toasts import (InteractableWindowsToaster, Toast,
+                                    ToastButton, ToastDisplayImage, ToastDuration,
+                                    ToastImage, ToastImagePosition, ToastScenario)
+        try:
+            from windows_toasts import ToastAudio
+        except Exception:
+            ToastAudio = None
+    except Exception as exc:
+        return False, "windows-toasts-not-installed:" + str(exc)[:160]
+    try:
+        image = None
+        try:
+            image = ToastDisplayImage.fromPath(str(payload["image_path"]),
+                                               position=ToastImagePosition.AppLogo, circleCrop=True)
+        except Exception:
+            image = ToastDisplayImage(ToastImage(str(payload["image_path"])),
+                                      position=ToastImagePosition.AppLogo, circleCrop=True)
+        toast = Toast()
+        toast.text_fields = [payload["title"], payload["message"]]
+        try:
+            toast.AddImage(image)
+        except Exception:
+            try:
+                toast.images.append(image)
+            except Exception:
+                pass
+        try:
+            toast.scenario = ToastScenario.Reminder
+        except Exception:
+            pass
+        try:
+            toast.duration = ToastDuration.Long
+        except Exception:
+            pass
+        if silent and ToastAudio is not None:
+            try:
+                toast.audio = ToastAudio(silent=True)
+            except Exception:
+                pass
+        for _label, _arg in (("查看通知", "pom:view"), ("关闭", "pom:dismiss")):
+            try:
+                toast.AddAction(ToastButton(_label, _arg))
+            except Exception:
+                try:
+                    toast.add_action(ToastButton(_label, _arg))
+                except Exception:
+                    try:
+                        toast.actions.append(ToastButton(_label, _arg))
+                    except Exception:
+                        pass
+        def _failed(*_args, **_kwargs):
+            try:
+                _ev = _args[0] if _args else None
+                _record_toast_failed(getattr(_ev, "error_code", _ev))
+            except Exception:
+                pass
+        toast.on_failed = _failed
+        _SYSTEM_TOASTS.append(toast)
+        del _SYSTEM_TOASTS[:-10]
+        aumid_ok, aumid_detail = _ensure_toast_aumid_registered()
+        if on_activated is not None:
+            def _activated(*_args, **_kwargs):
+                try:
+                    on_activated()
+                except Exception:
+                    pass
+            toast.on_activated = _activated
+        try:
+            toaster = InteractableWindowsToaster(APP_TITLE, notifierAUMID=APP_USER_MODEL_ID)
+        except Exception:
+            try:
+                toaster = InteractableWindowsToaster(APP_TITLE)
+            except Exception:
+                from windows_toasts import WindowsToaster
+                toaster = WindowsToaster(APP_TITLE)
+        _SYSTEM_TOASTERS.append(toaster)
+        toaster.show_toast(toast)
+        try:
+            record = toast_avatar_dir() / "toast_check.json"
+            data = {}
+            if record.is_file() and record.stat().st_size < 200000:
+                data = json.loads(record.read_text("utf-8")) or {}
+            data["last_send"] = {"ok": True, "image_source": payload["image_source"],
+                                 "image": str(payload["image_path"]), "count": payload["count"],
+                                 "aumid_ok": aumid_ok, "aumid_detail": aumid_detail, "at": now_iso()}
+            record.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        except Exception:
+            pass
+        return True, payload["image_source"] + ("" if aumid_ok else "; AUMID未注册：" + aumid_detail)
+    except Exception as exc:
+        detail = str(exc)[:200]
+        try:
+            record = toast_avatar_dir() / "toast_check.json"
+            data = {}
+            if record.is_file() and record.stat().st_size < 200000:
+                data = json.loads(record.read_text("utf-8")) or {}
+            data["last_send"] = {"ok": False, "detail": detail,
+                                 "image_source": payload.get("image_source", ""), "at": now_iso()}
+            record.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        except Exception:
+            pass
+        log_exception("系统通知发送失败：" + detail)
+        return False, detail
+
+
 
 
 def monitor_profile_dir() -> Path:
@@ -281,13 +741,15 @@ def normalize_page_ids(text: str) -> PasteParseResult:
 # ---------- Facebook text extraction (legacy parser preserved + safer patterns) ----------
 
 def parse_human_number(raw):
-    s = str(raw).strip().lower().replace("\u00a0", " ").replace("，", ",")
+    s = unicodedata.normalize("NFKC", str(raw)).strip().lower().replace("\u00a0", " ").replace("，", ",")
     suffixes = [
         (r"\s*(?:k|千|rb|ribu|mil)$", 1000),
         (r"\s*(?:m|million|millions|millón|millones|mio\.?|jt)$", 1_000_000),
         (r"\s*(?:b|billion|billions)$", 1_000_000_000),
         (r"\s*万$", 10_000),
         (r"\s*亿$", 100_000_000),
+        (r"\s*萬$", 10_000),
+        (r"\s*億$", 100_000_000),
     ]
     multiplier = 1
     for pat, factor in suffixes:
@@ -311,6 +773,9 @@ def parse_human_number(raw):
 
 
 FOLLOWER_PATTERNS = [
+    r"(?P<num>[0-9][0-9.,\s]*(?:[KkMm]|万|萬|亿|億|千)?)\s*(?:位|名)?\s*(?:追蹤者|追踪者|关注者|關注者|追蹤人|追踪人)",
+    r"(?:追蹤者|追踪者|关注者|關注者)\s*[:：]?\s*(?P<num>[0-9][0-9.,\s]*(?:[KkMm]|万|萬|亿|億|千)?)",
+    r"(?P<num>[0-9][0-9.,\s]*(?:[KkMm]|万|萬|亿|億|千)?)\s*(?:人|位|名)\s*(?:追蹤|追踪|关注|關注)",
     r"(?P<num>[0-9][0-9.,\s]*(?:[KkMmBb])?)\s+(?:followers?|Follower)",
     r"(?P<num>[0-9][0-9.,\s]*(?:万|亿|[KkMm])?)\s*(?:位)?粉丝",
     r"(?P<num>[0-9][0-9.,\s]*(?:rb|ribu|jt|[KkMm])?)\s+(?:pengikut)",
@@ -419,8 +884,16 @@ def looks_like_page_name(value, page_id=""):
     low = s.lower().strip()
     if low in {x.lower() for x in GENERIC_UI_NAMES}:
         return False
-    if any(x in low for x in BAD_NAME_FRAGMENTS):
-        return False
+    for frag in BAD_NAME_FRAGMENTS:
+        if frag in low:
+            # A real name may contain a UI word ("粉丝团", "关注者协会"). Only
+            # reject when nothing meaningful remains after removing the
+            # fragment and any digits/quantifiers, e.g. "详细信息" or
+            # "123 people like this". Exact UI words are already rejected
+            # above and stat/action text is rejected below.
+            rest = re.sub(r"[\d\s.,:+\-/%万亿千kmb]+", "", low.replace(frag, " "), flags=re.I)
+            if not rest or rest in {x.lower() for x in GENERIC_UI_NAMES}:
+                return False
     if looks_like_stat_or_action(s):
         return False
     if page_id and s == str(page_id):
@@ -714,6 +1187,59 @@ def should_alert(current: int, previous: dict | None, current_ts: float,
     if elapsed < 60 or elapsed > max(300, 2.5 * interval_seconds):
         return False
     return current - int(previous["count"]) >= threshold
+
+
+
+# Phrases shown by Facebook itself on an unavailable Page. Checked against
+# short heading/title candidates or the visible body text only, never against
+# post content. Login is checked first elsewhere; these phrases mean the Page
+# itself cannot be opened (deleted / unpublished / restricted / blocked all
+# render the same screen, so the software reports "unavailable", never a
+# guessed "deleted").
+UNAVAILABLE_PHRASES = (
+    "content isn't available", "this content isn't available",
+    "this page isn't available", "page not found", "content not found",
+    "the link you followed may be broken", "page may have been removed",
+    "this page may have been removed",
+    "内容不可用", "此内容目前无法显示", "此内容暂时无法显示",
+    "这个页面暂时无法显示", "页面不存在", "链接可能已损坏",
+    "该页面可能已被移除", "此页面不存在",
+    "內容不可用", "此內容目前無法顯示", "這個頁面暫時無法顯示",
+    "連結可能已損壞", "頁面不存在",
+    "conteúdo não disponível", "página não encontrada",
+    "esta página não está disponível", "o link que você seguiu pode estar quebrado",
+    "contenido no disponible", "página no encontrada",
+    "esta página no está disponible", "el enlace que seguiste puede estar roto",
+    "page introuvable", "contenu indisponible", "cette page n'est pas disponible",
+    "seite nicht verfügbar", "inhalt nicht verfügbar", "seite nicht gefunden",
+)
+RESTRICTED_PHRASES = (
+    "age", "年龄", "年齡", "not available in your region", "地区", "地區",
+    "country", "国家", "國家",
+)
+PAGE_UNAVAILABLE_DETAIL = "页面显示内容不可用，可能是已删除 / 已下架 / 被限制访问"
+
+
+def detect_unavailable_page(text):
+    """Return (is_unavailable, hint_phrase) for short UI text or body text.
+
+    The hint is the matched UI phrase itself (capped), never surrounding
+    page content, so it is safe to store and display.
+    """
+    if not isinstance(text, str) or not text:
+        return False, ""
+    collapsed = re.sub(r"\s+", " ", text).strip().casefold()
+    if not collapsed:
+        return False, ""
+    for phrase in UNAVAILABLE_PHRASES:
+        if phrase in collapsed:
+            hint = phrase
+            for marker in RESTRICTED_PHRASES:
+                if marker in collapsed:
+                    hint += "（可能受年龄 / 地区限制）"
+                    break
+            return True, hint[:80]
+    return False, ""
 
 
 def normalize_name(value, pid=""):
@@ -1165,7 +1691,8 @@ class Store:
                 "post_error":"TEXT NOT NULL DEFAULT ''","post_url":"TEXT NOT NULL DEFAULT ''",
                 "post_source":"TEXT NOT NULL DEFAULT ''","post_precision_seconds":"INTEGER NOT NULL DEFAULT 1",
                 "post_alert_key":"TEXT NOT NULL DEFAULT ''","growth_error":"TEXT NOT NULL DEFAULT ''",
-                "name_error":"TEXT NOT NULL DEFAULT ''"}
+                "name_error":"TEXT NOT NULL DEFAULT ''",
+                "diagnosis_code":"TEXT NOT NULL DEFAULT ''","diagnosis_detail":"TEXT NOT NULL DEFAULT ''"}
             for name,typ in columns.items():
                 if name not in previous:c.execute(f"ALTER TABLE pages ADD COLUMN {name} {typ}")
             follower_columns=self._columns(c,"follower_state")
@@ -1225,7 +1752,7 @@ class Store:
         with self.lock, self._connect() as c:
             c.execute("UPDATE pages SET status=?,updated_at=? WHERE page_id=?", (str(status)[:180],now_iso(),pid))
 
-    def update_metadata(self,pid,name="",avatar_path="",name_error=""):
+    def update_metadata(self,pid,name="",avatar_path="",name_error="",diagnosis_code="",diagnosis_detail=""):
         name=normalize_name(name,pid)
         avatar=str(avatar_path or "")
         if not avatar or not Path(avatar).is_file(): avatar=""
@@ -1235,8 +1762,9 @@ class Store:
                 page_name=CASE WHEN ?<>'' THEN ? ELSE page_name END,
                 avatar_path=CASE WHEN ?<>'' THEN ? ELSE avatar_path END,
                 avatar_state=CASE WHEN ?<>'' THEN '已获取' ELSE avatar_state END,
-                metadata_checked_at=?,name_error=?,updated_at=? WHERE page_id=?""",
-                (name,name,avatar,avatar,avatar,now_iso(),str(name_error)[:220] if not name else "",now_iso(),str(pid)))
+                metadata_checked_at=?,name_error=?,diagnosis_code=?,diagnosis_detail=?,updated_at=? WHERE page_id=?""",
+                (name,name,avatar,avatar,avatar,now_iso(),str(name_error)[:220] if not name else "",
+                 str(diagnosis_code)[:40],str(diagnosis_detail)[:220],now_iso(),str(pid)))
         return bool(avatar or name)
 
     def mark_avatar_failed(self,pid:str,error:str):
@@ -1313,6 +1841,7 @@ class Store:
 
 
     def export_csv(self,path,kind="current"):
+        if Path(path).is_symlink():raise ValueError("导出路径不能是符号链接")
         if kind=="current":return self.export_manager_csv(path)
         if kind!="alerts":raise ValueError("历史快照功能已移除；只支持当前状态或通知导出")
         with open(path,"w",encoding="utf-8-sig",newline="") as f:
@@ -1323,6 +1852,7 @@ class Store:
 
     def backup(self,destination):
         destination=Path(destination)
+        if destination.is_symlink():raise ValueError("备份路径不能是符号链接")
         if destination.resolve()==self.path.resolve():raise ValueError("备份路径不能和当前数据库相同")
         with self.lock,self._connect() as source:
             target=sqlite3.connect(str(destination))
@@ -1480,10 +2010,10 @@ class Store:
             new_alert=None
             if overdue and not key:
                 key=f"{int(ts)}:{limit}:{uuid.uuid4().hex[:8]}"
-                message=f"距最近可确认贴文 {elapsed_label(ts,now)}，超过 {limit} 小时标准"
+                message=f"最近贴文 {_age_label(ts,now)} 前，标准 {limit} 小时"
                 cur=c.execute("""INSERT INTO post_alerts(page_id,alerted_at,alerted_ts,last_post_ts,limit_hours,message)
                     VALUES(?,?,?,?,?,?)""",(pid,datetime.fromtimestamp(now,timezone.utc).isoformat(),now,ts,limit,message))
-                new_alert={"id":cur.lastrowid,"page_id":pid,"name":display_name(dict(row)),"avatar_path":row["avatar_path"] or "","message":message,"kind":"post"}
+                new_alert={"id":cur.lastrowid,"page_id":pid,"name":display_name(dict(row)),"avatar_path":row["avatar_path"] or "","message":message,"kind":"post","last_post_ts":ts,"limit_hours":limit}
             c.execute("""UPDATE pages SET last_post_ts=?,last_post_checked_ts=?,post_result='ok',post_error='',
                 post_source=?,post_url=?,post_precision_seconds=?,post_alert_key=?,last_inspected_at=?,updated_at=?
                 WHERE page_id=?""",(ts,now,str(result.get("post_source") or "主页可见贴文")[:180],
@@ -1498,7 +2028,8 @@ class Store:
         row=self.page(pid)
         if row is None: return {"ignored":True,"success":False,"alerts":[]}
         name=normalize_name(result.get("page_name"),pid)
-        self.update_metadata(pid,name,result.get("avatar_path") or "",result.get("name_error") or "")
+        self.update_metadata(pid,name,result.get("avatar_path") or "",result.get("name_error") or "",
+                             result.get("diagnosis_code") or "",result.get("diagnosis_detail") or "")
         if purpose=="metadata":
             return {"ignored":False,"success":bool(name or result.get("avatar_fresh")),
                     "alerts":[],"error":result.get("name_error") or result.get("error") or ""}
@@ -1518,7 +2049,8 @@ class Store:
                             alert_id=self.add_alert(pid,value,previous["count"],diff,interval,threshold)
                             notices.append({"id":alert_id,"kind":"growth","page_id":pid,"name":name or display_name(row),
                                             "avatar_path":result.get("avatar_path") or row.get("avatar_path") or "",
-                                            "message":f"本轮粉丝增加 {format_delta(diff)}"})
+                                            "message":f"粉丝增长 {format_delta(diff)}",
+                                            "growth":diff,"window_seconds":interval,"threshold":threshold})
                 except Exception as exc:
                     ok=False;errors.append(str(exc)[:220])
             else:
@@ -1753,7 +2285,18 @@ def prepare_data_migration(store,target):
 def log_exception(text):
     try:
         ensure_private_directory(DATA_DIR)
-        with (DATA_DIR/"error.log").open("a",encoding="utf-8") as f:
+        log_path = DATA_DIR/"error.log"
+        # Keep the diagnostic log bounded: retain only the newest ~256KB
+        # when it grows past 512KB instead of appending forever.
+        if log_path.is_file() and log_path.stat().st_size > 512 * 1024:
+            try:
+                with log_path.open("rb") as src:
+                    src.seek(max(0, log_path.stat().st_size - 256 * 1024))
+                    tail = src.read()
+                log_path.write_bytes(tail)
+            except OSError:
+                pass
+        with log_path.open("a",encoding="utf-8") as f:
             f.write("\n"+now_iso()+"\n"+str(text)+"\n")
     except OSError:pass
 
@@ -1955,11 +2498,15 @@ class BrowserCollector:
         from PIL import Image,ImageOps
         if not isinstance(body,(bytes,bytearray)) or not 150<=len(body)<=6_000_000:
             raise ValueError('头像图片数据不完整')
-        with Image.open(io.BytesIO(body)) as im:
+        # Only decode common raster formats needed for avatars. Excluding exotic
+        # formats avoids activating unrelated optional Pillow decoders on web data.
+        with Image.open(io.BytesIO(body),formats=("PNG","JPEG","WEBP","GIF")) as im:
             # Validate dimensions before full decode to avoid allocating a
             # decompression-bomb-sized image from a small compressed response.
             if min(im.width,im.height)<32 or im.width*im.height>24_000_000:
                 raise ValueError('头像尺寸不正确')
+            # The app uses the first frame only, matching the previous behavior;
+            # it never iterates over or decodes later animation frames.
             im.load()
             ratio=max(im.width,im.height)/min(im.width,im.height)
             if ratio>1.55:
@@ -1967,9 +2514,9 @@ class BrowserCollector:
             avatar=ImageOps.fit(im.convert('RGB'),(192,192),method=Image.Resampling.LANCZOS)
         ensure_private_directory(AVATAR_DIR)
         target=AVATAR_DIR / f'{pid}.png'
-        tmp=target.with_suffix('.tmp')
-        avatar.save(tmp,format='PNG',optimize=True)
-        tmp.replace(target)
+        output=io.BytesIO()
+        avatar.save(output,format='PNG',optimize=True)
+        _atomic_write_bytes(target,output.getvalue(),mode=0o600,private_parent=True)
         return str(target)
 
     def _cache_avatar(self,pid:str,candidates:list[dict],previous:str,page=None,force=False) -> str:
@@ -2026,7 +2573,8 @@ class BrowserCollector:
         info={"page_id":pid,"page_name":"","avatar_path":"","avatar_fresh":False,
               "growth_ok":False,"posts_ok":False,"metadata_ok":False,
               "collected_at":now_iso(),"collected_ts":time.time(),
-              "growth_error":"","posts_error":"","name_error":""}
+              "growth_error":"","posts_error":"","name_error":"",
+              "diagnosis_code":"","diagnosis_detail":""}
         page=self.context.new_page()
         try:
             try:page.goto(f"https://www.facebook.com/{pid}",wait_until="domcontentloaded",timeout=PAGE_LOAD_TIMEOUT_MS)
@@ -2049,6 +2597,15 @@ class BrowserCollector:
                 except Exception:
                     if not grow:break
             matched=parsed[2] if parsed else ""
+            _unavail,_hint=detect_unavailable_page(body)
+            if _unavail:
+                info.update(diagnosis_code='page_unavailable',diagnosis_detail=PAGE_UNAVAILABLE_DETAIL,
+                            name_error=PAGE_UNAVAILABLE_DETAIL,
+                            growth_error=PAGE_UNAVAILABLE_DETAIL if grow else '',
+                            posts_error=PAGE_UNAVAILABLE_DETAIL if posts else '',
+                            error=PAGE_UNAVAILABLE_DETAIL,
+                            collected_at=now_iso(),collected_ts=time.time())
+                return info
             # Identity is extracted AFTER follower text so the proximity fallback works.
             name=self._extract_name(page,body,pid,matched)
             if not name:name=self._fallback_name(pid,matched)
@@ -2194,6 +2751,8 @@ REPOSITORY_URL = "https://github.com/" + REPOSITORY
 RELEASES_API = "https://api.github.com/repos/" + REPOSITORY + "/releases/latest"
 # Fill these when building signed installation packages. Never take publisher pins from remote JSON.
 UPDATE_WINDOWS_PUBLISHER_THUMBPRINT = ""
+# 1.5.2 is a Windows-only release. The macOS Team ID is intentionally left
+# empty, so macOS auto-install stays unavailable (see signed_install_available).
 UPDATE_MACOS_TEAM_ID = ""
 MAX_UPDATE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_UPDATE_JSON_BYTES = 2 * 1024 * 1024
@@ -2276,7 +2835,16 @@ def select_release_asset(release,manifest=None,system=None,machine=None,frozen=N
     try:size=int(asset.get("size",0))
     except (ValueError,TypeError):raise UpdateError("更新包大小无效")
     if not 0<size<=MAX_UPDATE_BYTES:raise UpdateError("更新包大小超出允许范围")
-    sha=_asset_digest(asset,None)
+    manifest_item=None
+    if isinstance(manifest,dict):
+        assets_map=manifest.get("assets")
+        if isinstance(assets_map,dict) and isinstance(assets_map.get(name),dict):
+            manifest_item=assets_map[name]
+        elif isinstance(manifest.get(name),dict):
+            manifest_item=manifest[name]
+        elif manifest.get("sha256"):
+            manifest_item=manifest
+    sha=_asset_digest(asset,manifest_item)
     return {"name":name,"url":url,"size":size,"sha256":sha,"installer":"platform-bundle","platform":key,
             "version":version,"source_mode":not frozen}
 
@@ -2348,14 +2916,8 @@ def download_release_asset(plan,folder,progress=None,cancel=None,open_fn=None):
         except OSError:pass
 
 def save_json_atomic(path,value):
-    path=Path(path);ensure_private_directory(path.parent)
-    temp=path.with_name(path.name+"."+uuid.uuid4().hex+".tmp")
-    try:
-        with temp.open("w",encoding="utf-8") as f:
-            json.dump(value,f,ensure_ascii=False,indent=2);f.flush();os.fsync(f.fileno())
-        os.replace(temp,path)
-    finally:
-        temp.unlink(missing_ok=True)
+    payload=json.dumps(value,ensure_ascii=False,indent=2).encode("utf-8")
+    return _atomic_write_bytes(Path(path),payload,mode=0o600,private_parent=True)
 
 def validate_staged_update(plan,path,updates_dir):
     path=Path(path)
@@ -2370,16 +2932,22 @@ def validate_staged_update(plan,path,updates_dir):
     return path.resolve()
 
 def signed_install_available(plan):
+    """Whether a downloaded update may be executed.
+
+    The binding verification is the SHA-256 check in validate_staged_update
+    (always run before this) plus the trusted-origin check on the download
+    URL. A configured publisher thumbprint / Team ID adds a signature check
+    inside the install helper; when none is configured the helper skips the
+    signature check and the install proceeds on the hash alone, so silent
+    auto-update works without a paid certificate. Source (.py) runs never
+    self-overwrite and always stay manual.
+    """
     if not getattr(sys,"frozen",False):return False,"当前是 Python 源码运行方式，不自动覆盖脚本；下载当前系统更新包后请手动运行其中的部署文件。"
     installer=str(plan.get("installer") or "")
     platform_key=str(plan.get("platform") or "")
     if sys.platform=="win32" and installer in ("inno","msi","deployer","platform-bundle") and platform_key.startswith("windows-"):
-        if not re.fullmatch(r"[0-9A-Fa-f]{40,64}",UPDATE_WINDOWS_PUBLISHER_THUMBPRINT):
-            return False,"安装版尚未配置 Windows 发布者签名指纹，不能自动执行安装。"
         return True,""
     if sys.platform=="darwin" and installer in ("pkg","platform-bundle") and platform_key.startswith("macos-"):
-        if not re.fullmatch(r"[A-Z0-9]{10}",UPDATE_MACOS_TEAM_ID):
-            return False,"安装版尚未配置 Apple Developer Team ID，不能自动执行安装。"
         return True,""
     return False,"当前平台或包格式不支持自动安装；可打开下载目录手动安装。"
 
@@ -2387,37 +2955,79 @@ def _extract_platform_bundle_installer(plan,path,updates_dir):
     """Extract only the installer/deployer for this running platform."""
     path=validate_staged_update(plan,path,updates_dir)
     key=str(plan.get("platform") or "");version=str(plan.get("version") or "")
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:\.\d+)?",version):
+        raise UpdateError("更新版本号格式无效")
+    allowed_platforms={"windows-x64","windows-arm64","macos-x64","macos-arm64"}
+    if key not in allowed_platforms or key!=update_platform_key():
+        raise UpdateError("更新包与当前系统不匹配")
     if key.startswith("windows-"):
         expected=f"ProfessionalMonitorTool-{version}-{key}-deployer.exe";kind="deployer"
-    elif key.startswith("macos-"):
+    else:
         expected=f"ProfessionalMonitorTool-{version}-{key}.pkg";kind="pkg"
-    else:raise UpdateError("更新包与当前系统不匹配")
+
+    base=Path(updates_dir).resolve()
+    extracted_root=base/"extracted"
+    folder_candidate=extracted_root/version
+    # Do not follow a pre-existing symlink in the extraction path.
+    if extracted_root.is_symlink() or folder_candidate.is_symlink():
+        raise UpdateError("更新解压目录不能是符号链接")
+    try:
+        folder_candidate.resolve().relative_to(base)
+    except ValueError as exc:
+        raise UpdateError("更新解压目录超出应用更新目录") from exc
+    folder=ensure_private_directory(folder_candidate)
+    folder=folder.resolve()
+    try:
+        folder.relative_to(base)
+    except ValueError as exc:
+        raise UpdateError("更新解压目录超出应用更新目录") from exc
+
+    target=folder/expected
+    if target.is_symlink():
+        raise UpdateError("拒绝覆盖符号链接安装文件")
+    temp=folder/(expected+"."+uuid.uuid4().hex+".part")
     try:
         with zipfile.ZipFile(path,"r") as zf:
             matches=[i for i in zf.infolist() if (not i.is_dir()) and PurePosixPath(i.filename.replace("\\","/")).name==expected]
             if len(matches)!=1:raise UpdateError("更新包中找不到唯一的当前系统部署文件")
             info=matches[0]
             if info.file_size<=0 or info.file_size>MAX_UPDATE_BYTES:raise UpdateError("更新包内部署文件大小异常")
-            folder=ensure_private_directory(Path(updates_dir)/"extracted"/version);target=folder/expected;temp=folder/(expected+".part")
-            h=hashlib.sha256();written=0
-            with zf.open(info,"r") as src,temp.open("wb") as dst:
-                while True:
-                    block=src.read(128*1024)
-                    if not block:break
-                    written+=len(block)
-                    if written>info.file_size:raise UpdateError("解压后的部署文件长度异常")
-                    dst.write(block);h.update(block)
-                dst.flush();os.fsync(dst.fileno())
+            flags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_BINARY",0)
+            fd=None;h=hashlib.sha256();written=0
+            try:
+                fd=os.open(str(temp),flags,0o600)
+                with zf.open(info,"r") as src,os.fdopen(fd,"wb") as dst:
+                    fd=None
+                    while True:
+                        block=src.read(128*1024)
+                        if not block:break
+                        written+=len(block)
+                        if written>info.file_size:raise UpdateError("解压后的部署文件长度异常")
+                        dst.write(block);h.update(block)
+                    dst.flush();os.fsync(dst.fileno())
+            finally:
+                if fd is not None:
+                    os.close(fd)
             if written!=info.file_size:raise UpdateError("部署文件解压不完整")
             os.replace(temp,target)
-    except zipfile.BadZipFile as exc:raise UpdateError("下载的更新包不是有效 ZIP") from exc
+    except zipfile.BadZipFile as exc:
+        raise UpdateError("下载的更新包不是有效 ZIP") from exc
+    finally:
+        try:temp.unlink(missing_ok=True)
+        except OSError:pass
+    if os.name=="posix":
+        try:target.chmod(0o600)
+        except OSError:pass
     return {"name":expected,"size":target.stat().st_size,"sha256":h.hexdigest(),"installer":kind,
             "platform":key,"version":version,"source_mode":False},target
 
 
 def prepare_install_helper(plan,path,updates_dir):
     """Static OS helper: wait for this app to exit, recheck hash/signature, install, relaunch.
-    Called ONLY after an explicit user confirmation. It never disables OS security checks.
+    Called after an explicit user confirmation or a verified silent auto-install
+    decision. It never disables OS security checks; the signature check runs
+    only when a publisher identity is configured, otherwise the SHA-256
+    recheck is the verification.
     """
     if str(plan.get("installer") or "")=="platform-bundle":
         plan,path=_extract_platform_bundle_installer(plan,path,updates_dir)
@@ -2442,8 +3052,11 @@ def prepare_install_helper(plan,path,updates_dir):
     bundle=next((p for p in Path(sys.executable).resolve().parents if p.suffix==".app"),None)
     if bundle is None:raise UpdateError("找不到当前 macOS 应用包，不能自动重启")
     def aq(value):return json.dumps(str(value),ensure_ascii=False)
-    sig=("/usr/sbin/pkgutil --check-signature "+shlex.quote(str(path))+
-         " && /usr/sbin/spctl --assess --type install --verbose=2 "+shlex.quote(str(path)))
+    if UPDATE_MACOS_TEAM_ID:
+        sig=("/usr/sbin/pkgutil --check-signature "+shlex.quote(str(path))+
+             " && /usr/sbin/spctl --assess --type install --verbose=2 "+shlex.quote(str(path)))
+    else:
+        sig="/usr/bin/true"
     sha="/usr/bin/shasum -a 256 "+shlex.quote(str(path))
     wait=f"i=0; while [ \"$i\" -lt 120 ]; do /bin/kill -0 {os.getpid()} 2>/dev/null || exit 0; /bin/sleep 1; i=$((i+1)); done; exit 1"
     install="/usr/sbin/installer -pkg "+shlex.quote(str(path))+" -target /"
@@ -2455,7 +3068,7 @@ def prepare_install_helper(plan,path,updates_dir):
         "  set digestResult to do shell script "+aq(sha),
         "  if digestResult does not contain "+aq(plan["sha256"])+" then error \"SHA mismatch\"",
         "  set signatureResult to do shell script "+aq(sig),
-        "  if signatureResult does not contain "+aq("("+UPDATE_MACOS_TEAM_ID+")")+' then error "Publisher mismatch"',
+        *([ "  if signatureResult does not contain "+aq("("+UPDATE_MACOS_TEAM_ID+")")+' then error "Publisher mismatch"'] if UPDATE_MACOS_TEAM_ID else []),
         "  do shell script "+aq(install)+" with administrator privileges",
         "  do shell script "+aq(status_ok),
         "  tell application \"System Events\" to open file POSIX file "+aq(str(bundle)),
@@ -2476,10 +3089,12 @@ try {
     if ($old -and -not $old.WaitForExit(120000)) { throw 'The application did not exit.' }
     $hash = (Get-FileHash -LiteralPath $j.path -Algorithm SHA256).Hash
     if ($hash.ToLowerInvariant() -ne $j.sha256.ToLowerInvariant()) { throw 'SHA256 mismatch' }
-    $signature = Get-AuthenticodeSignature -LiteralPath $j.path
-    if ($signature.Status -ne 'Valid' -or
-        $signature.SignerCertificate.Thumbprint.ToUpperInvariant() -ne $j.thumbprint.ToUpperInvariant()) {
-        throw 'Installer signature or publisher mismatch'
+    if ($j.thumbprint) {
+        $signature = Get-AuthenticodeSignature -LiteralPath $j.path
+        if ($signature.Status -ne 'Valid' -or
+            $signature.SignerCertificate.Thumbprint.ToUpperInvariant() -ne $j.thumbprint.ToUpperInvariant()) {
+            throw 'Installer signature or publisher mismatch'
+        }
     }
     if ($j.installer -eq 'inno') {
         $p = Start-Process -FilePath $j.path -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' -Wait -PassThru
@@ -2543,7 +3158,7 @@ import queue
 from dataclasses import dataclass, field
 from pathlib import PureWindowsPath
 
-CONNECTOR_VERSION = '1.4.0'
+CONNECTOR_VERSION = '1.4.1'
 CONNECTOR_PROTOCOL = 1
 CONNECTOR_PORT = 17831
 CONNECTOR_EXTENSION_ID = 'lpjmbcclokpbgfogjhjepmnpoplgheoh'
@@ -2552,839 +3167,276 @@ CONNECTOR_ORIGIN = 'chrome-extension://' + CONNECTOR_EXTENSION_ID
 # BEGIN BUNDLED CONNECTOR PACKAGE
 # IMPORTANT: Connector version is independent from the desktop app version.
 # Do not change this package/version unless the browser connector itself is intentionally updated.
-BUNDLED_CONNECTOR_VERSION = '1.4.0'
-BUNDLED_CONNECTOR_FILENAME = '专业监控工具-浏览器连接器-1.4.0.zip'
-BUNDLED_CONNECTOR_SHA256 = '908bba147859bb2f28e68d28554a29bfe17cdccee16a826b2770790a026f81b6'
+BUNDLED_CONNECTOR_VERSION = '1.4.1'
+BUNDLED_CONNECTOR_FILENAME = '专业监控工具-浏览器连接器-1.4.1.zip'
+BUNDLED_CONNECTOR_SHA256 = 'e1303ee81789fa1fccf519e9d9f35a6b61863c33a68ba9423e657a4840e0b8c9'
 BUNDLED_CONNECTOR_ZIP_B64 = (
-    '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'
-    'TaCpGQIqQqAxBsdxaWtZjDG6bl3cGotUkh07n8NEmrgTxAkhMEKwY8ezCKXqFJgWEFLgFz38YjQERHsVq4kgko9kQqEcOcNyyFx6'
-    'ftjioRgWuTlvDp0t+BDstNG6xMTkYEgA8YGx9oQOgxTQ07UykBniE4GQQFpbMtx97y94bs8Qy5Z2UyiZhnJARFDzLQQ2IjptDOmk'
-    '4NndQ9x1z89pbclUTQWr5HgTGbDWdLUaUIwFpAw+jRr2CNl+o1FzjgQwW/Aj8TdYABoa3VsxBBWxGUBMALQEFV+2+ByqjqkPK2st'
-    'uK7LocNDfOzjn+ZfP/sRPM/i+9VTM60Nrqtoy0iaDCRzrrEDTBbA8+rzcpQg7Qo+9rd/z+HDQ1XTwLIsFD6JENSqZfByjBpBzxgw'
-    'pjybqm2P2Zc+/NfklTkQwBzBD50QgkODz2PKYFcXJiIGgcTzDKf0riWT7sL3S+EwUImstaazo51bb/s6PT3dfPSv/5AOR5aVM1JC'
-    'WilyJcvmv/1n7rv/QdLpVI1yZvrGi4dKIcgXClz2ay/nwx98D+1tqi6vgm/54F/9A1/+ytfo6GivAz9K1RqLk3SR0bhuRfWpTDHr'
-    'YRuaigXLwrHU5hl8mDUBHBn41lqUdDkw+CyFol/RB1CR/iuvCDy/QE/HCpb3rmXnrvtJJlrqpH1jDO3tbXzqH/+FB7Y+HKpnz69S'
-    'z1apgmdQpsSDbIM4Qgh+duc9bLnrPt75u7/Nyy5YT1tbG5MTEzz0yGN87pbbuPf+B+js6CgTWi34CIE1hkR7BpVKVIanGtYvbLBJ'
-    'RkhBKVcKl4RltYAwKzc78GEuiqA5gh9kbnFUksGR3YyM76e7YzmeF5zzE9kDlKVfG8gBSirOO+M6nnn+boQQDStgjKGrs4OtDz7M'
-    'fT/fSndXJ5lMmtxUnqGRURyl6O7uqilTk5aoq15jaeYXWx/i3vu20tPdSSaTIpfLMzQ0iuMoujo7m/b84HWB8Q0tvV2oZAJvKldZ'
-    'sQyJoMzrLKAk+bEp/KJXPmlkIcCHGQngyMGPaqOUw1RuhD0vPkFv96kUSwZBoOuPg48NFoQKpRLnnnENd227hfHJQziqsZm01pqW'
-    'lgwIQankkc8XUUrS1dmBtTamjm1SvrrqTd9arS0tCCEolUrk84Ugr67qvBqCTwiur+lYvTTYVWTAxsScYC9h+JYFIRWTh8bQJR8n'
-    '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'
-    'AC0EAABc7gAAAAA='
+    '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'
+    'k93lvUWH2VlVYXlyM1h0mgNLaSc+26rVfC4FK4OPRqFNtKZ2TWaKwYoeme/9gi05f/ppsf/I5WlNkRlr6TaVCqtdZTNHMAVdBXoL'
+    'kaRgSPF2XNLhB/HlEwo6cV0z6oQJ17ST4nYzKoPILi16A5LVcKaPfy7ujl/uHeJy+u/jB2WXGDUYnuUT+9PtIKT0XDjccog1vf2r'
+    'S5BEGsx1XC0yM34Z73mGJBo133hrfT2InGdXYdwemB81bMuH4DxbCPtuZ+V51azgDLtcYPyDYY2LcouhEMtd7T6NQ4e2SO3GFhU9'
+    'wOlOkqtcIzQo32flo25SBdTGj+vBfuJCJKlEesilSwudqmo419XdtVwQuFxCl0fJAjKIv8YpAeC7q//QZtdaptUsV2zLlrGy+x9Q'
+    'SwMEFAAAAAAAAABfXQAAAAAAAAAAAAAAAAYAAABpY29ucy9QSwMEFAAAAAgAAABfXRL2tsjUAgAA3AIAABEAAABpY29ucy9pY29u'
+    'MTI4LnBuZ+sM8HPn5ZLiYmBg4PX0cAkC0g0gzMEGJA/bJZ5mYGBa7OniGFJx6+1d36DHDgIuiaXs1yXyP2Z+iPyYeSy6ZsLMqZ0N'
+    'ku31KZzlT6driwkoPF8drivYZrZ2Rnz+/v8+RYbH/25b+3XvrEObGzO8zrct1LSTbln2I0dg16fj5+7wzXq0OffC1Pm5zev+5HDs'
+    '+rRZ8cWp820LtO2lm+ACcfPelFyen9sIEljDoH3gi3p0A6MElHJ4xLjg/x3TAww8CgwTbpj8ns/IwsDEwNjA4MCgwCDAwMGgoqA/'
+    'Vf/d479fPz8++27BWxHmmj376zT/W/MIbWMy2314y01ZhwkbmP6Fb3oky6TK2JCtNpdXwkGLKWGTpEMQ447SXzebGFUYG1Tl/s+b'
+    'ZxS28cQHhjWhLlePnw5z+HHXff2vR/GX/usejf11Z6KiRj7DfjY9rgNzXm7nmsMoplnmwnGK8cPlU/K8TXG1WtrzH0gmJGrfqT4n'
+    'wbkmLvPX9Wv1rBwyTOli9lYstrW/puu9vKn4ojP494tHbnU3vnziuWz9a+39l+kW5b3F62pfZhezVSQoKs9aEK535DMjW8TeDxd1'
+    'LkxeVp9neb3ur4fAlymfrm87+PJvxzsmrjtaofvy0hu01fdrHbjrkjbvn6QDw4M/TAxsH4QYGi4158dLNoCD6OTt/xcZKs4rMHMw'
+    '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'
 )
 # END BUNDLED CONNECTOR PACKAGE
 
@@ -3435,14 +3487,11 @@ def save_bundled_connector(parent):
     if target.suffix.lower() != '.zip':
         target = target.with_suffix('.zip')
     try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        temp = target.with_name(target.name + '.tmp')
-        temp.write_bytes(data)
-        os.replace(temp, target)
-    except OSError as exc:
+        _atomic_write_bytes(target,data,mode=0o600,private_parent=False)
+    except (OSError,RuntimeError) as exc:
         QMessageBox.warning(parent, '保存失败', str(exc))
         return None
-    show_hint(parent, f'连接器 v{BUNDLED_CONNECTOR_VERSION} 已保存；解压后在 Chrome 扩展程序页面加载该文件夹')
+    show_hint(parent, f'连接器 v{BUNDLED_CONNECTOR_VERSION} 已保存；解压后在 Chrome 扩展程序页面加载该文件夹',kind="success")
     return target
 
 
@@ -3471,7 +3520,8 @@ def connector_identity(raw):
     raw = raw if isinstance(raw, dict) else {}
     limits = {'profile_name':80, 'profile_directory':100, 'profile_path':800,
               'channel_label':100, 'browser_brand':100, 'browser_version':80,
-              'os':30, 'arch':30, 'extension_version':30}
+              'os':30, 'arch':30, 'extension_version':30,
+              'account_name':80, 'account_id':25, 'label_source':40}
     clean = {}
     for key, limit in limits.items():
         value = str(raw.get(key) or '').strip()
@@ -3523,6 +3573,79 @@ def inspect_declared_profile(identity):
     return out
 
 
+_PROFILE_NAMES_CACHE = {"at": 0.0, "names": {}}
+
+
+def local_state_profile_names(data_root=None):
+    """Chrome profile display names from Local State (desktop-verified).
+
+    Cached for 30 seconds: the connector summary refreshes every second
+    and must not re-read the file each time. Returns {folder: name}.
+    """
+    now = time.monotonic()
+    if data_root is None and now - _PROFILE_NAMES_CACHE["at"] < 30 and _PROFILE_NAMES_CACHE["names"]:
+        return dict(_PROFILE_NAMES_CACHE["names"])
+    names = {}
+    try:
+        if data_root is not None:
+            roots = [Path(data_root)]
+        elif os.name == "nt":
+            roots = [Path(os.environ.get("LOCALAPPDATA", "")) / "Google/Chrome/User Data"]
+        elif sys.platform == "darwin":
+            roots = [Path.home() / "Library/Application Support/Google/Chrome"]
+        else:
+            roots = [Path.home() / ".config/google-chrome"]
+        for root in roots:
+            state = root / "Local State"
+            if not state.is_file() or state.stat().st_size > 8_000_000:
+                continue
+            data = json.loads(state.read_text("utf-8"))
+            cache = data.get("profile", {}).get("info_cache", {})
+            if isinstance(cache, dict):
+                for folder, item in cache.items():
+                    if isinstance(item, dict) and re.fullmatch(r"Default|Profile [0-9]{1,6}", str(folder)):
+                        nm = str(item.get("name") or "").strip()
+                        if nm:
+                            names[str(folder)] = nm[:100]
+    except (OSError, ValueError, TypeError):
+        pass
+    if data_root is None:
+        _PROFILE_NAMES_CACHE["at"] = now
+        _PROFILE_NAMES_CACHE["names"] = dict(names)
+    return names
+
+
+def connector_display_name(identity, instance_id):
+    """Automatic connector label, strongest evidence first.
+
+    FB account name (only if a future approved probe supplies it) >
+    the manual remark kept for old installs > the Chrome profile name
+    verified against this computer's Local State (exact folder, or the
+    only profile on the machine) > a stable Chrome + instance-id label.
+    Never invents a profile folder: the extension has no API that reports
+    its own profile directory.
+    """
+    ident = identity if isinstance(identity, dict) else {}
+    account = str(ident.get("account_name") or "").strip()
+    if account:
+        return account[:80]
+    manual = str(ident.get("profile_name") or "").strip()
+    if manual:
+        return manual[:80]
+    folder = ""
+    path = str(ident.get("profile_path") or "")
+    if path:
+        folder = re.split(r"[\\/]", path.rstrip("\\/"))[-1]
+    elif ident.get("profile_directory"):
+        folder = str(ident.get("profile_directory"))
+    names = local_state_profile_names()
+    if folder and names.get(folder):
+        return names[folder]
+    if not folder and len(names) == 1:
+        return next(iter(names.values()))
+    return "Chrome " + str(instance_id or "")[:6]
+
+
 @dataclass
 class _ConnectorSession:
     instance_id: str
@@ -3552,7 +3675,7 @@ import struct
 import select
 import errno
 
-CONNECTOR_BUILD = 'auto-connect-20261013'
+CONNECTOR_BUILD = 'auto-connect-20261031'
 CONNECTOR_PORTS = tuple(range(17831, 17841))
 CONNECTOR_PRODUCT = 'PageOperationsMonitor'
 
@@ -3706,6 +3829,8 @@ class _LocalConnectorHandler(socketserver.BaseRequestHandler):
                 headers[key]=value.strip()
             if headers.get('host') != '127.0.0.1:'+str(self.server.server_address[1]):
                 self.deny(403,'Host refused');return
+            if self.server.bridge.handshake_throttled():
+                self.deny(429,'Too many failed handshakes');return
             if headers.get('origin') != CONNECTOR_ORIGIN:
                 self.deny(403,'Extension origin refused');return
             if headers.get('upgrade','').lower()!='websocket' or 'upgrade' not in [x.strip().lower() for x in headers.get('connection','').split(',')]:
@@ -3772,6 +3897,87 @@ def choose_connected_browser(rows, selected_id='', selection_mode=''):
 
 
 
+def _dpapi_protect(data: bytes):
+    """Windows DPAPI (current user scope) or None when unavailable.
+
+    No password is involved and nothing is stored: Windows derives the
+    key from the logged-in user profile. On other platforms this returns
+    None and callers fall back to private-file permissions.
+    """
+    if os.name != "nt" or not data:
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        class _Blob(ctypes.Structure):
+            _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+        crypt32 = ctypes.windll.crypt32
+        blob_in = _Blob(len(data), ctypes.cast(ctypes.create_string_buffer(data), ctypes.POINTER(ctypes.c_char)))
+        blob_out = _Blob()
+        if not crypt32.CryptProtectData(ctypes.byref(blob_in), "PageOperationsMonitor local secret",
+                                       None, None, None, 0x01, ctypes.byref(blob_out)):
+            return None
+        try:
+            return ctypes.string_at(blob_out.pbData, blob_out.cbData)
+        finally:
+            ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+    except Exception:
+        return None
+
+
+def _dpapi_unprotect(data: bytes):
+    if os.name != "nt" or not data:
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        class _Blob(ctypes.Structure):
+            _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+        crypt32 = ctypes.windll.crypt32
+        blob_in = _Blob(len(data), ctypes.cast(ctypes.create_string_buffer(data), ctypes.POINTER(ctypes.c_char)))
+        blob_out = _Blob()
+        if not crypt32.CryptUnprotectData(ctypes.byref(blob_in), None, None, None, None, 0x01, ctypes.byref(blob_out)):
+            return None
+        try:
+            return ctypes.string_at(blob_out.pbData, blob_out.cbData)
+        finally:
+            ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+    except Exception:
+        return None
+
+
+def _protect_local_secret(value):
+    """Wrap a small JSON-able secret for storage.
+
+    Format 2 is DPAPI-protected on Windows; format 1 is the private-file
+    fallback used elsewhere (the values protected here are already hashes
+    or short-lived tokens, never passwords). Legacy unwrapped objects
+    pass through _unprotect_local_secret unchanged.
+    """
+    try:
+        raw = json.dumps(value, ensure_ascii=False).encode("utf-8")
+    except (TypeError, ValueError):
+        return value
+    blob = _dpapi_protect(raw)
+    if blob is not None:
+        return {"format": 2, "protected": True,
+                "blob": base64.b64encode(blob).decode("ascii")}
+    return {"format": 1, "protected": False, "value": value}
+
+
+def _unprotect_local_secret(obj):
+    if not isinstance(obj, dict):
+        return obj
+    if obj.get("protected"):
+        raw = _dpapi_unprotect(base64.b64decode(str(obj.get("blob") or ""), validate=True))
+        if raw is None:
+            raise ValueError("受保护的本地密钥无法解密（可能不是同一 Windows 用户）")
+        return json.loads(raw.decode("utf-8"))
+    if "value" in obj and obj.get("format") == 1:
+        return obj["value"]
+    return obj
+
+
 class ConnectorBridge:
     """Automatic enrollment from the pinned extension Origin; then per-profile tokens.
 
@@ -3789,10 +3995,13 @@ class ConnectorBridge:
         self.thread=None
         self.error=''
         self._running=False
+        self.pending={}
+        self.pending_queue=queue.Queue()
+        self._failed_handshakes=[]
         if self.registry_path.is_file():
             try:
                 if self.registry_path.stat().st_size > 1_000_000:raise ValueError('Registry too large')
-                root=json.loads(self.registry_path.read_text('utf-8'))
+                root=_unprotect_local_secret(json.loads(self.registry_path.read_text('utf-8')))
                 if root.get('schema') != 1:raise ValueError('Unsupported registry schema')
                 for cid, value in root.get('clients', {}).items():
                     if re.fullmatch(r'[a-zA-Z0-9_-]{12,100}',cid) and isinstance(value,dict):
@@ -3801,7 +4010,49 @@ class ConnectorBridge:
                 self.error='Connector registry could not be read: '+str(exc)
 
     def _save(self):
-        bc_atomic(self.registry_path, {'schema':1,'clients':self.records})
+        bc_atomic(self.registry_path, _protect_local_secret({'schema':1,'clients':self.records}))
+
+    def pending_approvals(self):
+        now=time.time()
+        with self.lock:
+            stale=[cid for cid, item in self.pending.items() if now-float(item.get('first_seen') or 0) > 900]
+            for cid in stale:self.pending.pop(cid,None)
+            return [{'instance_id':cid,'identity':dict(item.get('identity') or {}),
+                     'first_seen':float(item.get('first_seen') or 0)}
+                    for cid, item in self.pending.items()]
+
+    def approve_pending(self, cid):
+        with self.lock:
+            item=self.pending.pop(str(cid),None)
+            if not item:return False
+            record={'token_hash':item['token_hash'],'paired_at':time.time(),
+                    'registration':'approved-local','blocked':False,
+                    'identity':item.get('identity') or {}}
+            record['last_connected_at']=time.time()
+            self.records[str(cid)]=record
+            self._save()
+            return True
+
+    def block_pending(self, cid):
+        with self.lock:
+            item=self.pending.pop(str(cid),None)
+            if not item:return False
+            record={'token_hash':item['token_hash'],'paired_at':time.time(),
+                    'registration':'blocked-local','blocked':True,
+                    'identity':item.get('identity') or {}}
+            self.records[str(cid)]=record
+            self._save()
+            return True
+
+    def _note_handshake_failure(self):
+        now=time.monotonic()
+        self._failed_handshakes=[t for t in self._failed_handshakes if now-t < 60]
+        self._failed_handshakes.append(now)
+
+    def handshake_throttled(self):
+        now=time.monotonic()
+        self._failed_handshakes=[t for t in self._failed_handshakes if now-t < 60]
+        return len(self._failed_handshakes) >= 30
 
     def relocate(self, path):
         with self.lock:
@@ -3861,7 +4112,20 @@ class ConnectorBridge:
             else:
                 if kind!='auto_hello':raise ConnectorFault('UPGRADE_REQUIRED','Please update the browser extension')
                 if len(self.records)>=64:raise ConnectorFault('LIMIT','Maximum saved browser connections reached')
-                record={'token_hash':digest,'paired_at':time.time(),'registration':'automatic-local','blocked':False}
+                # First sighting of a new browser: one approval in the
+                # desktop app. Already-paired browsers never re-confirm.
+                # The extension keeps retrying in the background, so the
+                # next handshake after approval succeeds without any
+                # action in the browser.
+                previous=self.pending.get(cid)
+                if previous and previous.get('token_hash') != digest:
+                    raise ConnectorFault('AUTH_MISMATCH','Connection identity is no longer valid; reset this connector in extension settings')
+                self.pending[cid]={'token_hash':digest,'identity':identity,
+                                   'first_seen':previous.get('first_seen',time.time()) if previous else time.time(),
+                                   'last_seen':time.time()}
+                try:self.pending_queue.put_nowait(cid)
+                except queue.Full:pass
+                raise ConnectorFault('PENDING_APPROVAL','New browser connection is waiting for approval in the desktop app')
             online=self.sessions.get(cid)
             if online and time.monotonic()-online.last_seen<65:
                 raise ConnectorFault('INSTANCE_IN_USE','A copied Profile is using this instance ID')
@@ -3916,6 +4180,9 @@ class ConnectorBridge:
                         job.event.set()
                 else:raise ConnectorError('Unsupported message')
         except Exception as exc:
+            if getattr(exc,'code',None) not in (None,'PENDING_APPROVAL'):
+                try:self._note_handshake_failure()
+                except Exception:pass
             try:ws.send(json.dumps({'type':'error','code':getattr(exc,'code','CONNECTOR_ERROR'),'message':str(exc)[:240]}))
             except Exception:pass
         finally:
@@ -3942,7 +4209,7 @@ class ConnectorBridge:
     def online(self, cid):
         return any(r['instance_id']==cid and r['online'] for r in self.clients())
 
-    def request(self, cid, row, purpose='monitor', stop=None, timeout=120):
+    def request(self, cid, row, purpose='monitor', stop=None, timeout=120, retry=False):
         pid=str(row.get('page_id') or '')
         if not re.fullmatch(r'[0-9]{5,25}',pid):raise ConnectorError('Invalid page ID')
         if purpose not in ('monitor','metadata'):raise ConnectorError('Unsupported purpose')
@@ -3954,6 +4221,7 @@ class ConnectorBridge:
             jid=secrets.token_hex(16);job=_ConnectorJob(session,pid);self.jobs[jid]=job
         try:
             session.send({'type':'collect','job_id':jid,'page_id':pid,'purpose':purpose,
+                          'retry':bool(retry),
                           'growth':bool(purpose=='monitor' and row.get('monitor_growth',1)),
                           'posts':bool(purpose=='monitor' and row.get('monitor_posts',0)),
                           'timeout_ms':max(5000,min(110000,int(timeout*1000)-5000))})
@@ -4052,7 +4320,7 @@ class SingleInstanceGuard:
             elif os.name=='nt':directory=Path(os.environ.get('LOCALAPPDATA') or Path.home())/'PageOperationsMonitorRuntime'
             elif sys.platform=='darwin':directory=Path.home()/'Library/Application Support/PageOperationsMonitorRuntime'
             else:directory=Path.home()/'.local/state/PageOperationsMonitorRuntime'
-        self.directory=Path(directory);self.directory.mkdir(parents=True,exist_ok=True,mode=0o700)
+        self.directory=ensure_private_directory(Path(directory))
         self.lock_file=None;self.primary=False;self.socket=None;self.thread=None
         self.commands=queue.Queue();self.stopping=threading.Event();self.token=''
 
@@ -4080,7 +4348,7 @@ class SingleInstanceGuard:
                 self.socket.setsockopt(socket.SOL_SOCKET,socket.SO_EXCLUSIVEADDRUSE,1)
             self.socket.bind(('127.0.0.1',0));self.socket.listen(4);self.socket.settimeout(.3)
             self.token=secrets.token_urlsafe(32)
-            bc_atomic(self.directory/'desktop.json',{'pid':os.getpid(),'port':self.socket.getsockname()[1],'token':self.token})
+            bc_atomic(self.directory/'desktop.json',_protect_local_secret({'pid':os.getpid(),'port':self.socket.getsockname()[1],'token':self.token}))
             self.thread=threading.Thread(target=self._listen,name='POM-activate',daemon=True);self.thread.start()
             return True
         except Exception:
@@ -4110,7 +4378,7 @@ class SingleInstanceGuard:
             try:
                 path=self.directory/'desktop.json'
                 if path.stat().st_size>4096:raise ValueError('Invalid instance descriptor')
-                data=json.loads(path.read_text('utf-8'))
+                data=_unprotect_local_secret(json.loads(path.read_text('utf-8')))
                 if os.name=='nt':
                     try:
                         import ctypes
@@ -4161,6 +4429,15 @@ def connector_record(row, payload, purpose='monitor'):
             'name_error':'','growth_error':'','posts_error':'',
             'collected_ts':stamp,'collected_at':now_iso()}
     error=str(payload.get('error') or '')[:350] if isinstance(payload,dict) else 'Invalid connector result'
+    _page_state=str(payload.get('page_state') or '').strip().lower()
+    _raw_candidates=[]
+    if isinstance(payload,dict) and isinstance(payload.get('name_candidates'),list):
+        for _item in payload.get('name_candidates')[:160]:
+            if isinstance(_item,dict):_raw_candidates.append(str(_item.get('text') or ''))
+    _unavail_hint=str(payload.get('unavailable_hint') or '')[:80]
+    _unavail,_detected_hint=detect_unavailable_page(' \n '.join(_raw_candidates))
+    _force_unavailable=(_page_state=='unavailable') or _unavail
+    if _force_unavailable and not _unavail_hint:_unavail_hint=_detected_hint
     if not isinstance(payload,dict) or str(payload.get('page_id'))!=pid:
         raise ConnectorError('Connector result does not belong to this Page ID')
     if payload.get('observed_url'):
@@ -4184,13 +4461,16 @@ def connector_record(row, payload, purpose='monitor'):
         try:
             raw=base64.b64decode(image.split(',',1)[1],validate=True)
             from PIL import Image,ImageOps
-            with Image.open(io.BytesIO(raw)) as im:
+            with Image.open(io.BytesIO(raw),formats=("PNG",)) as im:
                 if im.format!='PNG' or im.width!=192 or im.height!=192:
                     raise ValueError('Connector avatar must be a 192px PNG')
+                # Only the first PNG frame is used, as before; no frame iterator
+                # is exposed to data returned by the connector.
                 im.load();im=ImageOps.fit(im.convert('RGB'),(192,192))
             ensure_private_directory(AVATAR_DIR)
-            target=AVATAR_DIR/(pid+'.png');temp=target.with_suffix('.connector.tmp')
-            im.save(temp,format='PNG');temp.replace(target)
+            target=AVATAR_DIR/(pid+'.png')
+            output=io.BytesIO();im.save(output,format='PNG')
+            _atomic_write_bytes(target,output.getvalue(),mode=0o600,private_parent=True)
             result['avatar_path']=str(target);result['avatar_fresh']=True
         except Exception as exc:
             result['avatar_error']=str(exc)[:120]
@@ -4224,18 +4504,70 @@ def connector_record(row, payload, purpose='monitor'):
             result.update(posts_ok=True,last_post_ts=chosen['ts'],post_precision_seconds=chosen['precision'],
                           post_source=chosen['source'],post_url=chosen['url'])
         else:result['posts_error']=error or '\u672a\u8bfb\u5230\u53ef\u786e\u8ba4\u7684\u81ea\u53d1\u8d34\u6587\u65f6\u95f4'
+    # Diagnosis snapshot: counts only, never page text. Stored in the DB
+    # so a later failure can be told apart from a login/timeout/layout
+    # problem instead of showing one generic "could not read" message.
+    try:
+        _obs = urlsplit(str(payload.get('observed_url') or ''))
+        _obs_kind = 'login' if re.search(r'/(?:login|login.php|checkpoint|recover|two_factor)(?:/|$)', _obs.path) else 'page'
+    except ValueError:
+        _obs_kind = 'unexpected_origin'
+    _err_low = str(error or '').lower()
+    _name_count = len(payload.get('name_candidates') or []) if isinstance(payload.get('name_candidates'), list) else 0
+    _follower_present = bool(str(payload.get('follower_text') or '').strip())
+    _post_count = len(payload.get('post_candidates') or []) if isinstance(payload.get('post_candidates'), list) else 0
+    if _force_unavailable:
+        _diag = ('page_unavailable', PAGE_UNAVAILABLE_DETAIL)
+    elif _obs_kind == 'login' or 'login' in _err_low or '安全验证' in str(error or ''):
+        _diag = ('login', '需要先在浏览器里登录 Facebook 或完成安全验证')
+    elif 'timed out' in _err_low or 'timeout' in _err_low or 'exceeded' in _err_low:
+        _diag = ('timeout', '浏览器任务超时，页面可能尚未加载完成')
+    elif _name_count == 0 and not _follower_present:
+        _diag = ('empty', '页面没有返回可识别的名称与粉丝文本，可能是加载未完成或版面变化')
+    elif not result['page_name'] and _name_count > 0:
+        _diag = ('filtered', f'返回了 {_name_count} 个名称候选，但都被名称过滤规则排除')
+    elif purpose == 'monitor' and row.get('monitor_growth') and not result['growth_ok'] and _follower_present:
+        _diag = ('follower_parse', '已返回粉丝文本，但粉丝数解析失败（多为语言/单位词表未覆盖）')
+    elif purpose == 'monitor' and row.get('monitor_growth') and not result['growth_ok']:
+        _diag = ('follower_empty', '未返回粉丝文本')
+    elif purpose == 'monitor' and row.get('monitor_posts') and not result['posts_ok']:
+        _diag = ('post_parse', f'返回了 {_post_count} 个贴文候选，但没有可确认的自发贴文时间')
+    elif not result['metadata_ok']:
+        _diag = ('unknown', '未能确认主页身份')
+    else:
+        _diag = ('ok', '')
+    result['diagnosis_code'] = _diag[0]
+    result['diagnosis_detail'] = _diag[1]
+    if _diag[0] == 'page_unavailable':
+        if not result['name_error']:result['name_error'] = PAGE_UNAVAILABLE_DETAIL
+        if purpose == 'monitor' and row.get('monitor_growth') and not result['growth_ok']:
+            result['growth_error'] = PAGE_UNAVAILABLE_DETAIL
+        if purpose == 'monitor' and row.get('monitor_posts') and not result['posts_ok']:
+            result['posts_error'] = PAGE_UNAVAILABLE_DETAIL
+        if not error:error = PAGE_UNAVAILABLE_DETAIL
+    result['name_candidates_count'] = _name_count
+    result['follower_text_present'] = _follower_present
     if error:result['error']=error
     return result
 
 
 def record_needs_recheck(row, record, purpose='monitor'):
-    """Second-pass only for identity/post uncertainty, never merely for a growth miss."""
+    """Second pass for identity/post uncertainty and for diagnosable growth
+    misses (parse/empty/layout). Login and unavailable-page failures are
+    not auto-retried: a refresh cannot fix a logged-out profile or a Page
+    that cannot be opened, and the manual single-page recheck remains
+    available once the situation changes."""
     row=dict(row);record=dict(record or {});pid=str(row.get('page_id') or '')
+    if record.get('diagnosis_code') in ('login','page_unavailable'):
+        return False
     name_ok=bool(normalize_name(record.get('page_name'),pid) or normalize_name(row.get('page_name'),pid))
     if not name_ok:
         return True
     if purpose=='monitor' and row.get('monitor_posts') and not record.get('posts_ok'):
         return True
+    if purpose=='monitor' and row.get('monitor_growth') and not record.get('growth_ok'):
+        if record.get('diagnosis_code') in ('follower_parse','follower_empty','empty','filtered','timeout'):
+            return True
     return False
 
 
@@ -4262,9 +4594,23 @@ def merge_recheck_record(first, second, row, purpose='monitor'):
         out['avatar_path']=second.get('avatar_path')
     out['metadata_ok']=bool(normalize_name(out.get('page_name'),pid) or out.get('avatar_path'))
 
-    # Keep the first successful growth sample exactly as-is.
-    for key in ('growth_ok','followers_count','approx','matched_text','growth_error'):
-        if key in first:out[key]=first[key]
+    # Keep a successful first growth sample exactly as-is. If the first
+    # pass failed, a successful recheck may supply the sample; a failed
+    # recheck must never overwrite a successful first sample. (1.5.0
+    # always copied the first pass, so a growth recheck could never fix
+    # a growth failure.)
+    _growth_keys=('growth_ok','followers_count','approx','matched_text','growth_error')
+    if first.get('growth_ok'):
+        for key in _growth_keys:
+            if key in first:out[key]=first[key]
+    elif second.get('growth_ok'):
+        for key in _growth_keys:
+            if key in second:out[key]=second[key]
+        out['growth_error']=''
+    out['diagnosis_code']=second.get('diagnosis_code') or first.get('diagnosis_code') or 'unknown'
+    out['diagnosis_detail']=second.get('diagnosis_detail') or first.get('diagnosis_detail') or ''
+    out['name_candidates_count']=max(int(first.get('name_candidates_count') or 0),int(second.get('name_candidates_count') or 0))
+    out['follower_text_present']=bool(first.get('follower_text_present') or second.get('follower_text_present'))
 
     if purpose=='monitor' and row.get('monitor_posts'):
         if second.get('posts_ok'):
@@ -4300,7 +4646,7 @@ except ModuleNotFoundError as exc:
         "缺少 PyQt6 图形界面依赖。\n\n请在命令行运行：\n"
         "python -m pip install PyQt6 Pillow\n"
         ""
-        "安装后再启动 Page_Operations_Monitor_1.5.0.pyw。"
+        "安装后再启动 Page_Operations_Monitor_1.6.0.pyw。"
     )
     if os.name == "nt":
         try:
@@ -4321,60 +4667,101 @@ from PyQt6.QtGui import (
     QPainterPath, QPen, QPixmap,
 )
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QLayout, QLayoutItem,
     QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
     QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QSizeGrip, QSpinBox, QGraphicsDropShadowEffect,
     QStackedWidget, QStyle, QSystemTrayIcon, QTableWidget, QTableWidgetItem,
-    QToolTip, QVBoxLayout, QWidget, QListWidget, QListWidgetItem, QTabWidget,
+    QToolButton, QToolTip, QVBoxLayout, QWidget, QListWidget, QListWidgetItem, QTabWidget,
     QStyledItemDelegate, QStyleOptionViewItem, QAbstractSpinBox, QProxyStyle, QProgressBar,
 )
 
 # Focused palettes. Blue-Orange Obsidian is the default theme.
 THEME_PRESETS = {
-    "石墨黑": dict(bg="#10151C",sidebar="#0D1117",panel="#19222D",panel_2="#253343",
-        border="#35495E",text="#EEF4FC",muted="#9CAFBF",accent="#8280FF",green="#40D6AC",
-        red="#F87186",amber="#F8BC65",cyan="#5CBEDC",input="#141D27",hover="#2D3F52",soft="#303153",light=False),
-    "蓝橙曜石": dict(bg="#071421",sidebar="#06101B",panel="#0C2032",panel_2="#14314A",
-        border="#244D68",text="#F3F7FB",muted="#93AFC2",accent="#2F86F6",green="#2CD5A7",
-        red="#F06475",amber="#FF9F43",cyan="#47C4E8",input="#0A1B2A",hover="#173A55",soft="#173654",light=False),
-    "清爽白": dict(bg="#F5F7FA",sidebar="#FFFFFF",panel="#FFFFFF",panel_2="#F1F4F8",
-        border="#D7DEE8",text="#1E293B",muted="#66758A",accent="#356DF3",green="#16866A",
-        red="#D9485F",amber="#C67B1B",cyan="#187FA8",input="#FFFFFF",hover="#EAF0F7",soft="#E6EEFF",light=True),
-    "护眼绿": dict(bg="#EEF3EA",sidebar="#E5EDE1",panel="#F8FBF5",panel_2="#EAF2E5",
-        border="#C6D6BF",text="#26332A",muted="#66766A",accent="#3D7D5A",green="#2E8A58",
-        red="#C94E5C",amber="#B9792E",cyan="#3B7F88",input="#FFFFFF",hover="#DEE9D9",soft="#D4E6D5",light=True),
+    "云白": dict(bg="#F7F7F5",sidebar="#FFFFFF",panel="#FFFFFF",panel_2="#F2F2EF",
+        border="#E8E8E3",text="#1C1C1C",muted="#6E6E6E",accent="#1D4ED8",accent2="#1E40AF",
+        pill="#1D4ED8",pill_hover="#1E40AF",green="#15803D",
+        red="#DC2626",amber="#B45309",cyan="#0369A1",input="#FFFFFF",hover="#EFF1F8",soft="#EAF0FE",light=True),
+    "护眼绿": dict(bg="#E9F5EC",sidebar="#F2FAF4",panel="#FFFFFF",panel_2="#E3F2E7",
+        border="#C8E6D2",text="#1C1C1C",muted="#5A6B5E",accent="#0B7A43",accent2="#096A3A",
+        pill="#0B7A43",pill_hover="#096A3A",green="#12803C",
+        red="#DC2626",amber="#B45309",cyan="#0E7490",input="#FFFFFF",hover="#DDF0E3",soft="#D9F2E3",light=True),
+    "曜石黑": dict(bg="#101114",sidebar="#17181C",panel="#1A1B1F",panel_2="#232429",
+        border="#2A2B31",text="#ECECEC",muted="#9AA0A6",accent="#5B8DEF",accent2="#7AA2F7",
+        pill="#5B8DEF",pill_hover="#7AA2F7",green="#7BC98F",
+        red="#F0A3A3",amber="#E5B567",cyan="#67B7D6",input="#1E1F24",hover="#24252B",soft="#1E2A44",light=False),
 }
-BG = THEME_PRESETS["蓝橙曜石"]["bg"]
-SIDEBAR = THEME_PRESETS["蓝橙曜石"]["sidebar"]
-PANEL = THEME_PRESETS["蓝橙曜石"]["panel"]
-PANEL_2 = THEME_PRESETS["蓝橙曜石"]["panel_2"]
-BORDER = THEME_PRESETS["蓝橙曜石"]["border"]
-TEXT = THEME_PRESETS["蓝橙曜石"]["text"]
-MUTED = THEME_PRESETS["蓝橙曜石"]["muted"]
-ACCENT = THEME_PRESETS["蓝橙曜石"]["accent"]
-GREEN = THEME_PRESETS["蓝橙曜石"]["green"]
-RED = THEME_PRESETS["蓝橙曜石"]["red"]
-AMBER = THEME_PRESETS["蓝橙曜石"]["amber"]
-CYAN = THEME_PRESETS["蓝橙曜石"]["cyan"]
+THEME_MIGRATION = {
+    "蓝橙曜石": "曜石黑", "石墨黑": "曜石黑", "紫夜渐变": "曜石黑",
+    "清爽白": "云白", "海盐晨光": "云白", "青瓷绿": "护眼绿",
+}
+
+
+def migrate_theme_name(name):
+    """Map a 1.5.1 theme name to its 1.5.2 successor; unknown names pass through."""
+    return THEME_MIGRATION.get(str(name), str(name))
+
+
+MODULE_GROWTH_KEY = "modules/growth_enabled"
+MODULE_POSTS_KEY = "modules/posts_enabled"
+MODULES_ASKED_KEY = "modules/asked"
+
+
+def modules_growth_enabled(settings):
+    return is_true(settings.value(MODULE_GROWTH_KEY, True), True)
+
+
+def modules_posts_enabled(settings):
+    return is_true(settings.value(MODULE_POSTS_KEY, False), False)
+
+
+def apply_module_gating(pages, settings):
+    """Return copies of page rows with global module switches applied.
+
+    Per-page flags in the store are preserved; gating only affects what the
+    UI and the collector see, so re-enabling a module restores its pages.
+    """
+    growth = modules_growth_enabled(settings)
+    posts = modules_posts_enabled(settings)
+    gated = []
+    for row in pages:
+        copy = dict(row)
+        copy["monitor_growth"] = bool(row.get("monitor_growth")) and growth
+        copy["monitor_posts"] = bool(row.get("monitor_posts")) and posts
+        gated.append(copy)
+    return gated
+
+
+BG = BG = THEME_PRESETS["云白"]["bg"]
+SIDEBAR = THEME_PRESETS["云白"]["sidebar"]
+PANEL = THEME_PRESETS["云白"]["panel"]
+PANEL_2 = THEME_PRESETS["云白"]["panel_2"]
+BORDER = THEME_PRESETS["云白"]["border"]
+TEXT = THEME_PRESETS["云白"]["text"]
+MUTED = THEME_PRESETS["云白"]["muted"]
+ACCENT = THEME_PRESETS["云白"]["accent"]
+GREEN = THEME_PRESETS["云白"]["green"]
+RED = THEME_PRESETS["云白"]["red"]
+AMBER = THEME_PRESETS["云白"]["amber"]
+CYAN = THEME_PRESETS["云白"]["cyan"]
+ACCENT2 = THEME_PRESETS["云白"]["accent2"]
+PILL = THEME_PRESETS["云白"]["pill"]
+PILL_HOVER = THEME_PRESETS["云白"]["pill_hover"]
 
 
 
 def paint_brand(p, rect):
+    """Logo C: a monitoring pulse on a flat navy tile. Identical in every theme."""
     p.save();p.setRenderHint(QPainter.RenderHint.Antialiasing)
     x,y,w,h=rect.x(),rect.y(),rect.width(),rect.height()
-    grad=QLinearGradient(x,y,x+w,y+h)
-    grad.setColorAt(0,QColor("#6864F5"));grad.setColorAt(1,QColor("#2ECBBC"))
-    p.setPen(Qt.PenStyle.NoPen);p.setBrush(grad)
-    p.drawRoundedRect(rect,w*.28,h*.28)
+    p.setPen(Qt.PenStyle.NoPen);p.setBrush(QColor("#1D4ED8"))
+    p.drawRoundedRect(rect,w*.25,h*.25)
     p.setBrush(Qt.BrushStyle.NoBrush)
-    p.setPen(QPen(QColor("#FFFFFF"),w*.055,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
-    path=QPainterPath();path.moveTo(x+w*.2,y+h*.64);path.lineTo(x+w*.39,y+h*.46)
-    path.lineTo(x+w*.55,y+h*.59);path.lineTo(x+w*.78,y+h*.3)
+    p.setPen(QPen(QColor("#FFFFFF"),w*.052,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
+    pts=[(.208,.50),(.354,.50),(.438,.312),(.521,.667),(.604,.396),(.688,.50),(.812,.50)]
+    path=QPainterPath();path.moveTo(x+w*pts[0][0],y+h*pts[0][1])
+    for xx,yy in pts[1:]:path.lineTo(x+w*xx,y+h*yy)
     p.drawPath(path)
-    p.setPen(Qt.PenStyle.NoPen);p.setBrush(QColor("#FFFFFF"))
-    for xx,yy in ((.2,.64),(.39,.46),(.55,.59),(.78,.3)):
-        p.drawEllipse(QPointF(x+w*xx,y+h*yy),w*.042,w*.042)
     p.restore()
 
 
@@ -4755,26 +5142,11 @@ _EMBEDDED_APP_ICON_PNG = (
 )
 
 def make_app_icon():
-    """Application/window/taskbar/tray icon. Works with external assets or standalone source."""
-    for relative in ("PageOperationsMonitor.ico", "assets/icons/PageOperationsMonitor.ico",
-                     "assets/icons/PageOperationsMonitor.png",
-                     "assets/icons/PageOperationsMonitor.icns"):
-        for path in asset_candidates(relative):
-            if path.is_file():
-                icon = QIcon(str(path))
-                if not icon.isNull():
-                    return icon
-    pm = QPixmap()
-    try:
-        pm.loadFromData(base64.b64decode(_EMBEDDED_APP_ICON_PNG))
-    except Exception:
-        pass
-    if not pm.isNull():
-        icon = QIcon()
-        for size in (16,20,24,32,40,48,64,128,256):
-            icon.addPixmap(pm.scaled(size,size,Qt.AspectRatioMode.KeepAspectRatio,
-                                      Qt.TransformationMode.SmoothTransformation))
-        return icon
+    """Application/window/taskbar/tray icon, drawn from the current logo (Logo C).
+
+    Drawing from code keeps the icon in step with the brand mark; a stale
+    .ico/.png sitting next to the script can no longer override the logo.
+    """
     icon = QIcon()
     for size in (16,20,24,32,48,64,128,256):
         pm = QPixmap(size,size);pm.fill(Qt.GlobalColor.transparent)
@@ -4782,6 +5154,46 @@ def make_app_icon():
         icon.addPixmap(pm)
     return icon
 
+
+TOAST_THEME_STYLES = {
+    "云白": dict(bg="#FFFFFF", border="#DFDFD8", text="#1C1C1C", icon="#1D4ED8",
+                 warn="#B45309", warn_glyph="#FFFFFF"),
+    "护眼绿": dict(bg="#F2FAF4", border="#B7DFC4", text="#123B22", icon="#0B7A43",
+                   warn="#B45309", warn_glyph="#FFFFFF"),
+    "曜石黑": dict(bg="#232429", border="#3A3B42", text="#F2F2F2", icon="#5B8DEF",
+                   warn="#E5B567", warn_glyph="#101114"),
+}
+
+
+def toast_badge_pixmap(kind, style):
+    """22px filled-circle badge: info 'i', success check, warning '!'. Colours follow the theme."""
+    if kind == "warning":
+        fill, glyph_color = style["warn"], style["warn_glyph"]
+    else:
+        fill, glyph_color = style["icon"], "#FFFFFF"
+    pm = QPixmap(22, 22); pm.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pm); painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setBrush(QColor(fill)); painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawEllipse(0, 0, 22, 22)
+    painter.setPen(QPen(QColor(glyph_color), 2.4, Qt.PenStyle.SolidLine,
+                        Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    painter.setBrush(QColor(glyph_color))
+    if kind == "success":
+        path = QPainterPath(); path.moveTo(6, 11.5); path.lineTo(10, 15.5); path.lineTo(16.5, 7)
+        painter.drawPath(path)
+    elif kind == "warning":
+        painter.drawLine(QPointF(11, 6), QPointF(11, 13))
+        painter.drawEllipse(QRectF(9.8, 15.6, 2.4, 2.4))
+    else:
+        painter.drawLine(QPointF(11, 6.5), QPointF(11, 13))
+        painter.drawEllipse(QRectF(9.8, 15.6, 2.4, 2.4))
+    painter.end()
+    return pm
+
+
+def toast_style_for(theme_name):
+    """Bubble colours for a theme name; legacy names migrate, unknown names fall back to 云白."""
+    return TOAST_THEME_STYLES.get(migrate_theme_name(str(theme_name or "云白")), TOAST_THEME_STYLES["云白"])
 
 
 class ToastNotice(QFrame):
@@ -4794,25 +5206,35 @@ class ToastNotice(QFrame):
         layout = QHBoxLayout(self);layout.setContentsMargins(20,13,20,13);layout.setSpacing(10)
         self.icon = QLabel();self.icon.setFixedSize(22,22);layout.addWidget(self.icon)
         self.message = QLabel();self.message.setObjectName("ToastMessage")
-        self.message.setTextFormat(Qt.TextFormat.PlainText);self.message.setWordWrap(True)
+        self.message.setTextFormat(Qt.TextFormat.PlainText);self.message.setWordWrap(False)
         layout.addWidget(self.message,1)
         self.timer = QTimer(self);self.timer.setSingleShot(True);self.timer.timeout.connect(self.hide)
         shadow=QGraphicsDropShadowEffect(self);shadow.setBlurRadius(22);shadow.setOffset(0,4);shadow.setColor(QColor(0,0,0,165))
         self.setGraphicsEffect(shadow)
         self.hide()
 
-    def show_message(self, text, duration_ms=3600):
+    def show_message(self, text, duration_ms=3600, kind="info"):
         self.timer.stop()
-        self.icon.setPixmap(ui_icon("info","#725015").pixmap(20,20))
-        self.message.setText(str(text))
+        kind = kind if kind in ("info", "success", "warning") else "info"
+        self.last_kind = kind
+        style = toast_style_for(getattr(self.window(), "theme_name", "云白"))
+        self.icon.setPixmap(toast_badge_pixmap(kind, style))
+        text = str(text)
+        # Apply the themed 14px stylesheet BEFORE measuring, so the metrics
+        # use the font that is actually painted (measuring first clipped the
+        # last character). +80 covers margins + icon + spacing + overshoot.
         self.setStyleSheet(
-            "QFrame#ToastNotice {background:#FFF1C2;border:2px solid #F2BE49;border-radius:14px;}"
-            "QLabel#ToastMessage {color:#142033;font-size:14px;font-weight:650;background:transparent;border:0;}"
+            "QFrame#ToastNotice {background:" + style["bg"] + ";border:1px solid " + style["border"] + ";border-radius:14px;}"
+            "QLabel#ToastMessage {color:" + style["text"] + ";font-size:14px;font-weight:650;background:transparent;border:0;}"
             "QLabel {background:transparent;border:0;}")
         parent = self.parentWidget()
         available = max(220, parent.width()-64)
-        natural = self.message.fontMetrics().horizontalAdvance(str(text)) + 72
-        self.setFixedWidth(min(available,560,max(260,natural)))
+        budget = max(120, min(available, 920) - 80)
+        shown = self.message.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, budget)
+        self.message.setText(shown)
+        self.message.setToolTip(text if shown != text else "")
+        natural = self.message.fontMetrics().horizontalAdvance(shown) + 80
+        self.setFixedWidth(min(available, 920, max(260, natural)))
         self.adjustSize()
         self.reposition();self.show();self.raise_()
         self.timer.start(_bounded_int(duration_ms,3600,3000,4000))
@@ -4823,20 +5245,20 @@ class ToastNotice(QFrame):
             self.move(*toast_position(parent.width(),parent.height(),self.width(),self.height()))
 
 
-def show_hint(owner, message, duration_ms=3600):
+def show_hint(owner, message, duration_ms=3600, kind="info"):
     """Route brief messages from subpages/dialogs to the application's single toast."""
     target = owner
     while target is not None:
         handler = getattr(target,"show_toast",None)
         if callable(handler):
-            handler(str(message),duration_ms)
+            handler(str(message),duration_ms,kind)
             return
         target = target.parentWidget() if isinstance(target,QWidget) else None
     window = owner.window() if isinstance(owner,QWidget) else QApplication.activeWindow()
     if window:
         if not hasattr(window,"_local_hint"):
             window._local_hint = ToastNotice(window)
-        window._local_hint.show_message(str(message),duration_ms)
+        window._local_hint.show_message(str(message),duration_ms,kind)
 
 
 class LoginWorker(QObject):
@@ -4866,40 +5288,6 @@ class LoginWorker(QObject):
                 self.finished.emit("浏览器已关闭；如果你已完成脸书登录，登录会话已保存在默认专用浏览器资料中。")
         except Exception as exc:
             self.finished.emit("登录浏览器失败：" + str(exc)[:240])
-
-
-class PersistentMonitorAlert(QDialog):
-    """High-visibility business alert that never auto-closes."""
-    def __init__(self, entries, owner, stack_index=0):
-        super().__init__(None,Qt.WindowType.Tool|Qt.WindowType.FramelessWindowHint|Qt.WindowType.WindowStaysOnTopHint)
-        self.owner=owner;self.entries=list(entries);self.stack_index=max(0,int(stack_index));self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground,True);self.setModal(False);self.setStyleSheet(owner.styleSheet())
-        self.setWindowTitle('主页监控预警');self.setWindowIcon(make_app_icon());self.setMinimumWidth(450);self.setMaximumWidth(540)
-        outer=QVBoxLayout(self);outer.setContentsMargins(10,10,10,10);panel=QFrame();panel.setObjectName('MonitorAlertPopup');outer.addWidget(panel)
-        root=QVBoxLayout(panel);root.setContentsMargins(18,15,18,16);root.setSpacing(11)
-        head=QHBoxLayout();symbol=QLabel('!');symbol.setObjectName('MonitorAlertSymbol');symbol.setFixedSize(34,34);symbol.setAlignment(Qt.AlignmentFlag.AlignCenter);head.addWidget(symbol)
-        head_text=QVBoxLayout();head_text.setSpacing(0);title=QLabel('主页监控预警');title.setObjectName('MonitorAlertHeadline');head_text.addWidget(title)
-        subtitle=QLabel('需要处理 · 此窗口不会自动关闭');subtitle.setObjectName('SmallMuted');head_text.addWidget(subtitle);head.addLayout(head_text);head.addStretch()
-        close=QPushButton('×');close.setObjectName('AlertCloseButton');close.setFixedSize(32,32);close.clicked.connect(self.close);head.addWidget(close);root.addLayout(head)
-        for entry in self.entries[:5]:
-            row=QFrame();row.setObjectName('MonitorAlertRow');hl=QHBoxLayout(row);hl.setContentsMargins(10,9,10,9);hl.setSpacing(12)
-            hl.addWidget(AvatarWidget(entry.get('name') or entry.get('page_name',''),entry.get('avatar_path',''),56,page_id=entry.get('page_id','')),0,Qt.AlignmentFlag.AlignTop)
-            texts=QVBoxLayout();texts.setSpacing(4);page_name=entry.get('name') or entry.get('page_name') or '名称待获取';name=ElideLabel(page_name)
-            name.setObjectName('MonitorAlertName');name.setMinimumHeight(22);name.setToolTip(page_name);texts.addWidget(name)
-            meta=QHBoxLayout();event='发帖时间超标' if entry.get('kind')=='post' else '粉丝增长超标';badge=QLabel(event);badge.setObjectName('MonitorAlertEvent')
-            badge.setProperty('kind',entry.get('kind','growth'));badge.setMaximumWidth(118);badge.setAlignment(Qt.AlignmentFlag.AlignCenter);meta.addWidget(badge);meta.addStretch();texts.addLayout(meta)
-            message=QLabel(str(entry.get('message') or ''));message.setWordWrap(True);message.setObjectName('MonitorAlertMessage');texts.addWidget(message);hl.addLayout(texts,1);root.addWidget(row)
-        if len(self.entries)>5:
-            more=QLabel(f'另有 {len(self.entries)-5} 条预警，请进入通知列表查看。');more.setObjectName('SmallMuted');root.addWidget(more)
-        actions=QHBoxLayout();actions.addStretch();view=QPushButton('查看通知');view.setObjectName('PrimaryButton');view.clicked.connect(self.open_alerts);actions.addWidget(view)
-        close2=QPushButton('关闭');close2.clicked.connect(self.close);actions.addWidget(close2);root.addLayout(actions)
-        self.adjustSize();QTimer.singleShot(0,self.reposition)
-    def reposition(self):
-        screen=QApplication.screenAt(self.owner.frameGeometry().center()) or QApplication.primaryScreen()
-        if screen:
-            area=screen.availableGeometry();self.adjustSize();step=min(self.stack_index,4);x=area.right()-self.width()-22-step*18;y=area.bottom()-self.height()-22-step*32
-            self.move(max(area.left()+10,x),max(area.top()+10,y))
-    def open_alerts(self):
-        self.owner.open_alert_notification(self.entries[0] if self.entries else {});self.close()
 
 
 class CollectWorker(QObject):
@@ -5016,9 +5404,19 @@ class ConnectorCollectWorker(CollectWorker):
             if row.get('monitor_posts'):checks.append(bool(record.get('posts_ok')))
         return bool(checks and all(checks))
 
-    def _recheck_connector(self,source_cid):
+    def _recheck_connector(self,source_cid,record=None):
         online=[cid for cid in self.instance_ids if self.bridge.online(cid)]
         others=[cid for cid in online if cid!=source_cid]
+        diag=str((record or {}).get('diagnosis_code') or '')
+        # Login/offline: another profile cannot fix this account's login
+        # state, and switching accounts mid-round would be surprising.
+        # Layout/parse failures: another browser may render differently.
+        if diag in ('login',):
+            return source_cid if source_cid in online else (online[0] if online else '')
+        if others and diag in ('empty','filtered','follower_parse','post_parse'):
+            return random.choice(others)
+        if others and diag in ('follower_empty','timeout'):
+            return source_cid if source_cid in online else others[0]
         if others:return random.choice(others)
         return source_cid if source_cid in online else (online[0] if online else '')
 
@@ -5108,16 +5506,18 @@ class ConnectorCollectWorker(CollectWorker):
         # Recheck only the ambiguous subset. Prefer another browser when possible.
         for source_cid,row,first in rechecks:
             if self._stop.is_set():break
-            target=self._recheck_connector(source_cid)
+            target=self._recheck_connector(source_cid,first)
             second={'page_id':row['page_id'],'metadata_ok':False,'growth_ok':False,'posts_ok':False}
             if target:
                 retry_row=dict(row)
                 retry_purpose='metadata'
                 if self.purpose=='monitor' and row.get('monitor_posts') and not first.get('posts_ok'):
                     retry_purpose='monitor';retry_row['monitor_growth']=False;retry_row['monitor_posts']=True
+                elif self.purpose=='monitor' and row.get('monitor_growth') and not first.get('growth_ok'):
+                    retry_purpose='monitor';retry_row['monitor_growth']=True;retry_row['monitor_posts']=False
                 try:
                     self.progress.emit(finalized+1,total,'自动复检 '+display_name(row)+(' · 换浏览器' if target!=source_cid else ' · 当前浏览器'))
-                    payload=self.bridge.request(target,retry_row,retry_purpose,self._stop,timeout=120)
+                    payload=self.bridge.request(target,retry_row,retry_purpose,self._stop,timeout=120,retry=True)
                     second=connector_record(retry_row,payload,retry_purpose)
                 except ConnectorError as exc:
                     second.update(error=str(exc),name_error=str(exc),posts_error=str(exc))
@@ -5154,7 +5554,7 @@ class BrowserConnectionsDialog(QDialog):
         self.export_connector_button=QPushButton('获取连接器');self.export_connector_button.setObjectName('PrimaryButton');self.export_connector_button.clicked.connect(self.export_connector)
         self.export_connector_button.setVisible(False);connector_bar.addWidget(self.export_connector_button)
         layout.addLayout(connector_bar)
-        self.summary=QLabel();self.summary.setObjectName('InfoBox');self.summary.setWordWrap(True);layout.addWidget(self.summary)
+        self.summary=QLabel();self.summary.setTextFormat(Qt.TextFormat.PlainText);self.summary.setObjectName('InfoBox');self.summary.setWordWrap(True);layout.addWidget(self.summary)
         self.table=QTableWidget(0,3);self.table.setHorizontalHeaderLabels(('使用','浏览器备注','状态'))
         self.table.verticalHeader().hide();self.table.setShowGrid(False);self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -5195,9 +5595,9 @@ class BrowserConnectionsDialog(QDialog):
         if self._loading or item.column()!=0:return
         ids=self.checked_ids();online=[r for r in self.rows if r['online'] and not r.get('blocked')]
         if len(ids)>10:
-            self._loading=True;item.setCheckState(Qt.CheckState.Unchecked);self._loading=False;show_hint(self,'最多同时使用 10 个浏览器连接器');return
+            self._loading=True;item.setCheckState(Qt.CheckState.Unchecked);self._loading=False;show_hint(self,'最多同时使用 10 个浏览器连接器',kind="warning");return
         if len(online)>1 and not ids:
-            self._loading=True;item.setCheckState(Qt.CheckState.Checked);self._loading=False;show_hint(self,'多个浏览器在线时至少保留 1 个');return
+            self._loading=True;item.setCheckState(Qt.CheckState.Checked);self._loading=False;show_hint(self,'多个浏览器在线时至少保留 1 个',kind="warning");return
         self._persist_checks();self._signature=None;self.owner.refresh_connector_summary()
 
     def refresh(self):
@@ -5233,10 +5633,10 @@ class BrowserConnectionsDialog(QDialog):
             identity=row['identity'];cid=row['instance_id'];marker=QTableWidgetItem('')
             marker.setFlags(Qt.ItemFlag.ItemIsEnabled|Qt.ItemFlag.ItemIsSelectable|Qt.ItemFlag.ItemIsUserCheckable);marker.setData(Qt.ItemDataRole.UserRole,cid)
             marker.setCheckState(Qt.CheckState.Checked if cid in saved and row['online'] and not row.get('blocked') else Qt.CheckState.Unchecked);marker.setTextAlignment(Qt.AlignmentFlag.AlignCenter);self.table.setItem(i,0,marker)
-            name=identity.get('profile_name') or ('Chrome '+cid[:6])
+            name=connector_display_name(identity,cid)
             status='已停用' if row.get('blocked') else ('在线' if row['online'] else '离线')
             for col,text in ((1,name),(2,status)):
-                cell=QTableWidgetItem(str(text));cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter);cell.setToolTip(str(text));self.table.setItem(i,col,cell)
+                cell=QTableWidgetItem(str(text));cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter);cell.setToolTip(html.escape(str(text)));self.table.setItem(i,col,cell)
             self.table.setRowHeight(i,42)
             if cid==current:self.table.selectRow(i)
         self.table.blockSignals(False);self._loading=False
@@ -5282,7 +5682,7 @@ class BrowserConnectionsDialog(QDialog):
         row=self.selected_row()
         if not row:return
         try:self.bridge.identify(row['instance_id'])
-        except Exception as exc:show_hint(self,str(exc))
+        except Exception as exc:show_hint(self,str(exc),kind="warning")
 
     def retry(self):
         self._signature=None;self.refresh();self.owner.refresh_connector_summary();show_hint(self,'正在自动检测本机浏览器连接器')
@@ -5290,19 +5690,195 @@ class BrowserConnectionsDialog(QDialog):
     def toggle_block(self):
         row=self.selected_row()
         if not row:return
-        if row.get('blocked'):self.bridge.allow(row['instance_id']);show_hint(self,'已启用，连接器会自动重新连接')
-        else:self.bridge.revoke(row['instance_id']);show_hint(self,'已停用该浏览器连接')
+        if row.get('blocked'):self.bridge.allow(row['instance_id']);show_hint(self,'已启用，连接器会自动重新连接',kind="success")
+        else:self.bridge.revoke(row['instance_id']);show_hint(self,'已停用该浏览器连接',kind="success")
         self._signature=None;self.refresh();self.owner.refresh_connector_summary()
 
     def delete_record(self):
         row=self.selected_row()
         if not row:return
-        if row.get('online') and not row.get('blocked'):show_hint(self,'请先停用该连接，再删除旧记录');return
+        if row.get('online') and not row.get('blocked'):show_hint(self,'请先停用该连接，再删除旧记录',kind="warning");return
         try:self.bridge.forget(row['instance_id'])
-        except Exception as exc:show_hint(self,str(exc));return
+        except Exception as exc:show_hint(self,str(exc),kind="warning");return
         saved=[x for x in self.owner.configured_connector_ids(include_offline=True) if x!=row['instance_id']]
         self.owner.set_connector_selection(saved,initialized=self.owner.connector_selection_initialized())
-        self._signature=None;self.refresh();show_hint(self,'旧连接记录已删除')
+        self._signature=None;self.refresh();show_hint(self,'旧连接记录已删除',kind="success")
+
+
+
+class MenuButton(QPushButton):
+    """Capsule select control: the whole capsule opens a styled menu.
+
+    Replaces the native QComboBox box in the dashboard, alerts and manager
+    filters and in the batch-settings dialog. The capsule itself is the
+    control; there is no separate dropdown arrow box. QMenu styling lives
+    in apply_style, so the popup matches the flat theme instead of the
+    platform combo box.
+    """
+    changed = pyqtSignal()
+
+    def __init__(self, options, current=None, parent=None):
+        super().__init__(parent)
+        self.setObjectName("MenuButton")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(36)
+        self._options = []
+        self._current = None
+        self._menu = QMenu(self)
+        self.set_options(options, current=current, emit=False)
+        self.clicked.connect(self._show_menu)
+
+    def set_options(self, options, current=None, keep_current=True, emit=False):
+        options = [(str(label), key) for label, key in options]
+        self._options = options
+        keys = [k for _, k in options]
+        if current is not None and current in keys:
+            self._current = current
+        elif keep_current and self._current in keys:
+            pass
+        elif options:
+            self._current = options[0][1]
+        else:
+            self._current = None
+        self._menu.clear()
+        for label, key in options:
+            act = self._menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(key == self._current)
+            act.triggered.connect(lambda _=False, k=key: self.setCurrentData(k))
+        self._refresh_text()
+
+    def _refresh_text(self):
+        label = next((lab for lab, k in self._options if k == self._current), "")
+        self.setText((label or "选择") + "  ▾")
+
+    def _show_menu(self):
+        pos = self.mapToGlobal(QPoint(0, self.height() + 4))
+        self._menu.popup(pos)
+
+    def currentData(self):
+        return self._current
+
+    def setCurrentData(self, key, emit=True):
+        if key == self._current and emit:
+            return
+        if key not in [k for _, k in self._options]:
+            return
+        self._current = key
+        for act in self._menu.actions():
+            act.setChecked(act.text() == next((lab for lab, k in self._options if k == key), ""))
+        self._refresh_text()
+        if emit:
+            self.changed.emit()
+
+    def setCurrentIndex(self, index, emit=False):
+        if 0 <= index < len(self._options):
+            self.setCurrentData(self._options[index][1], emit=emit)
+
+    def currentIndex(self):
+        for i, (_, k) in enumerate(self._options):
+            if k == self._current:
+                return i
+        return -1
+
+    def findData(self, key):
+        for i, (_, k) in enumerate(self._options):
+            if k == key:
+                return i
+        return -1
+
+
+class SegmentedChoice(QFrame):
+    """Two/three-way segmented capsule choice (import mode, etc.)."""
+    changed = pyqtSignal()
+
+    def __init__(self, options, current=None, parent=None):
+        super().__init__(parent)
+        self.setObjectName("SegmentedChoice")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(3, 3, 3, 3)
+        lay.setSpacing(3)
+        self._buttons = {}
+        self._current = None
+        for label, key in options:
+            btn = QPushButton(str(label))
+            btn.setObjectName("SegmentedButton")
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda _=False, k=key: self.setCurrentData(k))
+            lay.addWidget(btn)
+            self._buttons[key] = btn
+        self.setCurrentData(current if current is not None else (options[0][1] if options else None), emit=False)
+
+    def currentData(self):
+        return self._current
+
+    def setCurrentData(self, key, emit=True):
+        if key not in self._buttons:
+            return
+        changed = key != self._current
+        self._current = key
+        for k, btn in self._buttons.items():
+            btn.setChecked(k == key)
+        if emit and changed:
+            self.changed.emit()
+
+
+class SwitchToggle(QWidget):
+    """Flat on/off switch used by the settings module section."""
+    toggled = pyqtSignal(bool)
+
+    def __init__(self, checked=False, parent=None):
+        super().__init__(parent);self._checked = bool(checked)
+        self.setFixedSize(40, 22);self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def isChecked(self):
+        return self._checked
+
+    def setChecked(self, checked):
+        checked = bool(checked)
+        if checked != self._checked:
+            self._checked = checked;self.update();self.toggled.emit(checked)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setChecked(not self._checked);event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        p = QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen);p.setBrush(QColor(ACCENT if self._checked else BORDER))
+        p.drawRoundedRect(QRectF(1, 1, 38, 20), 10, 10)
+        p.setBrush(QColor("#FFFFFF"));p.drawEllipse(QRectF(19 if self._checked else 3, 3, 16, 16));p.end()
+
+
+class ClickableFrame(QFrame):
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit();event.accept()
+        else:
+            super().mousePressEvent(event)
+
+
+class OptionCard(ClickableFrame):
+    """Selectable card for the first-run module dialog and theme picker."""
+
+    def __init__(self, title, description, parent=None):
+        super().__init__(parent);self.setObjectName("OptionCard");self._selected = False
+        layout = QVBoxLayout(self);layout.setContentsMargins(16, 13, 16, 13);layout.setSpacing(3)
+        self.title_label = QLabel(title);self.title_label.setObjectName("OptionCardTitle");layout.addWidget(self.title_label)
+        self.desc_label = QLabel(description);self.desc_label.setObjectName("SmallMuted");self.desc_label.setWordWrap(True);layout.addWidget(self.desc_label)
+        self.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+        self.desc_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+
+    def setSelected(self, selected):
+        self._selected = bool(selected);self.setProperty("selected", self._selected)
+        self.style().unpolish(self);self.style().polish(self);self.update()
+
+    def isSelected(self):
+        return self._selected
 
 
 class BrandMark(QWidget):
@@ -5370,7 +5946,7 @@ class AvatarWidget(QWidget):
         self.setFixedSize(size,size)
         self.image = QPixmap(self.path) if self.path else QPixmap()
         if self.image.isNull():
-            self.setToolTip("头像与 FB专业ID管理共用同一缓存；正常巡检时自动更新。")
+            self.setToolTip("头像与 ID管理共用同一缓存；正常巡检时自动更新。")
         else:
             self.setToolTip("已缓存的真实主页头像")
 
@@ -5378,37 +5954,149 @@ class AvatarWidget(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = QRectF(0,0,self.width(),self.height())
-        clip = QPainterPath(); clip.addEllipse(r.adjusted(1,1,-1,-1)); p.setClipPath(clip)
+        clip = QPainterPath(); clip.addRoundedRect(r.adjusted(1,1,-1,-1), self.width()*.28, self.height()*.28); p.setClipPath(clip)
         if not self.image.isNull():
             scaled = self.image.scaled(self.size(),Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                                        Qt.TransformationMode.SmoothTransformation)
             sx=(scaled.width()-self.width())//2; sy=(scaled.height()-self.height())//2
             p.drawPixmap(0,0,scaled,sx,sy,self.width(),self.height())
         else:
-            g=QLinearGradient(0,0,self.width(),self.height()); g.setColorAt(0,QColor(ACCENT)); g.setColorAt(1,QColor(CYAN))
-            p.fillRect(self.rect(),g)
+            p.fillRect(self.rect(),QColor(ACCENT))
             p.setClipping(False); p.setPen(QColor("white"))
             p.setFont(QFont("Microsoft YaHei UI",max(11,self.width()//3),QFont.Weight.DemiBold))
             p.drawText(self.rect(),Qt.AlignmentFlag.AlignCenter,self.name[:1].upper())
         p.setClipping(False); p.setPen(QPen(QColor(BORDER),1.1)); p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(r.adjusted(.7,.7,-.7,-.7))
+        p.drawRoundedRect(r.adjusted(.7,.7,-.7,-.7), self.width()*.28, self.height()*.28)
 
 
+
+
+class BadgeButton(QPushButton):
+    """Push button with a small red count badge at its top-right corner."""
+    def __init__(self,text,parent=None):
+        super().__init__(text,parent)
+        self.badge=QLabel("",self);self.badge.setObjectName("ChipBadge")
+        self.badge.setFixedSize(17,17);self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter);self.badge.hide()
+    def set_badge(self,count):
+        count=int(count or 0)
+        if count>0:
+            self.badge.setText(str(count) if count<100 else "99+");self.badge.show()
+        else:
+            self.badge.hide()
+        self._place_badge()
+    def resizeEvent(self,event):
+        super().resizeEvent(event);self._place_badge()
+    def _place_badge(self):
+        self.badge.move(max(0,self.width()-16),0)
+
+
+class FlowLayout(QLayout):
+    """Row of widgets that wraps onto extra lines when the row is too narrow.
+
+    Used for the dashboard filter chips: at a wide window they stay on one
+    line next to the search box; when the window is narrowed they wrap
+    instead of being squeezed over the search box.
+    """
+    def __init__(self,parent=None,hspacing=8,vspacing=6):
+        super().__init__(parent);self._items=[];self._hspacing=hspacing;self._vspacing=vspacing
+        self.setContentsMargins(0,0,0,0)
+    def addItem(self,item):self._items.append(item)
+    def count(self):return len(self._items)
+    def itemAt(self,index):return self._items[index] if 0<=index<len(self._items) else None
+    def takeAt(self,index):return self._items.pop(index) if 0<=index<len(self._items) else None
+    def expandingDirections(self):return Qt.Orientation(0)
+    def hasHeightForWidth(self):return True
+    def heightForWidth(self,width):return self._do_layout(QRect(0,0,width,0),True)
+    def setGeometry(self,rect):
+        super().setGeometry(rect);self._do_layout(rect,False)
+    def sizeHint(self):
+        width=0;height=0
+        for item in self._items:
+            widget=item.widget()
+            if widget is not None and widget.isHidden():continue
+            width+=item.sizeHint().width()+self._hspacing;height=max(height,item.sizeHint().height())
+        return QSize(max(0,width-self._hspacing),height)
+    def minimumSize(self):
+        width=0;height=0
+        for item in self._items:
+            widget=item.widget()
+            if widget is not None and widget.isHidden():continue
+            width=max(width,item.minimumSize().width());height=max(height,item.minimumSize().height())
+        return QSize(width,height)
+    def _do_layout(self,rect,test_only):
+        left=rect.x();y=rect.y();line_height=0;x=left
+        for item in self._items:
+            widget=item.widget()
+            if widget is not None and widget.isHidden():continue
+            hint=item.sizeHint().expandedTo(item.minimumSize())
+            if x+hint.width()>rect.right()+1 and line_height>0:
+                x=left;y+=line_height+self._vspacing;line_height=0
+            if not test_only:item.setGeometry(QRect(QPoint(x,y),hint))
+            x+=hint.width()+self._hspacing;line_height=max(line_height,hint.height())
+        return y+line_height-rect.y()
+
+
+class ChipRow(QWidget):
+    """Container whose height follows the wrapped FlowLayout."""
+    def __init__(self,parent=None):
+        super().__init__(parent);self.setLayout(FlowLayout(self))
+        policy=self.sizePolicy();policy.setHeightForWidth(True);self.setSizePolicy(policy)
+    def heightForWidth(self,width):return self.layout().heightForWidth(width)
+    def sizeHint(self):return self.layout().sizeHint()
+
+
+class RailAvatarButton(QPushButton):
+    """One avatar in the sidebar alert rail. Click copies the page ID."""
+    def __init__(self,name,avatar_path,page_id,size,ring_color,on_copy):
+        super().__init__();self.page_id=str(page_id);self._on_copy=on_copy
+        self.setFixedSize(size,size);self.setFlat(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(html.escape(str(name or ""))+"\n点击复制 ID")
+        self.setIcon(QIcon(self._pixmap(name,avatar_path,size,ring_color)));self.setIconSize(QSize(size,size))
+        self.clicked.connect(self._copy)
+    @staticmethod
+    def _pixmap(name,path,size,ring):
+        pm=QPixmap(size,size);pm.fill(Qt.GlobalColor.transparent)
+        painter=QPainter(pm);painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        clip=QPainterPath();clip.addEllipse(1.5,1.5,size-3,size-3);painter.setClipPath(clip)
+        img=QPixmap(str(path)) if path else QPixmap()
+        if not img.isNull():
+            scaled=img.scaled(size,size,Qt.AspectRatioMode.KeepAspectRatioByExpanding,Qt.TransformationMode.SmoothTransformation)
+            sx=(scaled.width()-size)//2;sy=(scaled.height()-size)//2
+            painter.drawPixmap(0,0,scaled,sx,sy,size,size)
+        else:
+            painter.fillRect(pm.rect(),QColor(ACCENT));painter.setPen(QColor("white"))
+            painter.setFont(QFont("Microsoft YaHei UI",max(11,size//3),QFont.Weight.DemiBold))
+            painter.drawText(pm.rect(),Qt.AlignmentFlag.AlignCenter,(str(name or "P")[:1]).upper())
+        painter.setClipping(False);painter.setPen(QPen(QColor(ring),2.5));painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(QRectF(1.5,1.5,size-3,size-3));painter.end()
+        return pm
+    def _copy(self):
+        QApplication.clipboard().setText(self.page_id)
+        QToolTip.showText(self.mapToGlobal(QPoint(self.width()//2,self.height())),"已复制 ID",self)
+        if self._on_copy:self._on_copy(self.page_id)
 
 
 class MetricCard(QFrame):
+    badge_clicked=pyqtSignal()
     def __init__(self,title,accent=None,kind="pages"):
-        super().__init__();self.setObjectName("MetricCard");self.setProperty("tone",kind);self.setMinimumWidth(0);self.setFixedHeight(104)
-        layout=QHBoxLayout(self);layout.setContentsMargins(14,12,14,12);layout.setSpacing(12)
-        self.icon_label=QLabel();self.icon_label.setFixedSize(40,40)
-        self.icon_label.setPixmap(ui_icon(kind,accent or ACCENT).pixmap(28,28));self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.icon_label.setObjectName("MetricIcon");layout.addWidget(self.icon_label)
+        super().__init__();self.setObjectName("MetricCard");self.setProperty("tone",kind);self.setMinimumWidth(0);self.setFixedHeight(112)
+        layout=QVBoxLayout(self);layout.setContentsMargins(16,13,16,12);layout.setSpacing(1)
         self.kind=kind;self.accent=accent or ACCENT
-        col=QVBoxLayout();col.setSpacing(1);col.setContentsMargins(0,0,0,0)
         self.label=ElideLabel(title);self.label.setObjectName("MetricLabel");self.label.setMinimumHeight(22)
-        self.value=ValueLabel("—",28);self.value.setObjectName("MetricValue");self.value.setMinimumHeight(33)
-        self.note=ElideLabel("");self.note.setObjectName("SmallMuted");self.note.setMinimumHeight(18)
-        col.addWidget(self.label);col.addWidget(self.value);col.addWidget(self.note);layout.addLayout(col,1)
+        self.badge=QPushButton("");self.badge.setObjectName("MetricBadge");self.badge.setFixedSize(24,20)
+        self.badge.setCursor(Qt.CursorShape.PointingHandCursor);self.badge.hide()
+        self.badge.clicked.connect(self.badge_clicked.emit)
+        header=QHBoxLayout();header.setContentsMargins(0,0,0,0);header.setSpacing(6)
+        header.addWidget(self.label,1);header.addWidget(self.badge)
+        self.value=ValueLabel("—",32);self.value.setObjectName("MetricValue");self.value.setMinimumHeight(40)
+        self.note=ElideLabel("");self.note.setObjectName("SmallMuted");self.note.setMinimumHeight(19)
+        layout.addLayout(header);layout.addWidget(self.value);layout.addWidget(self.note)
+    def set_badge(self,count):
+        if count and int(count)>0:
+            self.badge.setText(str(count) if int(count)<100 else "99+");self.badge.show()
+        else:
+            self.badge.hide()
     def set_values(self,value,note=""):
         self.value.setText(str(value));self.value.setToolTip(str(value))
         self.note.setText(str(note));self.note.setToolTip(str(note))
@@ -5418,7 +6106,7 @@ class MetricCard(QFrame):
 class CopyLabel(ElideLabel):
     def __init__(self,text="",copy_text=None,parent=None):
         super().__init__(text,parent);self.copy_text=str(text if copy_text is None else copy_text)
-        self.setCursor(Qt.CursorShape.PointingHandCursor);self.setToolTip(str(text)+"\n点击复制")
+        self.setCursor(Qt.CursorShape.PointingHandCursor);self.setToolTip(html.escape(str(text))+"\n点击复制")
     def mouseReleaseEvent(self,event):
         if event.button()==Qt.MouseButton.LeftButton:
             QApplication.clipboard().setText(self.copy_text)
@@ -5429,17 +6117,20 @@ class CopyLabel(ElideLabel):
 class PageCard(QFrame):
     open_requested=pyqtSignal(str)
     manage_requested=pyqtSignal(str)
+    inspect_requested=pyqtSignal(str)
+    sync_requested=pyqtSignal(str)
+    delete_requested=pyqtSignal(str)
     def __init__(self,row,rank=0,window_label=""):
         super().__init__();self.row=dict(row);self.setObjectName("PageCard")
-        self.setMinimumWidth(0);self.setFixedHeight(216)
+        self.setMinimumWidth(0);self.setFixedHeight(228)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         pid=str(row["page_id"]);name=display_name(row);post=row.get("post_view") or post_view(row)
-        layout=QVBoxLayout(self);layout.setContentsMargins(14,12,14,10);layout.setSpacing(8)
+        layout=QVBoxLayout(self);layout.setContentsMargins(16,12,16,10);layout.setSpacing(8)
         header=QHBoxLayout();header.setSpacing(9)
-        header.addWidget(AvatarWidget(name,row.get("avatar_path",""),42,page_id=pid),0,Qt.AlignmentFlag.AlignTop)
+        header.addWidget(AvatarWidget(name,row.get("avatar_path",""),60,page_id=pid),0,Qt.AlignmentFlag.AlignTop)
         identity=QVBoxLayout();identity.setSpacing(2)
         title=CopyLabel(name);title.setObjectName("CardTitle");title.setMinimumHeight(22)
-        title.setToolTip("专业名称："+(normalize_name(row.get("page_name"),pid) or name or "尚未获取")+"\n点击复制名称")
+        title.setToolTip(html.escape("专业名称："+(normalize_name(row.get("page_name"),pid) or name or "尚未获取"))+"\n点击复制名称")
         ident=CopyLabel("ID  "+pid,pid);ident.setObjectName("CardId");ident.setMinimumHeight(18)
         ident.setToolTip("公共主页编号："+pid+"\n点击复制完整 ID")
         identity.addWidget(title);identity.addWidget(ident);header.addLayout(identity,1)
@@ -5460,10 +6151,11 @@ class PageCard(QFrame):
              "GrowthDown" if post["state"]=="overdue" else "GrowthSoon" if post["state"] in ("soon","unknown","unverified")
              else "GrowthUp" if post["state"]=="ok" else "GrowthFlat",post["tooltip"])
         ]
+        if not row.get("monitor_posts"):specs=specs[:2]
         for i,(label,text,objectname,tip) in enumerate(specs):
             col=QVBoxLayout();col.setSpacing(1)
             heading=ElideLabel(label);heading.setMinimumHeight(17);heading.setObjectName("SmallMuted")
-            value=ValueLabel(text,20 if i==0 else 18);value.setObjectName(objectname);value.setToolTip(tip)
+            value=ValueLabel(text,24 if i==0 else 22);value.setObjectName(objectname);value.setToolTip(tip)
             col.addWidget(heading);col.addWidget(value);values.addLayout(col,12 if i==2 else 11 if i==0 else 9)
         layout.addLayout(values)
         modules=[]
@@ -5472,6 +6164,16 @@ class PageCard(QFrame):
         module_hint=ElideLabel(" · ".join(modules) or "尚未选择监控模块")
         module_hint.setObjectName("SmallMuted");module_hint.setMinimumHeight(22)
         layout.addWidget(module_hint)
+        diag_parts=[]
+        if row.get("name_error"):diag_parts.append("名称："+str(row.get("name_error"))[:90])
+        if row.get("monitor_growth") and row.get("growth_error"):diag_parts.append("粉丝："+str(row.get("growth_error"))[:90])
+        if row.get("monitor_posts") and row.get("post_error"):diag_parts.append("发帖："+str(row.get("post_error"))[:90])
+        if not diag_parts and row.get("diagnosis_detail") and row.get("diagnosis_code") not in ("","ok"):
+            diag_parts.append("诊断："+str(row.get("diagnosis_detail"))[:110])
+        diag_text=(row.get("diagnosis_detail") or PAGE_UNAVAILABLE_DETAIL) if row.get("diagnosis_code")=="page_unavailable" else " · ".join(diag_parts)
+        diag_label=ElideLabel(diag_text);diag_label.setObjectName("SmallMuted");diag_label.setMinimumHeight(18)
+        diag_label.setToolTip(html.escape(diag_text));diag_label.setVisible(bool(diag_text))
+        layout.addWidget(diag_label)
         layout.addStretch(1)
 
         footer=QHBoxLayout();footer.setSpacing(4)
@@ -5480,11 +6182,15 @@ class PageCard(QFrame):
         label.setToolTip(local_time_label(checked));label.setObjectName("SmallMuted");footer.addWidget(label,1)
         state="normal";status="正常"
         if not row.get("monitor_growth") and not row.get("monitor_posts"): status="未选择模块";state="off"
+        elif row.get("diagnosis_code")=="page_unavailable":status="主页不可用";state="alert"
+        elif row.get("diagnosis_code")=="login":status="需登录验证";state="warning"
         elif post["state"]=="overdue":status="发帖超时";state="alert"
         elif row.get("is_growth_alert"):status="增长超标";state="alert"
         elif post["state"]=="soon":status="即将超时";state="warning"
+        elif row.get("monitor_growth") and row.get("growth_error") and row.get("monitor_posts") and row.get("post_error"):status="读取失败";state="alert"
         elif post["state"] in ("unknown","unverified"):status="发帖待核实";state="warning"
         elif row.get("monitor_growth") and row.get("growth_error"):status="粉丝读取失败";state="warning"
+        elif row.get("monitor_posts") and row.get("post_error"):status="发帖读取失败";state="warning"
         elif not checked:status="待巡检";state="off"
         badge=QLabel(status);badge.setObjectName("StatusBadge");badge.setProperty("state",state)
         badge.setMinimumHeight(23);badge.setAlignment(Qt.AlignmentFlag.AlignCenter);footer.addWidget(badge)
@@ -5498,8 +6204,12 @@ class PageCard(QFrame):
         pid=self.row["page_id"]
         menu=QMenu(self)
         menu.addAction("编辑监控模块 / 发帖标准",lambda:self.manage_requested.emit(pid))
+        menu.addAction("仅巡检本主页",lambda:self.inspect_requested.emit(pid))
+        menu.addAction("仅同步本主页资料",lambda:self.sync_requested.emit(pid))
         menu.addSeparator()
         menu.addAction("打开主页",lambda:self.open_requested.emit(pid))
+        menu.addSeparator()
+        _del=menu.addAction("删除此主页…");_del.triggered.connect(lambda:self.delete_requested.emit(pid))
         url=self.row.get("post_url")
         if url and urlsplit(url).scheme=="https" and ((urlsplit(url).hostname or "")=="facebook.com" or (urlsplit(url).hostname or "").endswith(".facebook.com")):
             menu.addAction("打开已读取的贴文",lambda:QDesktopServices.openUrl(QUrl(url)))
@@ -5517,41 +6227,50 @@ class ResponsiveCards(QWidget):
     def set_cards(self,cards):
         while self.grid.count():
             item=self.grid.takeAt(0)
-            if item.widget():item.widget().deleteLater()
+            if item.widget():
+                # Hide first: deleteLater() only runs on the next event-loop
+                # turn, and a stale card left visible would paint over the
+                # new one until then.
+                item.widget().hide();item.widget().deleteLater()
         self.cards=list(cards);self.columns=0;self.reflow()
     def reflow(self):
-        try:desired=max(4,min(8,int(self.settings.value("dashboard_columns",5)))) if self.settings else 5
-        except (TypeError,ValueError):desired=5
         available=max(220,self.width()-4)
-        columns=max(1,min(desired,int((available+10)//(172+10))))
+        columns=max(1,min(4,int((available+10)//(290+10))))
         if columns==self.columns:return
         self.columns=columns
         while self.grid.count():self.grid.takeAt(0)
-        for i,w in enumerate(self.cards):self.grid.addWidget(w,i//columns,i%columns)
+        for i,w in enumerate(self.cards):
+            self.grid.addWidget(w,i//columns,i%columns)
+            # A card added while an ancestor is hidden (e.g. geometry restore
+            # during startup) would otherwise stay hidden forever.
+            w.show()
         for col in range(8):self.grid.setColumnStretch(col,1 if col<columns else 0)
     def resizeEvent(self,event):
         super().resizeEvent(event);self.reflow()
 
 
 class BatchAddDialog(QDialog):
-    def __init__(self,parent=None,initial=""):
+    def __init__(self,parent=None,initial="",growth_enabled=True,posts_enabled=True):
         super().__init__(parent);self.setWindowTitle("添加专业 ID");self.resize(620,600)
         root=QVBoxLayout(self);root.setContentsMargins(22,20,22,20);root.setSpacing(12)
         title=QLabel("批量添加专业 ID");title.setObjectName("DialogTitle");root.addWidget(title)
         note=QLabel("支持逐行 ID、表格粘贴和带数字 ID 的主页链接。重复 ID 会跳过；已有主页的模块、名称和备注不会被覆盖。")
         note.setWordWrap(True);note.setObjectName("SmallMuted");root.addWidget(note)
         form=QFormLayout()
-        self.mode_box=QComboBox();self.mode_box.addItem("新增 ID（保留已有主页）","add");self.mode_box.addItem("覆盖当前 ID 列表（保留已有配置）","replace")
+        self.mode_box=SegmentedChoice((("新增 ID（保留已有主页）","add"),("覆盖当前 ID 列表（保留已有配置）","replace")),"add")
         form.addRow("导入方式",self.mode_box);root.addLayout(form)
         self.edit=QPlainTextEdit();self.edit.setPlaceholderText("在这里粘贴专业 ID，一行一个…")
         self.edit.setPlainText(initial);self.edit.setMinimumHeight(200);root.addWidget(self.edit,1)
-        self.preview=QLabel();self.preview.setWordWrap(True);self.preview.setObjectName("SmallMuted");root.addWidget(self.preview)
+        self.preview=QLabel();self.preview.setTextFormat(Qt.TextFormat.PlainText);self.preview.setWordWrap(True);self.preview.setObjectName("SmallMuted");root.addWidget(self.preview)
         box=QFrame();box.setObjectName("SettingsCard");bl=QVBoxLayout(box);bl.setContentsMargins(14,12,14,12)
         label=QLabel("新添加主页默认监控模块");label.setObjectName("SettingsTitle");bl.addWidget(label)
         modules=QHBoxLayout();self.growth=QCheckBox("粉丝监控");self.posts=QCheckBox("发帖时间监控")
-        self.growth.setChecked(True);self.posts.setChecked(True);modules.addWidget(self.growth);modules.addWidget(self.posts);modules.addStretch();bl.addLayout(modules)
+        self.growth.setChecked(bool(growth_enabled));self.posts.setChecked(bool(posts_enabled))
+        if not posts_enabled:self.posts.setEnabled(False)
+        modules.addWidget(self.growth);modules.addWidget(self.posts);modules.addStretch();bl.addLayout(modules)
         threshold=QHBoxLayout();threshold.addWidget(QLabel("超过多久未发帖提醒"))
         self.hours=QSpinBox();self.hours.setRange(1,8760);self.hours.setValue(24);self.hours.setSuffix(" 小时")
+        if not posts_enabled:self.hours.setEnabled(False)
         threshold.addWidget(self.hours);threshold.addStretch();bl.addLayout(threshold);root.addWidget(box)
         actions=QHBoxLayout();actions.addStretch()
         cancel=QPushButton("取消");cancel.clicked.connect(self.reject);actions.addWidget(cancel)
@@ -5568,7 +6287,7 @@ class BatchAddDialog(QDialog):
             QMessageBox.warning(self,"没有有效 ID","请粘贴有效的数字主页 ID 后再导入。");return
         if parsed.rejected:
             answer=QMessageBox.question(self,"确认跳过无效内容",
-                f"有 {len(parsed.rejected)} 项无法识别，将跳过：\n"+ "\n".join(parsed.rejected[:8])+"\n\n继续导入其余有效 ID？",
+                f"有 {len(parsed.rejected)} 项无法识别，将跳过：\n"+ "\n".join(html.escape(x) for x in parsed.rejected[:8])+"\n\n继续导入其余有效 ID？",
                 QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)
             if answer!=QMessageBox.StandardButton.Yes:return
         super().accept()
@@ -5578,11 +6297,15 @@ class BatchAddDialog(QDialog):
 
 class DashboardPage(QWidget):
     collect_once=pyqtSignal()
+    collect_subset_requested=pyqtSignal(str)
+    inspect_page=pyqtSignal(str)
+    sync_page=pyqtSignal(str)
     toggle_auto=pyqtSignal()
     view_alerts=pyqtSignal()
     open_manager=pyqtSignal(str)
     open_page=pyqtSignal(str)
-    timing_changed=pyqtSignal(int,int,int,int,int)
+    open_settings_requested=pyqtSignal()
+    delete_page=pyqtSignal(str)
 
     def __init__(self,store,settings):
         super().__init__();self.setObjectName("DashboardPage");self.store=store;self.settings=settings
@@ -5590,105 +6313,118 @@ class DashboardPage(QWidget):
         self.build_ui();self.refresh()
 
     def build_ui(self):
-        root=QVBoxLayout(self);root.setContentsMargins(22,18,22,12);root.setSpacing(13)
-        top=QHBoxLayout();top.setSpacing(10)
-        self.run_badge=QLabel("\u4e0a\u6b21\u5de1\u68c0\u65f6\u95f4\uff1a\u2014");self.run_badge.setObjectName("RunBadge");top.addWidget(self.run_badge)
-        top.addStretch()
-        self.once_btn=QPushButton("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
+        root=QVBoxLayout(self);root.setContentsMargins(20,16,20,10);root.setSpacing(12)
+        self.action_bar=QWidget();action_lay=QHBoxLayout(self.action_bar);action_lay.setContentsMargins(0,0,0,0);action_lay.setSpacing(10)
+        self.run_badge=QLabel("上次巡检时间：—");self.run_badge.setObjectName("RunBadge");action_lay.addWidget(self.run_badge)
+        self.once_btn=QToolButton();self.once_btn.setText("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
         self.once_btn.setIconSize(QSize(16,16));self.once_btn.setObjectName("PrimaryButton");self.once_btn.setFixedSize(140,40)
-        self.once_btn.clicked.connect(self.collect_once.emit);top.addWidget(self.once_btn)
+        self.once_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.once_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        _once_menu=QMenu(self.once_btn)
+        _once_menu.addAction("巡检全部主页",lambda:self.collect_once.emit())
+        _once_menu.addSeparator()
+        _once_menu.addAction("仅巡检读取失败的主页",lambda:self.collect_subset_requested.emit("failed"))
+        _once_menu.addAction("仅巡检未巡检的主页",lambda:self.collect_subset_requested.emit("uninspected"))
+        self.once_btn.setMenu(_once_menu)
+        self.once_btn.clicked.connect(self.collect_once.emit);action_lay.addWidget(self.once_btn)
         self.auto_btn=QPushButton("启用自动巡检");self.auto_btn.setObjectName("AutoButton");self.auto_btn.setFixedSize(140,40)
-        self.auto_btn.clicked.connect(self.toggle_auto.emit);top.addWidget(self.auto_btn);root.addLayout(top)
+        self.auto_btn.clicked.connect(self.toggle_auto.emit);action_lay.addWidget(self.auto_btn)
         metrics=QHBoxLayout();metrics.setSpacing(12)
         self.metric_pages=MetricCard("专业主页数",ACCENT,"pages")
         self.metric_total=MetricCard("当前粉丝总量",CYAN,"people")
         self.metric_yesterday=MetricCard("昨日新增",AMBER,"history")
-        self.metric_growth=MetricCard("今日新增",GREEN,"trend")
-        self.metric_post=MetricCard("发帖已超时",AMBER,"clock")
-        self.metric_alerts=MetricCard("增长超标预警",RED,"bell")
-        for metric in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_growth,self.metric_post,self.metric_alerts):metrics.addWidget(metric,1)
+        self.metric_today=MetricCard("今日新增数",RED,"bell")
+        self.metric_today.badge_clicked.connect(lambda:self._set_filter_mode("unavailable"))
+        for metric in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_today):metrics.addWidget(metric,1)
         root.addLayout(metrics)
-        control_bar=QFrame();control_bar.setObjectName("TimingBar")
-        toolbar=QHBoxLayout(control_bar);toolbar.setContentsMargins(10,7,10,7);toolbar.setSpacing(5)
-        minutes,j0,j1,g0,g1=random_inspection_timing(self.settings)
-        def spin(value,low,high,width=47,tip=""):
-            widget=DirectNumberSpinBox();widget.setObjectName("QuickTimingSpin");widget.setRange(low,high);widget.setValue(value)
-            widget.setFixedSize(width,34);widget.setToolTip(tip);return widget
-        def timing_label(text,tip):
-            label=QLabel(text);label.setObjectName("QuickTimingLabel");label.setToolTip(tip);return label
-        toolbar.addWidget(timing_label("每轮间隔","自动巡检每轮的基准间隔（分钟）"));self.quick_interval=spin(minutes,5,1440,52,"每轮间隔基准，单位：分钟");toolbar.addWidget(self.quick_interval)
-        toolbar.addSpacing(4);toolbar.addWidget(timing_label("浮动范围","每轮会随机提前或延后，填写最小/最大分钟数"));self.quick_jitter_min=spin(j0,0,1439,43,"随机浮动最小分钟数");toolbar.addWidget(self.quick_jitter_min)
-        dash1=QLabel("–");dash1.setObjectName("QuickTimingLabel");toolbar.addWidget(dash1);self.quick_jitter_max=spin(j1,0,1439,43,"随机浮动最大分钟数");toolbar.addWidget(self.quick_jitter_max)
-        toolbar.addSpacing(4);toolbar.addWidget(timing_label("主页间隔","每两个主页之间随机等待，单位：秒"));self.quick_gap_min=spin(g0,0,120,39,"主页间隔最小秒数");toolbar.addWidget(self.quick_gap_min)
-        dash2=QLabel("–");dash2.setObjectName("QuickTimingLabel");toolbar.addWidget(dash2);self.quick_gap_max=spin(g1,0,120,39,"主页间隔最大秒数");toolbar.addWidget(self.quick_gap_max)
-        for widget in (self.quick_interval,self.quick_jitter_min,self.quick_jitter_max,self.quick_gap_min,self.quick_gap_max):widget.valueChanged.connect(self._quick_timing_changed)
-        toolbar.addStretch(1)
-        self.status_filter=QComboBox()
-        for name,value in (("全部主页","all"),("粉丝监控","growth"),("发帖监控","posts"),("发帖超时","overdue"),("待核实","unknown"),("未选择模块","off")):self.status_filter.addItem(name,value)
-        self.status_filter.currentIndexChanged.connect(lambda _:self.refresh());self.status_filter.setFixedWidth(106);toolbar.addWidget(self.status_filter)
+        toolbar=QHBoxLayout();toolbar.setSpacing(8)
         self.search=QLineEdit();self.search.setPlaceholderText("搜索名称 / 专业 ID");self.search.setClearButtonEnabled(True)
-        self.search.setFixedWidth(190);self.search.setSizePolicy(QSizePolicy.Policy.Fixed,QSizePolicy.Policy.Fixed)
-        self.search.textChanged.connect(lambda _:self.refresh());toolbar.addWidget(self.search)
-        self.sort_box=QComboBox()
-        for name,key in (("自定义排序","manual"),("增长预警优先","growth"),("发帖超时优先","post"),("名称排序","name")):self.sort_box.addItem(name,key)
-        self.sort_box.currentIndexChanged.connect(lambda _:self.refresh());self.sort_box.setFixedWidth(126);toolbar.addWidget(self.sort_box)
-        self.columns_box=QComboBox()
-        for num in range(4,9):self.columns_box.addItem(f"每行 {num} 个",num)
-        try:col=max(4,min(8,int(self.settings.value("dashboard_columns",5))))
-        except (ValueError,TypeError):col=5
-        self.columns_box.setCurrentIndex(col-4);self.columns_box.setFixedWidth(92);self.columns_box.setToolTip("可选每行 4–8 张；窗口太窄时会自动减少实际列数")
-        self.columns_box.currentIndexChanged.connect(self._columns_changed);toolbar.addWidget(self.columns_box)
-        for control in (self.status_filter,self.search,self.sort_box,self.columns_box):control.setFixedHeight(36)
-        root.addWidget(control_bar)
+        self.search.setMinimumWidth(150);self.search.setMaximumWidth(300);self.search.setFixedHeight(36)
+        self.search.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        self.search.textChanged.connect(lambda _:self.refresh())
+        toolbar.addWidget(self.search,0,Qt.AlignmentFlag.AlignTop)
+        self._chip_row=ChipRow()
+        self._filter_chips={}
+        for name,mode in (("全部","all"),("粉丝监控","growth"),("发帖监控","posts"),("需处理","needs"),("主页不可用","unavailable")):
+            chip=BadgeButton(name) if mode=="needs" else QPushButton(name)
+            chip.setObjectName("FilterChip");chip.setFixedHeight(30)
+            if mode=="needs":chip.setMinimumWidth(chip.sizeHint().width()+20)
+            chip.setCursor(Qt.CursorShape.PointingHandCursor)
+            chip.clicked.connect(lambda _=False,m=mode:self._set_filter_mode(m))
+            self._chip_row.layout().addWidget(chip);self._filter_chips[mode]=chip
+        toolbar.addWidget(self._chip_row,1)
+        root.addLayout(toolbar)
+        split=QHBoxLayout();split.setSpacing(14)
         self.scroll=QScrollArea();self.scroll.setObjectName("CardScroll");self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setWidgetResizable(True);self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.cards=ResponsiveCards(settings=self.settings);self.scroll.setWidget(self.cards)
-        # setWidget() turns this on by default; disable it AFTER attaching the canvas.
         self.cards.setAutoFillBackground(False);self.scroll.viewport().setAutoFillBackground(False)
-        self.scroll.setMinimumHeight(230);root.addWidget(self.scroll,1)
-        panel=QFrame();panel.setObjectName("MonitorPanel");self.notice_panel=panel
-        pl=QVBoxLayout(panel);pl.setContentsMargins(14,10,14,12);pl.setSpacing(6)
-        row=QHBoxLayout();label=QLabel("最近预警");label.setObjectName("PanelTitle");row.addWidget(label)
-        self.alert_count=QLabel("");self.alert_count.setObjectName("SmallMuted");row.addWidget(self.alert_count);row.addStretch()
-        link=QPushButton("全部通知");link.setObjectName("LinkButton");link.clicked.connect(self.view_alerts.emit);row.addWidget(link);pl.addLayout(row)
-        self.notices=QHBoxLayout();self.notices.setSpacing(12);pl.addLayout(self.notices);root.addWidget(panel)
-        footer=QHBoxLayout()
+        self.scroll.setMinimumHeight(230);split.addWidget(self.scroll,1)
+        rail=QVBoxLayout();rail.setSpacing(10)
+        timing_card=QFrame();timing_card.setObjectName("RailCard")
+        tl=QVBoxLayout(timing_card);tl.setContentsMargins(14,10,14,10);tl.setSpacing(7)
+        trow=QHBoxLayout();tt=QLabel("巡检设置");tt.setObjectName("PanelTitle");trow.addWidget(tt);trow.addStretch()
+        tl.addLayout(trow)
+        def _kv(label):
+            row=QHBoxLayout();row.addWidget(QLabel(label));row.addStretch()
+            val=QLabel("—");val.setObjectName("SmallMuted");row.addWidget(val);tl.addLayout(row);return val
+        self.rail_interval=_kv("每轮间隔");self.rail_jitter=_kv("浮动范围");self.rail_gap=_kv("主页间隔")
+        rail.addWidget(timing_card)
+        alerts_card=QFrame();alerts_card.setObjectName("RailCard")
+        al=QVBoxLayout(alerts_card);al.setContentsMargins(14,10,14,10);al.setSpacing(7)
+        arow=QHBoxLayout();at=QLabel("最近预警");at.setObjectName("PanelTitle");arow.addWidget(at);arow.addStretch()
+        al.addLayout(arow)
+        self.rail_alerts=QVBoxLayout();self.rail_alerts.setSpacing(10);al.addLayout(self.rail_alerts)
+        rail.addWidget(alerts_card)
+        overview_card=QFrame();overview_card.setObjectName("RailCard")
+        ol=QVBoxLayout(overview_card);ol.setContentsMargins(14,10,14,10);ol.setSpacing(7)
+        ot=QLabel("概览");ot.setObjectName("PanelTitle");ol.addWidget(ot)
+        def _kv2(label):
+            row=QHBoxLayout();row.addWidget(QLabel(label));row.addStretch()
+            val=QLabel("—");val.setObjectName("SmallMuted");row.addWidget(val);ol.addLayout(row);return val
+        self.rail_inspected=_kv2("已巡检主页");self.rail_failed=_kv2("读取失败");self.rail_unavailable=_kv2("主页不可用");self.rail_growth_alerts=_kv2("增长超标提醒")
+        rail.addWidget(overview_card)
+        rail.addStretch(1)
+        rail_widget=QWidget();rail_widget.setLayout(rail)
+        self.rail_widget=rail_widget
+        root.addLayout(split,1)
         self.status=ElideLabel("就绪");self.status.setMinimumHeight(20);self.status.setObjectName("FooterText")
         self.next_run=QLabel("自动巡检未开启");self.next_run.setObjectName("FooterText")
-        footer.addWidget(self.status,1);footer.addWidget(self.next_run)
-        version=QLabel("V"+APP_VERSION);version.setObjectName("FooterText");footer.addWidget(version);root.addLayout(footer)
-        for box,key,default in ((self.status_filter,"dashboard/filter","all"),(self.sort_box,"dashboard/sort","manual")):
-            box.blockSignals(True);box.setCurrentIndex(max(0,box.findData(self.settings.value(key,default))));box.blockSignals(False)
-            box.currentIndexChanged.connect(self._remember_view)
+        stored=str(self.settings.value("dashboard/filter","all"))
+        if stored in ("overdue","unknown"):stored="needs"
+        elif stored=="off":stored="all"
+        self._filter_mode=stored
         self.search.blockSignals(True);self.search.setText(str(self.settings.value("dashboard/search","")));self.search.blockSignals(False)
         self.search.textChanged.connect(self._remember_view)
+        self._apply_filter_chips()
 
-    def _quick_timing_changed(self,*_):
-        widgets=(self.quick_interval,self.quick_jitter_min,self.quick_jitter_max,self.quick_gap_min,self.quick_gap_max)
-        # One edited endpoint moves the opposite endpoint when needed, never an invalid interval.
-        sender=self.sender()
-        for lower,upper in ((self.quick_jitter_min,self.quick_jitter_max),(self.quick_gap_min,self.quick_gap_max)):
-            if lower.value()>upper.value():
-                target=upper if sender is lower else lower
-                value=lower.value() if target is upper else upper.value()
-                target.blockSignals(True);target.setValue(value);target.blockSignals(False)
-        values=normalize_random_timing(*(w.value() for w in widgets))
-        self.set_timing_values(*values);self.timing_changed.emit(*values)
+    def filter_mode(self):
+        return getattr(self,"_filter_mode","all")
+
+    def _apply_filter_chips(self):
+        posts_on=modules_posts_enabled(self.settings)
+        if not posts_on and getattr(self,"_filter_mode","all")=="posts":self._filter_mode="all"
+        if not getattr(self,"_unavailable_count",0) and getattr(self,"_filter_mode","all")=="unavailable":self._filter_mode="all"
+        for mode,chip in self._filter_chips.items():
+            visible=(mode!="posts" or posts_on) and (mode!="unavailable" or bool(getattr(self,"_unavailable_count",0)))
+            chip.setVisible(visible)
+            chip.setProperty("active",mode==self._filter_mode);chip.style().unpolish(chip);chip.style().polish(chip)
+
+    def _set_filter_mode(self,mode):
+        self._filter_mode=mode;self._apply_filter_chips();self._remember_view();self.refresh()
 
     def set_timing_values(self,minutes,j0,j1,g0,g1):
-        for widget,value in zip((self.quick_interval,self.quick_jitter_min,self.quick_jitter_max,self.quick_gap_min,self.quick_gap_max),(minutes,j0,j1,g0,g1)):
-            widget.blockSignals(True);widget.setValue(value);widget.blockSignals(False)
-
+        self._timing_values=(minutes,j0,j1,g0,g1)
+        if hasattr(self,"rail_interval"):
+            self.rail_interval.setText(f"{minutes} 分钟")
+            self.rail_jitter.setText(f"± {j0}–{j1} 分钟")
+            self.rail_gap.setText(f"{g0}–{g1} 秒")
 
     def _remember_view(self,*_):
-        self.settings.setValue("dashboard/filter",self.status_filter.currentData())
-        self.settings.setValue("dashboard/sort",self.sort_box.currentData())
+        self.settings.setValue("dashboard/filter",self._filter_mode)
         self.settings.setValue("dashboard/search",self.search.text())
         self.settings.sync()
 
-    def _columns_changed(self):
-        self.settings.setValue("dashboard_columns",self.columns_box.currentData());self.settings.sync()
-        self.cards.columns=0;self.cards.reflow()
 
     def set_running(self,auto,active):
         self._auto=auto;self._active=active
@@ -5706,7 +6442,9 @@ class DashboardPage(QWidget):
         now=time.time()
         try:interval=int(self.settings.value("interval_minutes",DEFAULT_INTERVAL_MINUTES))*60
         except (ValueError,TypeError):interval=DEFAULT_INTERVAL_MINUTES*60
-        rows=self.store.dashboard_rows(None,interval)
+        rows=apply_module_gating(self.store.dashboard_rows(None,interval),self.settings)
+        posts_on=modules_posts_enabled(self.settings)
+        self._apply_filter_chips()
         if not self._active or not hasattr(self,"_last_inspection_stamp"):
             self._last_inspection_stamp=latest_inspection_stamp(self.settings,rows)
         self.run_badge.setText("上次巡检时间："+inspection_stamp_label(self._last_inspection_stamp))
@@ -5731,80 +6469,119 @@ class DashboardPage(QWidget):
         overdue=sum(r["post_view"]["state"]=="overdue" for r in rows)
         unverified=sum(r["post_view"]["state"] in ("unknown","unverified") for r in rows)
         g,p=self.store.unread_totals()
-        self.metric_pages.set_values(len(rows),f"粉丝监控 {len(growth_rows)} · 发帖监控 {len(post_rows)}")
+        unavailable=sum(1 for r in rows if r.get("diagnosis_code")=="page_unavailable")
+        failed=sum(1 for r in rows if r.get("diagnosis_code")!="page_unavailable" and (r.get("status") in ("采集失败","部分成功") or r.get("growth_error") or (posts_on and r.get("post_error")) or r.get("name_error")))
+        self.metric_pages.set_values(len(rows),(f"粉丝 {len(growth_rows)} · 发帖 {len(post_rows)}" if posts_on else f"仅粉丝监控 {len(growth_rows)}")+(f" · 失败 {failed}" if failed else ""))
         self.metric_total.set_values(format_count(total) if sampled else "—",f"有粉丝记录 {sampled} / {len(growth_rows)}")
         self.metric_yesterday.set_values(format_delta(yesterday_sum) if yesterday_covered else "—",
-            f"可比较 {yesterday_covered} 个"+(f" · {yesterday_partial} 个为部分日" if yesterday_partial else ""))
-        self.metric_growth.set_values(format_delta(today_sum) if covered else "—",f"可比较 {covered} 个"+(f" · {partial} 个从今日首检起计算" if partial else ""))
-        self.metric_post.set_values(overdue,f"监控 {len(post_rows)} 个 · 待核实 {unverified}")
-        self.metric_alerts.set_values(g,"尚未标记已读的增长预警")
-        needle=self.search.text().strip().casefold();mode=self.status_filter.currentData()
+            ((f"可比较 {yesterday_covered} 个"+(f" · {yesterday_partial} 个为部分日" if yesterday_partial else "")) if yesterday_covered else "暂无可比较记录"))
+        self.metric_today.set_values(format_delta(today_sum) if covered else "—",
+            ((f"可比较 {covered} 个"+(f" · {partial} 个为部分日" if partial else "")) if covered else "今日暂无可比较记录"))
+        self.metric_today.set_badge(unavailable)
+        self._unavailable_count=unavailable
+        _needs_count=0
+        for r in rows:
+            if r.get("diagnosis_code")=="page_unavailable":continue
+            if (r["post_view"]["state"]=="overdue" or r["post_view"]["state"] in ("unknown","unverified")
+                or r.get("status") in ("采集失败","部分成功") or r.get("growth_error")
+                or (posts_on and r.get("post_error")) or r.get("name_error") or r.get("is_growth_alert")):_needs_count+=1
+        _needs_chip=self._filter_chips.get("needs")
+        if _needs_chip is not None and hasattr(_needs_chip,"set_badge"):_needs_chip.set_badge(_needs_count)
+        self._apply_filter_chips()
+        needle=self.search.text().strip().casefold();mode=self.filter_mode()
         filtered=[]
         for r in rows:
             if needle and needle not in (display_name(r)+" "+r["page_id"]+" "+r.get("notes","")).casefold():continue
             if mode=="growth" and not r["monitor_growth"]:continue
             if mode=="posts" and not r["monitor_posts"]:continue
-            if mode=="overdue" and r["post_view"]["state"]!="overdue":continue
-            if mode=="unknown" and r["post_view"]["state"] not in ("unknown","unverified"):continue
-            if mode=="off" and (r["monitor_growth"] or r["monitor_posts"]):continue
+            if mode=="unavailable" and r.get("diagnosis_code")!="page_unavailable":continue
+            if mode=="needs" and (r.get("diagnosis_code")=="page_unavailable" or not (r["post_view"]["state"]=="overdue" or r["post_view"]["state"] in ("unknown","unverified")
+                or r.get("status") in ("采集失败","部分成功") or r.get("growth_error") or (posts_on and r.get("post_error"))
+                or r.get("name_error") or r.get("is_growth_alert"))):continue
             filtered.append(r)
-        order=self.sort_box.currentData()
-        if order=="name":filtered.sort(key=lambda r:display_name(r).casefold())
-        elif order=="growth":
-            filtered.sort(key=lambda r:(not bool(r.get("is_growth_alert")),r["post_view"]["state"]!="overdue",
-                r.get("today",{}).get("delta") is None,-(r.get("today",{}).get("delta") or 0),r["sort_order"]))
-        elif order=="post":
-            filtered.sort(key=lambda r:(r["post_view"]["state"]!="overdue",not bool(r.get("is_growth_alert")),
-                float(r.get("last_post_ts") or now+1),r["sort_order"]))
-        else:filtered.sort(key=lambda r:(r["sort_order"],r["page_id"]))
-        self.status_filter.setToolTip("匹配 %s 个，共 %s 个主页" % (len(filtered),len(rows)))
+        filtered.sort(key=lambda r:display_name(r).casefold())
+        self.search.setToolTip("匹配 %s 个，共 %s 个主页" % (len(filtered),len(rows)))
         cards=[]
         for r in filtered:
             card=PageCard(r)
             card.open_requested.connect(self.open_page.emit)
-            card.manage_requested.connect(self.open_manager.emit);cards.append(card)
+            card.manage_requested.connect(self.open_manager.emit)
+            card.inspect_requested.connect(self.inspect_page.emit)
+            card.sync_requested.connect(self.sync_page.emit)
+            card.delete_requested.connect(self.delete_page.emit);cards.append(card)
         if not cards:
             empty=QFrame();empty.setObjectName("EmptyState");layout=QVBoxLayout(empty);layout.setContentsMargins(20,30,20,30)
             title=QLabel("尚无匹配主页");title.setObjectName("SectionTitle");layout.addWidget(title)
-            msg=QLabel("在右上角「FB专业ID管理」添加 ID，并勾选粉丝监控、发帖监控或两者。")
+            msg=QLabel("在左侧「ID管理」添加 ID，并勾选监控模块。")
             msg.setWordWrap(True);msg.setObjectName("SmallMuted");layout.addWidget(msg)
-            add=QPushButton("打开 FB专业ID管理");add.setObjectName("PrimaryButton");add.clicked.connect(lambda:self.open_manager.emit(""))
+            add=QPushButton("打开 ID管理");add.setObjectName("PrimaryButton");add.clicked.connect(lambda:self.open_manager.emit(""))
             layout.addWidget(add,0,Qt.AlignmentFlag.AlignLeft);cards=[empty]
         scroll=self.scroll.verticalScrollBar().value()
         self.cards.set_cards(cards)
         self.scroll.verticalScrollBar().setValue(scroll)
-        while self.notices.count():
-            item=self.notices.takeAt(0)
-            if item.widget():item.widget().deleteLater()
-        self.alert_count.setText(f"{g+p} 条未读")
-        entries=self.store.combined_alerts(limit=3,unread_only=True)
-        self.notice_panel.setVisible(bool(entries))
-        for entry in entries:
-            frame=QFrame();frame.setObjectName("AlertRow");layout=QHBoxLayout(frame);layout.setContentsMargins(9,5,9,5);layout.setSpacing(9)
-            avatar=AvatarWidget(entry["page_name"],entry.get("avatar_path",""),40,page_id=entry.get("page_id",""))
-            avatar.setToolTip(entry["page_name"]+" · ID "+entry["page_id"]);layout.addWidget(avatar)
-            texts=QVBoxLayout();texts.setSpacing(2)
-            title=ElideLabel(("发帖超时 · " if entry["kind"]=="post" else "增长超标 · ")+entry["page_name"])
-            title.setObjectName("AlertRowTitle");title.setMinimumHeight(21)
-            desc=ElideLabel(entry["message"]);desc.setMinimumHeight(18);desc.setObjectName("SmallMuted");desc.setToolTip(entry["message"])
-            texts.addWidget(title);texts.addWidget(desc);layout.addLayout(texts,1);self.notices.addWidget(frame,1)
-
+        if hasattr(self,"rail_interval"):
+            _tv=random_inspection_timing(self.settings);self.set_timing_values(*_tv)
+        if hasattr(self,"rail_alerts"):
+            while self.rail_alerts.count():
+                _item=self.rail_alerts.takeAt(0)
+                if _item.widget():
+                    _item.widget().hide();_item.widget().deleteLater()
+            entries=self.store.combined_alerts(limit=500,unread_only=True)
+            if not posts_on:entries=[e for e in entries if e["kind"]!="post"]
+            if not entries:
+                _none=QLabel("暂无未读预警");_none.setObjectName("SmallMuted");self.rail_alerts.addWidget(_none)
+            else:
+                _by_page={};_order=[]
+                for _e in entries:
+                    _pid=str(_e.get("page_id") or "")
+                    if _pid not in _by_page:
+                        _by_page[_pid]={"entry":_e,"kinds":set()};_order.append(_pid)
+                    _by_page[_pid]["kinds"].add(str(_e.get("kind") or ""))
+                _shown=_order[:8];_extra=len(_order)-len(_shown)
+                _n=len(_shown)
+                _size=max(18,min(40,(184-(_n-1)*4)//_n)) if _n else 40
+                _arow=QHBoxLayout();_arow.setSpacing(6);_arow.setContentsMargins(0,0,0,0)
+                for _pid in _shown:
+                    _info=_by_page[_pid];_entry=_info["entry"]
+                    _kinds=_info["kinds"]
+                    _ring=RED if len(_kinds)>1 else (AMBER if "post" in _kinds else GREEN)
+                    _av=RailAvatarButton(str(_entry.get("page_name") or _entry.get("name") or ""),str(_entry.get("avatar_path") or ""),_pid,_size,_ring,lambda _pid:None)
+                    _arow.addWidget(_av)
+                if _extra>0:
+                    _more=QLabel("+%d" % _extra);_more.setFixedSize(_size,_size);_more.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    _more.setStyleSheet("background:%s;color:%s;border-radius:%dpx;font-size:12px;font-weight:800;" % (PANEL_2,MUTED,_size//2))
+                    _arow.addWidget(_more)
+                _arow.addStretch(1)
+                _awrap=QWidget();_awrap.setLayout(_arow);self.rail_alerts.addWidget(_awrap)
+                _gc=sum(1 for _e in entries if str(_e.get("kind"))=="growth")
+                _pc=sum(1 for _e in entries if str(_e.get("kind"))=="post")
+                _parts=[]
+                if _pc:_parts.append("发帖超时 %d 个" % _pc)
+                if _gc:_parts.append("粉丝增长超标 %d 个" % _gc)
+                _sum=QLabel(" · ".join(_parts));_sum.setObjectName("SmallMuted");_sum.setWordWrap(True)
+                self.rail_alerts.addWidget(_sum)
+        if hasattr(self,"rail_inspected"):
+            _inspected=sum(1 for r in rows if r.get("last_inspected_at"))
+            self.rail_inspected.setText(f"{_inspected} / {len(rows)}")
+            self.rail_failed.setText(f"{failed} 个")
+            self.rail_unavailable.setText(f"{unavailable} 个")
+            self.rail_growth_alerts.setText(f"{g} 条")
 
 
 
 class AlertsPage(QWidget):
     ack_requested=pyqtSignal()
     read_changed=pyqtSignal()
-    def __init__(self,store):
-        super().__init__();self.store=store;self.setObjectName("AlertsPage");self.mode="current";self._highlight_key=None
+    def __init__(self,store,settings=None):
+        super().__init__();self.store=store;self.settings=settings;self.setObjectName("AlertsPage");self.mode="current";self._highlight_key=None
         root=QVBoxLayout(self);root.setContentsMargins(24,22,24,18);root.setSpacing(12)
-        head=QHBoxLayout();title=QLabel("通知");title.setObjectName("PageTitle");head.addWidget(title);head.addStretch()
+        head=QHBoxLayout()
+        self.summary=QLabel();self.summary.setObjectName("NoticeSummary");head.addWidget(self.summary)
+        head.addStretch()
         self.history_btn=QPushButton("历史记录");self.history_btn.setObjectName("NoticeHistoryButton");self.history_btn.clicked.connect(self.toggle_history);head.addWidget(self.history_btn)
-        self.filter=QComboBox()
-        for text,key in (("全部类型","all"),("粉丝增长","growth"),("发帖超时","post")):self.filter.addItem(text,key)
-        self.filter.currentIndexChanged.connect(lambda _:self.refresh());self.filter.setFixedWidth(112);head.addWidget(self.filter)
+        self.filter=MenuButton((("全部类型","all"),("粉丝增长","growth"),("发帖超时","post")),"all")
+        self.filter.setFixedWidth(126);self.filter.changed.connect(lambda:self.refresh());head.addWidget(self.filter)
         self.ack_btn=QPushButton("全部标为已读");self.ack_btn.setObjectName("SecondaryButton");self.ack_btn.clicked.connect(self.ack_requested.emit);head.addWidget(self.ack_btn);root.addLayout(head)
-        self.summary=QLabel();self.summary.setObjectName("NoticeSummary");self.summary.setWordWrap(True);root.addWidget(self.summary)
         note=QLabel("默认只显示未读通知；点击任意一条即视为已读并移入历史记录。历史数据长期保留，不会因已读而删除。")
         note.setObjectName("SmallMuted");note.setWordWrap(True);root.addWidget(note)
         self.table=QTableWidget(0,7);self.table.setObjectName("AlertsTable");self.table.setHorizontalHeaderLabels(("头像","类型","专业名称","专业 ID","通知内容","记录时间","状态"))
@@ -5814,7 +6591,12 @@ class AlertsPage(QWidget):
         for col,width in ((0,58),(1,100),(2,190),(3,170),(5,150),(6,75)):self.table.setColumnWidth(col,width)
         self.table.horizontalHeader().setSectionResizeMode(4,QHeaderView.ResizeMode.Stretch)
         self.table.cellClicked.connect(self._row_clicked)
-        root.addWidget(self.table,1);self.open_current()
+        root.addWidget(self.table,1)
+        self.empty_view=QWidget();_ev=QVBoxLayout(self.empty_view);_ev.setContentsMargins(0,0,0,0)
+        _ev.addStretch(1);self.empty_label=QLabel();self.empty_label.setObjectName("EmptyHint")
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter);_ev.addWidget(self.empty_label);_ev.addStretch(1)
+        root.addWidget(self.empty_view,1);self.empty_view.hide()
+        self.open_current()
 
     def open_current(self):
         self.mode="current";self._highlight_key=None
@@ -5831,13 +6613,20 @@ class AlertsPage(QWidget):
         self.ack_btn.setVisible(False);self.refresh()
 
     def _visible_rows(self):
-        rows=self.store.combined_alerts(limit=5000);kind=self.filter.currentData()
+        rows=self.store.combined_alerts(limit=5000)
+        if self.settings is not None and not modules_posts_enabled(self.settings):
+            rows=[r for r in rows if r["kind"]!="post"]
+        kind=self.filter.currentData()
         if kind!="all":rows=[r for r in rows if r["kind"]==kind]
         if self.mode=="current":rows=[r for r in rows if not bool(r.get("acknowledged"))]
         else:rows=[r for r in rows if bool(r.get("acknowledged"))]
         return rows
 
     def refresh(self):
+        if self.settings is not None:
+            _posts_on=modules_posts_enabled(self.settings)
+            _opts=[("全部类型","all"),("粉丝增长","growth")] + ([("发帖超时","post")] if _posts_on else [])
+            self.filter.set_options(_opts,keep_current=True,emit=False)
         rows=self._visible_rows();self.table.clearContents();self.table.setRowCount(len(rows));matched=None
         for i,r in enumerate(rows):
             cell=QWidget();layout=QHBoxLayout(cell);layout.setContentsMargins(9,3,9,3);layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -5845,16 +6634,26 @@ class AlertsPage(QWidget):
             values=("发帖超时" if r["kind"]=="post" else "粉丝增长",r["page_name"],r["page_id"],r["message"],local_time_label(r["alerted_at"]),"已读" if r["acknowledged"] else "未读")
             key=(r["kind"],int(r.get("id") or 0),r["page_id"])
             for j,text in enumerate(values,1):
-                item=QTableWidgetItem(str(text));item.setToolTip(str(text));item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if j in (1,3,5,6) else Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft)
+                item=QTableWidgetItem(str(text));item.setToolTip(html.escape(str(text)));item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if j in (1,3,5,6) else Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft)
                 item.setData(Qt.ItemDataRole.UserRole,key)
                 if j==1:item.setForeground(QColor(AMBER if r["kind"]=="post" else RED))
                 self.table.setItem(i,j,item)
             self.table.setRowHeight(i,50)
             if self._highlight_key==(r["kind"],int(r.get("id") or 0)):matched=i
         g,p=self.store.unread_totals()
+        if self.settings is not None and not modules_posts_enabled(self.settings):p=0
         if self.mode=="current":
-            self.summary.setText(f"当前未读 {g+p} 条 · 粉丝增长 {g} · 发帖超时 {p}" if g+p else "当前没有未读通知")
+            if g+p:
+                if self.settings is not None and not modules_posts_enabled(self.settings):
+                    self.summary.setText(f"当前未读 {g} 条 · 粉丝增长 {g}")
+                else:
+                    self.summary.setText(f"当前未读 {g+p} 条 · 粉丝增长 {g} · 发帖超时 {p}")
+            else:
+                self.summary.setText("")
         else:self.summary.setText(f"历史记录 {len(rows)} 条 · 已读通知永久保留")
+        _empty=len(rows)==0
+        self.table.setVisible(not _empty);self.empty_view.setVisible(_empty)
+        if _empty:self.empty_label.setText("暂无历史记录" if self.mode=="history" else "当前没有未读通知")
         if matched is not None:
             self.table.setCurrentCell(matched,1);self.table.selectRow(matched);item=self.table.item(matched,1)
             if item:self.table.scrollToItem(item,QAbstractItemView.ScrollHint.PositionAtCenter)
@@ -5876,7 +6675,7 @@ class AlertsPage(QWidget):
         self.history_btn.style().unpolish(self.history_btn);self.history_btn.style().polish(self.history_btn)
         self.ack_btn.setVisible(True)
         # A previous type filter must not hide the notification opened from the popup.
-        self.filter.blockSignals(True);self.filter.setCurrentIndex(0);self.filter.blockSignals(False)
+        self.filter.setCurrentData("all",emit=False)
         self.refresh()
         if self.table.currentRow()>=0:self.table.setFocus(Qt.FocusReason.OtherFocusReason)
 
@@ -5889,49 +6688,50 @@ class AlertsPage(QWidget):
 
 
 class PageEditDialog(QDialog):
-    def __init__(self,row,parent=None):
-        super().__init__(parent);self.row=row;self.setWindowTitle("编辑专业 ID");self.resize(560,450)
+    def __init__(self,row,parent=None,posts_enabled=True):
+        super().__init__(parent);self.row=row;self._posts_enabled=bool(posts_enabled);self.setWindowTitle("编辑专业 ID");self.resize(560,450)
         root=QVBoxLayout(self);root.setContentsMargins(22,20,22,20);root.setSpacing(14)
         head=QHBoxLayout();head.addWidget(AvatarWidget(display_name(row),row.get("avatar_path",""),54,page_id=row.get("page_id","")))
         texts=QVBoxLayout()
-        name=QLabel(display_name(row));name.setWordWrap(True);name.setObjectName("SectionTitle");texts.addWidget(name)
+        name=QLabel(display_name(row));name.setTextFormat(Qt.TextFormat.PlainText);name.setWordWrap(True);name.setObjectName("SectionTitle");texts.addWidget(name)
         pid=CopyLabel("公共主页编号："+row["page_id"],row["page_id"]);pid.setMinimumHeight(23);texts.addWidget(pid)
         head.addLayout(texts,1);root.addLayout(head)
         real=QLabel("最近读取的真实名称："+(normalize_name(row.get("page_name"),row["page_id"]) or "尚未成功读取"))
-        real.setWordWrap(True);real.setObjectName("SmallMuted");root.addWidget(real)
+        real.setTextFormat(Qt.TextFormat.PlainText);real.setWordWrap(True);real.setObjectName("SmallMuted");root.addWidget(real)
         form=QFormLayout();form.setVerticalSpacing(12)
         self.custom=QLineEdit(str(row.get("custom_name") or ""));self.custom.setPlaceholderText("留空时显示自动采集的真实名称")
         form.addRow("自定义显示名称",self.custom)
         modules=QWidget();ml=QHBoxLayout(modules);ml.setContentsMargins(0,0,0,0)
         self.growth=QCheckBox("粉丝监控");self.posts=QCheckBox("发帖监控")
         self.growth.setChecked(bool(row["monitor_growth"]));self.posts.setChecked(bool(row["monitor_posts"]))
+        if not self._posts_enabled:self.posts.setEnabled(False)
         ml.addWidget(self.growth);ml.addWidget(self.posts);ml.addStretch();form.addRow("监控模块（可多选）",modules)
         self.hours=QSpinBox();self.hours.setRange(1,8760);self.hours.setValue(int(row["post_limit_hours"]));self.hours.setSuffix(" 小时")
+        if not self._posts_enabled:self.hours.setEnabled(False)
         form.addRow("发帖超时标准",self.hours)
-        self.order=QSpinBox();self.order.setRange(0,999999);self.order.setValue(int(row["sort_order"]));form.addRow("排序号（越小越靠前）",self.order)
         self.notes=QPlainTextEdit(str(row.get("notes") or ""));self.notes.setMaximumHeight(82);form.addRow("备注",self.notes);root.addLayout(form)
         actions=QHBoxLayout();actions.addStretch()
         cancel=QPushButton("取消");cancel.clicked.connect(self.reject);actions.addWidget(cancel)
         save=QPushButton("保存");save.setObjectName("PrimaryButton");save.clicked.connect(self.accept);actions.addWidget(save);root.addLayout(actions)
     def values(self):
         return dict(custom_name=self.custom.text().strip(),monitor_growth=self.growth.isChecked(),
-                    monitor_posts=self.posts.isChecked(),post_limit_hours=self.hours.value(),
-                    sort_order=self.order.value(),notes=self.notes.toPlainText().strip())
+                    monitor_posts=bool(self.row["monitor_posts"]) if not self._posts_enabled else self.posts.isChecked(),post_limit_hours=self.hours.value(),
+                    sort_order=int(self.row["sort_order"]),notes=self.notes.toPlainText().strip())
 
 
 class PageManagementPage(QWidget):
     add_requested=pyqtSignal()
     delete_requested=pyqtSignal(list)
     config_changed=pyqtSignal()
+    inspect_requested=pyqtSignal(list)
+    open_settings_requested=pyqtSignal()
     def __init__(self,store,settings):
         super().__init__();self.store=store;self.settings=settings;self._loading=False;self._busy=False
         self.setObjectName("ManagerPage");self.build_ui();self.refresh()
 
     def build_ui(self):
         root=QVBoxLayout(self);root.setContentsMargins(24,20,24,16);root.setSpacing(13)
-        title=QLabel("FB专业ID管理");title.setObjectName("PageTitle");root.addWidget(title)
-        desc=QLabel("一次添加，多模块共用。直接勾选监控模块；双击名称、标准、排序或备注即可编辑。")
-        desc.setObjectName("Subtitle");desc.setWordWrap(True);root.addWidget(desc)
+
         actions=QHBoxLayout();actions.setSpacing(8)
         self.add_btn=QPushButton("添加 ID");self.add_btn.setObjectName("PrimaryButton");self.add_btn.clicked.connect(self._request_add)
         self.batch_btn=QPushButton("批量设置");self.batch_btn.clicked.connect(self.batch_settings)
@@ -5942,41 +6742,53 @@ class PageManagementPage(QWidget):
         tools=QHBoxLayout();tools.setSpacing(10)
         self.select_all=QCheckBox("全选当前结果");self.select_all.toggled.connect(self.select_visible);tools.addWidget(self.select_all)
         self.summary=QLabel();self.summary.setObjectName("SmallMuted");tools.addWidget(self.summary);tools.addStretch()
-        self.filter=QComboBox()
-        for name,key in (("全部模块","all"),("粉丝监控","growth"),("发帖监控","posts"),("两者都关闭","off")):self.filter.addItem(name,key)
-        self.filter.currentIndexChanged.connect(lambda _:self.refresh());tools.addWidget(self.filter)
-        self.search=QLineEdit();self.search.setPlaceholderText("搜索名称、ID 或备注");self.search.setClearButtonEnabled(True);self.search.setFixedWidth(270)
+        self.filter=MenuButton((("全部模块","all"),("粉丝监控","growth"),("发帖监控","posts"),("两者都关闭","off")),"all")
+        self.filter.changed.connect(lambda:self.refresh());tools.addWidget(self.filter)
+        self.search=QLineEdit();self.search.setPlaceholderText("搜索名称、ID 或备注");self.search.setClearButtonEnabled(True)
+        self.search.setMinimumWidth(150);self.search.setMaximumWidth(270)
+        self.search.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         self.search.textChanged.connect(lambda _:self.refresh());tools.addWidget(self.search)
         root.addLayout(tools)
-        self.table=QTableWidget(0,10);self.table.setObjectName("IdManagerTable")
-        self.table.setHorizontalHeaderLabels(("选择","头像","专业名称","专业 ID","粉丝监控","发帖监控","发帖标准（h）","排序","备注","资料状态"))
+        self.module_banner=QFrame();self.module_banner.setObjectName("SettingsCard")
+        banner_lay=QHBoxLayout(self.module_banner);banner_lay.setContentsMargins(14,9,14,9);banner_lay.setSpacing(8)
+        banner_text=QLabel("发帖监控未启用 — 表格已隐藏发帖相关列，看板和通知里也不显示发帖内容。已保存的发帖标准保留，在设置中开启后立即恢复。")
+        banner_text.setObjectName("SmallMuted");banner_text.setWordWrap(True);banner_lay.addWidget(banner_text,1)
+        banner_btn=QPushButton("去设置 →");banner_btn.setObjectName("LinkButton");banner_btn.clicked.connect(self.open_settings_requested.emit);banner_lay.addWidget(banner_btn)
+        root.addWidget(self.module_banner)
+        self.table=QTableWidget(0,9);self.table.setObjectName("IdManagerTable")
+        self.table.setHorizontalHeaderLabels(("选择","头像","专业名称","专业 ID","粉丝监控","发帖监控","发帖标准（h）","备注","资料状态"))
         self.table.setIconSize(QSize(34,34));self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False);self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked|QAbstractItemView.EditTrigger.EditKeyPressed)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table.setSortingEnabled(True);self.table.sortItems(7,Qt.SortOrder.AscendingOrder)
-        widths={0:47,1:57,2:210,3:177,4:88,5:88,6:118,7:64,8:190,9:110}
+        self.table.setSortingEnabled(True);self.table.sortItems(2,Qt.SortOrder.AscendingOrder)
+        widths={0:47,1:57,2:190,3:177,4:88,5:88,6:118,7:170,8:150}
         for col,width in widths.items():
             self.table.setColumnWidth(col,width)
             self.table.horizontalHeader().setSectionResizeMode(col,QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(8,QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(7,QHeaderView.ResizeMode.Stretch)
         for col in (0,4,5):self.table.setItemDelegateForColumn(col,CheckDelegate(self.table))
         self.table.itemChanged.connect(self._item_changed)
         self.table.cellClicked.connect(self._clicked)
         self.table.cellDoubleClicked.connect(self._double_clicked)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         root.addWidget(self.table,1)
-        hint=QLabel("排序号会同步到主界面“自定义排序”。名称和头像会在正常巡检时自动更新；未获取资料不会伪造。")
+        hint=QLabel("点击“专业名称”表头可按名称升序 / 降序切换排序。名称和头像会在正常巡检时自动更新；未获取资料不会伪造。右键表格可仅巡检选中的主页。")
         hint.setObjectName("SmallMuted");hint.setWordWrap(True);root.addWidget(hint)
-        self.filter.blockSignals(True);self.filter.setCurrentIndex(max(0,self.filter.findData(self.settings.value("manager/filter","all"))));self.filter.blockSignals(False)
+        self.filter.setCurrentData(str(self.settings.value("manager/filter","all")),emit=False)
         self.search.blockSignals(True);self.search.setText(str(self.settings.value("manager/search","")));self.search.blockSignals(False)
         state=self.settings.value("manager/header")
         if state:
             try:self.table.horizontalHeader().restoreState(state)
             except (TypeError,ValueError):pass
-        self.filter.currentIndexChanged.connect(self._remember)
+        # Old saved state pointed at the removed sort-order column (7); point it at the name column.
+        if self.table.horizontalHeader().sortIndicatorSection() == 7:
+            self.table.horizontalHeader().setSortIndicator(2,Qt.SortOrder.AscendingOrder)
+        self.filter.changed.connect(self._remember)
         self.search.textChanged.connect(self._remember)
         self.table.horizontalHeader().sectionResized.connect(self._remember)
         self.table.horizontalHeader().sortIndicatorChanged.connect(self._remember)
@@ -6011,7 +6823,7 @@ class PageManagementPage(QWidget):
         if busy:self.summary.setText("正在巡检 · 可查看和复制 ID，修改操作将在本轮结束后恢复")
 
     def _busy_notice(self):
-        show_hint(self,"正在巡检，请等待本轮巡检结束后再修改专业 ID。")
+        show_hint(self,"正在巡检，请等待本轮巡检结束后再修改专业 ID。",kind="warning")
 
     def _request_add(self):
         if self._busy:
@@ -6058,12 +6870,19 @@ class PageManagementPage(QWidget):
                 self._busy_notice();return
             pid=self.table.item(row,0).data(Qt.ItemDataRole.UserRole);self.edit_id(pid)
 
+    def _show_context_menu(self,pos):
+        ids=self.ids()
+        if not ids:return
+        menu=QMenu(self)
+        menu.addAction(f"仅巡检选中主页（{len(ids)} 个）",lambda:self.inspect_requested.emit(ids))
+        menu.exec(self.table.mapToGlobal(pos))
+
     def edit_id(self,pid):
         if self._busy:
             self._busy_notice();return
         row=self.store.page(pid)
         if not row:return
-        dlg=PageEditDialog(row,self)
+        dlg=PageEditDialog(row,self,modules_posts_enabled(self.settings))
         if dlg.exec()==QDialog.DialogCode.Accepted:
             try:self.store.update_config([pid],**dlg.values())
             except (ValueError,TypeError) as exc:QMessageBox.warning(self,"未保存",str(exc));return
@@ -6075,21 +6894,25 @@ class PageManagementPage(QWidget):
         if self._busy:
             self._busy_notice();return
         ids=self.ids()
-        if not ids:show_hint(self,"请选择需要删除的专业 ID。");return
+        if not ids:show_hint(self,"请选择需要删除的专业 ID。",kind="warning");return
         self.delete_requested.emit(ids)
 
     def batch_settings(self):
         if self._busy:
             self._busy_notice();return
         ids=self.ids()
-        if not ids:show_hint(self,"请选择一个或多个专业 ID。");return
+        if not ids:show_hint(self,"请选择一个或多个专业 ID。",kind="warning");return
         dlg=QDialog(self);dlg.setWindowTitle(f"批量设置 {len(ids)} 个专业 ID");dlg.resize(470,310)
         root=QVBoxLayout(dlg);form=QFormLayout()
         selects={}
         for name,key in (("粉丝监控","monitor_growth"),("发帖监控","monitor_posts")):
-            combo=QComboBox();combo.addItem("保持原设置",None);combo.addItem("开启",True);combo.addItem("关闭",False)
+            combo=MenuButton((("保持原设置",None),("开启",True),("关闭",False)),None)
             form.addRow(name,combo);selects[key]=combo
+        if not modules_posts_enabled(self.settings):
+            selects["monitor_posts"].setEnabled(False)
         limit_flag=QCheckBox("修改发帖超时标准");hours=QSpinBox();hours.setRange(1,8760);hours.setValue(24);hours.setSuffix(" 小时")
+        if not modules_posts_enabled(self.settings):
+            limit_flag.setEnabled(False);hours.setEnabled(False)
         form.addRow(limit_flag,hours);root.addLayout(form)
         row=QHBoxLayout();row.addStretch();cancel=QPushButton("取消");save=QPushButton("保存")
         cancel.clicked.connect(dlg.reject);save.clicked.connect(dlg.accept);save.setObjectName("PrimaryButton")
@@ -6114,11 +6937,11 @@ class PageManagementPage(QWidget):
                 key="monitor_growth" if col==4 else "monitor_posts"
                 self.store.update_config([pid],**{key:item.checkState()==Qt.CheckState.Checked})
                 item.sort_key=int(item.checkState()==Qt.CheckState.Checked)
-            elif col in (6,7):
+            elif col==6:
                 value=int(item.text().strip())
-                self.store.update_config([pid],**{("post_limit_hours" if col==6 else "sort_order"):value})
+                self.store.update_config([pid],post_limit_hours=value)
                 item.sort_key=value
-            elif col==8:self.store.update_config([pid],notes=item.text())
+            elif col==7:self.store.update_config([pid],notes=item.text())
             else:return
         except (ValueError,TypeError) as exc:
             QMessageBox.warning(self,"输入无效",str(exc));self.refresh();return
@@ -6129,7 +6952,7 @@ class PageManagementPage(QWidget):
         self.config_changed.emit()
 
     def focus_id(self,pid):
-        self.search.clear();self.filter.setCurrentIndex(0);self.refresh()
+        self.search.clear();self.filter.setCurrentData("all",emit=False);self.refresh()
         for r in range(self.table.rowCount()):
             if self.table.item(r,0).data(Qt.ItemDataRole.UserRole)==pid:
                 self.table.selectRow(r);self.table.scrollToItem(self.table.item(r,2));return
@@ -6142,7 +6965,11 @@ class PageManagementPage(QWidget):
         selected=set(self.ids()) if self.table.rowCount() else set()
         scroll=self.table.verticalScrollBar().value()
         sort_col=self.table.horizontalHeader().sortIndicatorSection();sort_order=self.table.horizontalHeader().sortIndicatorOrder()
+        posts_on=modules_posts_enabled(self.settings)
+        self.module_banner.setVisible(not posts_on)
+        self.table.setColumnHidden(5,not posts_on);self.table.setColumnHidden(6,not posts_on)
         needle=self.search.text().casefold().strip();mode=self.filter.currentData()
+        if mode=="posts" and not posts_on:mode="all"
         rows=[]
         for row in self.store.list_pages():
             if needle and needle not in (display_name(row)+" "+row["page_id"]+" "+row["notes"]).casefold():continue
@@ -6154,11 +6981,11 @@ class PageManagementPage(QWidget):
         self.table.clearContents();self.table.setRowCount(len(rows))
         for i,row in enumerate(rows):
             pid=row["page_id"]
-            for col in range(10):
+            for col in range(9):
                 item=SortItem("")
                 flags=Qt.ItemFlag.ItemIsEnabled|Qt.ItemFlag.ItemIsSelectable
                 if col in (0,4,5):flags|=Qt.ItemFlag.ItemIsUserCheckable
-                if col in (6,7,8):flags|=Qt.ItemFlag.ItemIsEditable
+                if col in (6,7):flags|=Qt.ItemFlag.ItemIsEditable
                 item.setFlags(flags);item.setTextAlignment(Qt.AlignmentFlag.AlignCenter);self.table.setItem(i,col,item)
             self.table.item(i,0).setData(Qt.ItemDataRole.UserRole,pid)
             self.table.item(i,0).setCheckState(Qt.CheckState.Checked if pid in checked else Qt.CheckState.Unchecked)
@@ -6166,16 +6993,23 @@ class PageManagementPage(QWidget):
             avatar_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             avatar_layout.addWidget(AvatarWidget(display_name(row),row["avatar_path"],36,page_id=pid))
             self.table.setCellWidget(i,1,wrapper)
-            for col,text in ((2,display_name(row)),(3,pid),(6,str(row["post_limit_hours"])),(7,str(row["sort_order"])),(8,row["notes"])):
-                item=self.table.item(i,col);item.setText(text);item.sort_key=int(text) if col in (6,7) else text.casefold()
-            self.table.item(i,2).setToolTip("真实名称："+(normalize_name(row["page_name"],pid) or "未获取")+"\n双击编辑自定义名称与配置")
+            for col,text in ((2,display_name(row)),(3,pid),(6,str(row["post_limit_hours"])),(7,row["notes"])):
+                item=self.table.item(i,col);item.setText(text);item.sort_key=int(text) if col==6 else text.casefold()
+            self.table.item(i,2).setToolTip(html.escape("真实名称："+(normalize_name(row["page_name"],pid) or "未获取"))+"\n双击编辑自定义名称与配置")
             self.table.item(i,3).setToolTip("点击复制完整 ID："+pid)
             for col,key in ((4,"monitor_growth"),(5,"monitor_posts")):
                 item=self.table.item(i,col);item.setCheckState(Qt.CheckState.Checked if row[key] else Qt.CheckState.Unchecked);item.sort_key=int(row[key])
-            state="已同步" if normalize_name(row["page_name"],pid) else "名称待获取"
-            if row.get("name_error"):state="待核实"
-            item=self.table.item(i,9);item.setText(state);item.setToolTip(row.get("name_error") or row.get("metadata_checked_at") or "巡检时同步资料")
-            self.table.setRowHeight(i,52)
+            if row.get("diagnosis_code")=="page_unavailable":state="主页不可用"
+            elif row.get("diagnosis_code")=="login":state="需登录验证"
+            elif row.get("growth_error") or (posts_on and row.get("post_error")):state="读取失败"
+            elif row.get("name_error"):state="待核实"
+            elif normalize_name(row["page_name"],pid):state="已同步"
+            else:state="名称待获取"
+            _diag_parts=[str(row.get("diagnosis_detail") or ""),str(row.get("name_error") or ""),str(row.get("growth_error") or "")]
+            if posts_on:_diag_parts.append(str(row.get("post_error") or ""))
+            _diag_tip="；".join(x for x in _diag_parts if x)
+            item=self.table.item(i,8);item.setText(state);item.setToolTip(html.escape(_diag_tip or str(row.get("metadata_checked_at") or "巡检时同步资料")))
+            self.table.setRowHeight(i,58)
         self.table.setSortingEnabled(True);self.table.sortItems(sort_col,sort_order)
         self.table.blockSignals(False);self._loading=False
         for r in range(self.table.rowCount()):
@@ -6184,17 +7018,19 @@ class PageManagementPage(QWidget):
         self.table.verticalScrollBar().setValue(scroll)
         self._sync_selection_header()
         g=sum(r["monitor_growth"] for r in rows);p=sum(r["monitor_posts"] for r in rows)
-        self.summary.setText(f"{len(rows)} 个 ID · 粉丝监控 {g} · 发帖监控 {p}")
+        self.summary.setText(f"{len(rows)} 个 ID · 粉丝监控 {g}"+(f" · 发帖监控 {p}" if posts_on else ""))
         self.set_busy(self._busy)
 
 
 class SettingsPage(QWidget):
+    test_toast_requested=pyqtSignal()
     login_requested=pyqtSignal()
     save_requested=pyqtSignal(bool)
     export_requested=pyqtSignal()
     backup_requested=pyqtSignal()
     data_dir_requested=pyqtSignal()
     cleanup_requested=pyqtSignal()
+    theme_requested=pyqtSignal(str)
 
     def __init__(self,store:Store,settings:QSettings):
         super().__init__();self.store=store;self.settings=settings
@@ -6207,6 +7043,26 @@ class SettingsPage(QWidget):
             widget.editingFinished.connect(lambda:self.autosave.start(1))
         for widget in self.findChildren(QCheckBox):
             widget.toggled.connect(lambda *_:self.autosave.start(120))
+        for widget in self.findChildren(SwitchToggle):
+            widget.toggled.connect(self._module_switch_changed)
+
+    def _refresh_module_statuses(self):
+        self.module_growth_status.setText("已开启" if self.module_growth_switch.isChecked() else "未开启")
+        self.module_posts_status.setText("已开启" if self.module_posts_switch.isChecked() else "未开启")
+
+    def _module_switch_changed(self):
+        if not self.module_growth_switch.isChecked() and not self.module_posts_switch.isChecked():
+            show_hint(self,"至少保留一个监控模块",kind="warning")
+            sender=self.sender()
+            if isinstance(sender,SwitchToggle):
+                sender.blockSignals(True);sender.setChecked(True);sender.blockSignals(False)
+            return
+        self._refresh_module_statuses()
+        self.autosave.start(120)
+
+    def set_selected_theme(self,name):
+        for key,card in getattr(self,"theme_cards",{}).items():
+            card.setSelected(key==name)
 
     @staticmethod
     def section(title,description=""):
@@ -6219,9 +7075,6 @@ class SettingsPage(QWidget):
 
     def build_ui(self):
         root=QVBoxLayout(self);root.setContentsMargins(30,24,30,20);root.setSpacing(16)
-        title=QLabel("设置");title.setObjectName("PageTitle");root.addWidget(title)
-        note=QLabel("浏览器连接、巡检、提醒、数据与维护设置；FB 专业 ID 请使用右上角「ID管理」。")
-        note.setObjectName("Subtitle");note.setWordWrap(True);root.addWidget(note)
         tabs=QTabWidget();tabs.setObjectName("SettingsTabs");root.addWidget(tabs,1)
         def make_tab(label):
             scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -6230,7 +7083,52 @@ class SettingsPage(QWidget):
         account_layout=make_tab("浏览器与巡检")
         data_layout=make_tab("数据与迁移")
 
-        browser,bl=self.section("01  Chrome 浏览器连接器","")
+        modules,modl=self.section("00  监控模块",
+            "至少保留一个。关闭后，看板、卡片、通知里不再显示该模块的内容；已保存的设置和历史提醒保留，重新开启即恢复。")
+        def _module_row(name,desc):
+            row=QHBoxLayout();row.setSpacing(12)
+            texts=QVBoxLayout();texts.setSpacing(1)
+            n=QLabel(name);n.setObjectName("SettingsTitle");texts.addWidget(n)
+            d=QLabel(desc);d.setObjectName("SmallMuted");d.setWordWrap(True);texts.addWidget(d)
+            row.addLayout(texts,1)
+            sw=SwitchToggle();row.addWidget(sw)
+            st=QLabel("");st.setMinimumWidth(44);st.setAlignment(Qt.AlignmentFlag.AlignRight);row.addWidget(st)
+            modl.addLayout(row);return sw,st
+        self.module_growth_switch,self.module_growth_status=_module_row("粉丝增长监控","粉丝数、每日新增、增长提醒")
+        self.module_posts_switch,self.module_posts_status=_module_row("发帖时间监控","距上次发帖、超时提醒、发帖标准")
+        _mod_note=QLabel("新添加的主页默认按这里勾选；每个主页也可以在 ID 管理里单独改。")
+        _mod_note.setObjectName("SmallMuted");_mod_note.setWordWrap(True);modl.addWidget(_mod_note)
+        account_layout.addWidget(modules)
+        themes,thel=self.section("01  外观主题","只保留差异明显的三个，全部扁平、无炫光。点卡片即可切换。")
+        theme_row=QHBoxLayout();theme_row.setSpacing(12)
+        self.theme_cards={}
+        _theme_descs={"云白":"暖白底色，深蓝点缀","护眼绿":"淡绿底色，深绿点缀（微信绿系）","曜石黑":"深灰底色，柔和浅蓝"}
+        for _name in THEME_PRESETS:
+            _preset=THEME_PRESETS[_name]
+            card=OptionCard(_name,_theme_descs.get(_name,""))
+            card.setFixedHeight(132)
+            _preview=QFrame();_preview.setFixedHeight(56)
+            _preview.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            _preview.setStyleSheet(f"background:{_preset['bg']};border:1px solid {_preset['border']};border-radius:8px;")
+            _pl=QHBoxLayout(_preview);_pl.setContentsMargins(5,5,5,5);_pl.setSpacing(5)
+            _strip=QFrame();_strip.setFixedWidth(26)
+            _strip.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            _strip.setStyleSheet(f"background:{_preset['sidebar']};border:1px solid {_preset['border']};border-radius:4px;")
+            _pl.addWidget(_strip)
+            _bars=QVBoxLayout();_bars.setSpacing(4)
+            _bar1=QFrame();_bar1.setFixedHeight(12)
+            _bar1.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            _bar1.setStyleSheet(f"background:{_preset['accent']};border-radius:3px;")
+            _bar2=QFrame();_bar2.setFixedHeight(12)
+            _bar2.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            _bar2.setStyleSheet(f"background:{_preset['panel_2']};border:1px solid {_preset['border']};border-radius:3px;")
+            _bars.addWidget(_bar1);_bars.addWidget(_bar2);_bars.addStretch();_pl.addLayout(_bars,1)
+            card.layout().insertWidget(0,_preview)
+            card.clicked.connect(lambda _=False,n=_name:self.theme_requested.emit(n))
+            theme_row.addWidget(card,1);self.theme_cards[_name]=card
+        thel.addLayout(theme_row)
+        account_layout.addWidget(themes)
+        browser,bl=self.section("02  Chrome 浏览器连接器","")
         row=QHBoxLayout();row.setSpacing(10)
         self.login_button=QPushButton("浏览器连接");self.login_button.setObjectName("PrimaryButton")
         self.login_button.clicked.connect(self.login_requested.emit);row.addWidget(self.login_button)
@@ -6242,7 +7140,7 @@ class SettingsPage(QWidget):
         self.connector_summary.setTextFormat(Qt.TextFormat.PlainText);bl.addWidget(self.connector_summary)
         account_layout.addWidget(browser)
 
-        collect,cl=self.section("02  \u5de1\u68c0\u4e0e\u542f\u52a8",
+        collect,cl=self.section("03  \u5de1\u68c0\u4e0e\u542f\u52a8",
             "\u6bcf\u8f6e\u4ee5\u57fa\u51c6\u95f4\u9694\u4e3a\u4e2d\u5fc3\u968f\u673a\u63d0\u524d\u6216\u5ef6\u540e\uff1b\u4e24\u4e2a\u4e3b\u9875\u4e4b\u95f4\u4e5f\u968f\u673a\u7b49\u5f85\u3002\u4e3b\u754c\u9762\u53ef\u76f4\u63a5\u4fee\u6539\u5e76\u81ea\u52a8\u4fdd\u5b58\u3002")
         form=QGridLayout();form.setHorizontalSpacing(18);form.setVerticalSpacing(13)
         self.interval=DirectNumberSpinBox();self.interval.setRange(5,1440);self.interval.setToolTip("单位：分钟")
@@ -6267,11 +7165,14 @@ class SettingsPage(QWidget):
         tip.setObjectName("SmallMuted");tip.setWordWrap(True);form.addWidget(tip,4,0,1,4)
         form.setColumnStretch(1,1);form.setColumnStretch(3,1);cl.addLayout(form);account_layout.addWidget(collect)
 
-        alert,al=self.section("03  增长提醒",
-            "增长和发帖异常使用不会自动关闭的专用预警窗口；删除、更新安装、失败等重要事项仍需确认。普通成功提示显示为短暂气泡。")
+        alert,al=self.section("04  增长提醒",
+            "增长和发帖异常使用 Windows 系统通知（不点不消失，留在通知中心，头像来自本地缓存）；删除、更新安装、失败等重要事项仍需确认。普通成功提示显示为短暂气泡。")
         ar=QGridLayout();ar.setVerticalSpacing(12);ar.setHorizontalSpacing(12)
         self.alert_enabled=QCheckBox("开启桌面增长提醒");self.sound=QCheckBox("触发提醒时播放系统提示音")
         ar.addWidget(self.alert_enabled,0,0,1,2);ar.addWidget(self.sound,0,2,1,2)
+        self.test_toast_btn=QPushButton("发送测试系统通知");self.test_toast_btn.clicked.connect(self.test_toast_requested.emit)
+        ar.addWidget(QLabel("系统通知测试"),2,0);ar.addWidget(self.test_toast_btn,2,1)
+        self.test_toast_status=QLabel("在真实 Windows 上点一次，确认头像显示正常。");self.test_toast_status.setObjectName("SmallMuted");self.test_toast_status.setWordWrap(True);ar.addWidget(self.test_toast_status,2,2,1,2)
         ar.addWidget(QLabel("单次增长阈值"),1,0)
         self.threshold=DirectNumberSpinBox();self.threshold.setRange(1,100_000_000);self.threshold.setSingleStep(100);self.threshold.setToolTip("粉丝数")
         ar.addWidget(self.threshold,1,1)
@@ -6281,7 +7182,7 @@ class SettingsPage(QWidget):
 
         data,dl=self.section("数据管理",
             "保存专业 ID、当前状态、今日计算基准和通知；不保存历史快照。目录迁移会同时迁移设置、头像与默认浏览器资料。")
-        self.data_path_label=QLabel(str(DATA_DIR));self.data_path_label.setObjectName("PathLabel");self.data_path_label.setWordWrap(True);dl.addWidget(self.data_path_label)
+        self.data_path_label=QLabel(str(DATA_DIR));self.data_path_label.setTextFormat(Qt.TextFormat.PlainText);self.data_path_label.setObjectName("PathLabel");self.data_path_label.setWordWrap(True);dl.addWidget(self.data_path_label)
         buttons=QHBoxLayout()
         self.choose_data_dir=QPushButton("更改保存目录并迁移数据");self.choose_data_dir.setObjectName("PrimaryButton")
         self.choose_data_dir.clicked.connect(self.data_dir_requested.emit);buttons.addWidget(self.choose_data_dir)
@@ -6294,7 +7195,10 @@ class SettingsPage(QWidget):
             "仅检查正式稳定版本；所有设置保存在当前数据目录的 settings.ini。更新下载完成后仍需用户确认才会执行。")
         self.auto_update=QCheckBox("启动后自动检查新版本，并在发现新版时提示")
         ul.addWidget(self.auto_update)
-        self.settings_path_label=QLabel(self.settings.fileName());self.settings_path_label.setObjectName("PathLabel");self.settings_path_label.setWordWrap(True)
+        self.auto_install=QCheckBox("下载完成后自动安装更新（仅校验 SHA-256，不验证发布者签名）")
+        self.auto_install.setChecked(True)
+        ul.addWidget(self.auto_install)
+        self.settings_path_label=QLabel(self.settings.fileName());self.settings_path_label.setTextFormat(Qt.TextFormat.PlainText);self.settings_path_label.setObjectName("PathLabel");self.settings_path_label.setWordWrap(True)
         ul.addWidget(self.settings_path_label);data_layout.addWidget(updates)
 
         maintenance,ml=self.section("智能维护",
@@ -6323,8 +7227,13 @@ class SettingsPage(QWidget):
             widget.blockSignals(True);widget.setValue(value);widget.blockSignals(False)
         for widget,key,default in ((self.start_auto,"start_auto",False),(self.silent_to_tray,"silent_to_tray",True),
                 (self.alert_enabled,"alert_enabled",True),(self.sound,"alert_sound",True),
-                (self.auto_update,"auto_check_updates",True)):
+                (self.auto_update,"auto_check_updates",True),
+                (self.auto_install,"update/auto_install",True)):
             widget.blockSignals(True);widget.setChecked(is_true(self.settings.value(key,default),default));widget.blockSignals(False)
+        for widget,key,default in ((self.module_growth_switch,MODULE_GROWTH_KEY,True),(self.module_posts_switch,MODULE_POSTS_KEY,False)):
+            widget.blockSignals(True);widget.setChecked(is_true(self.settings.value(key,default),default));widget.blockSignals(False)
+        self._refresh_module_statuses()
+        self.set_selected_theme(migrate_theme_name(self.settings.value("ui_theme","云白")))
 
     def save_settings(self):
         timing=save_random_timing(self.settings,(self.interval.value(),self.jitter_min.value(),self.jitter_max.value(),self.gap_min.value(),self.gap_max.value()))
@@ -6335,6 +7244,8 @@ class SettingsPage(QWidget):
             "min_to_tray":1,"silent_to_tray":int(self.silent_to_tray.isChecked()),"alert_enabled":int(self.alert_enabled.isChecked()),
             "alert_sound":int(self.sound.isChecked()),"alert_threshold":self.threshold.value(),
             "alert_cooldown_minutes":self.cooldown.value(),"auto_check_updates":int(self.auto_update.isChecked()),
+            "update/auto_install":int(self.auto_install.isChecked()),
+            MODULE_GROWTH_KEY:int(self.module_growth_switch.isChecked()),MODULE_POSTS_KEY:int(self.module_posts_switch.isChecked()),
         }
         for key,value in values.items():self.settings.setValue(key,value)
         self.settings.sync()
@@ -6391,13 +7302,19 @@ class UpdateDialog(QDialog):
         super().__init__(parent);self.info=info;self.ready_path=""
         self.setWindowTitle("发现新版本 · "+APP_TITLE);self.resize(630,530)
         root=QVBoxLayout(self);root.setContentsMargins(24,22,24,20);root.setSpacing(13)
-        heading=QLabel("新版本 V"+str(info.get("version","")));heading.setObjectName("PageTitle");root.addWidget(heading)
-        repo=QLabel("当前 V"+APP_VERSION+"   →   V"+str(info.get("version","")))
-        repo.setObjectName("SmallMuted");root.addWidget(repo)
+        head_row=QHBoxLayout();head_row.setSpacing(13)
+        head_row.addWidget(BrandMark(40))
+        head_text=QVBoxLayout();head_text.setSpacing(2)
+        heading_row=QHBoxLayout();heading_row.setSpacing(8)
+        heading=QLabel("发现新版本");heading.setObjectName("PageTitle");heading_row.addWidget(heading)
+        pill=QLabel("V"+str(info.get("version","")));pill.setObjectName("UpdatePill");heading_row.addWidget(pill);heading_row.addStretch()
+        head_text.addLayout(heading_row)
+        repo=QLabel("当前 V"+APP_VERSION+"   →   V"+str(info.get("version","")));repo.setObjectName("SmallMuted");head_text.addWidget(repo)
+        head_row.addLayout(head_text,1);root.addLayout(head_row)
         title=QLabel(str(info.get("title") or "版本更新"));title.setTextFormat(Qt.TextFormat.PlainText);title.setWordWrap(True);root.addWidget(title)
         self.notes=QPlainTextEdit();self.notes.setReadOnly(True);self.notes.setPlainText(str(info.get("notes") or "暂无更新日志"))
         root.addWidget(self.notes,1)
-        self.status=QLabel();self.status.setWordWrap(True);self.status.setObjectName("SmallMuted");root.addWidget(self.status)
+        self.status=QLabel();self.status.setTextFormat(Qt.TextFormat.PlainText);self.status.setWordWrap(True);self.status.setObjectName("SmallMuted");root.addWidget(self.status)
         self.progress=QProgressBar();self.progress.setRange(0,100);self.progress.setValue(0);self.progress.hide();root.addWidget(self.progress)
         row=QHBoxLayout();row.addStretch()
         self.cancel_btn=QPushButton();self.cancel_btn.hide()
@@ -6447,9 +7364,38 @@ class WindowResizeHandle(QWidget):
         super().mousePressEvent(event)
 
 
+class FirstRunDialog(QDialog):
+    """Ask once which modules to monitor. Default: follower growth only."""
+
+    def __init__(self,parent=None):
+        super().__init__(parent);self.setWindowTitle("第一次运行");self.resize(560,470)
+        self.choice="growth"
+        root=QVBoxLayout(self);root.setContentsMargins(26,24,26,20);root.setSpacing(12)
+        mark=BrandMark(46);root.addWidget(mark)
+        title=QLabel("第一次运行：先选要监测什么");title.setObjectName("DialogTitle");root.addWidget(title)
+        sub=QLabel("这个软件有两个监测板块。默认只开粉丝增长；发帖时间监测会多读页面内容、巡检稍慢一点，不需要的话可以先不开，以后随时在设置里打开，已保存的发帖标准不会丢。")
+        sub.setWordWrap(True);sub.setObjectName("SmallMuted");root.addWidget(sub)
+        self.opt_growth=OptionCard("只监测粉丝增长","看板只显示粉丝数和每日新增，界面最干净。适合只关心涨粉的用户。")
+        self.opt_both=OptionCard("同时监测粉丝增长和发帖时间","多一个“距上次发帖”和超时提醒。适合要盯更新频率、怕停更的用户。")
+        for card,choice in ((self.opt_growth,"growth"),(self.opt_both,"both")):
+            card.clicked.connect(lambda _=False,c=choice:self._select(c));root.addWidget(card)
+        self._select("growth")
+        actions=QHBoxLayout();actions.setSpacing(10)
+        ok=QPushButton("确认，开始使用");ok.setObjectName("PrimaryButton");ok.clicked.connect(self.accept);actions.addWidget(ok)
+        skip=QPushButton("以后再说");skip.setObjectName("LinkButton");skip.clicked.connect(self.accept);actions.addWidget(skip)
+        actions.addStretch();root.addLayout(actions)
+        note=QLabel("只问这一次。以后改主意：设置 → 监控模块，随时开关，开关后看板和卡片会跟着变。")
+        note.setObjectName("SmallMuted");note.setWordWrap(True);root.addWidget(note)
+
+    def _select(self,choice):
+        self.choice=choice
+        self.opt_growth.setSelected(choice=="growth");self.opt_both.setSelected(choice=="both")
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__();self.setWindowFlags(Qt.WindowType.FramelessWindowHint|Qt.WindowType.Window)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground,True)
         self._ui_restoring=True
         legacy=QSettings("GrowthRadar","FBGrowthRadar")
         directory=read_settings_location(DATA_DIR,str(legacy.value("data_directory","") or ""))
@@ -6484,11 +7430,11 @@ class MainWindow(QMainWindow):
         self.count_timer=QTimer(self);self.count_timer.setInterval(1000);self.count_timer.timeout.connect(self.update_countdown)
         self.paint_timer=QTimer(self);self.paint_timer.setSingleShot(True);self.paint_timer.timeout.connect(self.refresh_all)
         self.notice_timer=QTimer(self);self.notice_timer.setSingleShot(True);self.notice_timer.timeout.connect(self.flush_notices)
-        self.apply_theme(str(self.settings.value("ui_theme","蓝橙曜石")),refresh=False)
+        self.apply_theme(str(self.settings.value("ui_theme","云白")),refresh=False)
         app_icon=make_app_icon()
         QApplication.instance().setWindowIcon(app_icon)
         self.setWindowIcon(app_icon);self.setWindowTitle(APP_TITLE+" · "+APP_VERSION)
-        self.resize(1536,1024);self.setMinimumSize(980,680)
+        self.resize(1536,1024);self.setMinimumSize(860,640)
         self.tray=QSystemTrayIcon(make_app_icon(),self);self.tray.setToolTip(APP_TITLE)
         self.tray_menu=QMenu(self)
         self.tray_menu.addAction("打开监控看板",self.show_dashboard)
@@ -6502,6 +7448,7 @@ class MainWindow(QMainWindow):
             try:self.connector.start()
             except ConnectorError as exc:log_exception(str(exc))
         self._connector_dialog=None
+        self._pending_dialogs=set();self._pending_dismissed={}
         self._connector_timer=QTimer(self);self._connector_timer.setInterval(1000)
         self._connector_timer.timeout.connect(self.refresh_connector_summary)
         self.build_ui();self.apply_style();self.refresh_all();self.count_timer.start()
@@ -6515,6 +7462,20 @@ class MainWindow(QMainWindow):
         if self.store.upgrade_backup:self.dashboard.status.setText("升级前安全备份已保存："+self.store.upgrade_backup)
         if is_true(self.settings.value("start_auto","0")) and not os.environ.get("FBPM_TEST_MODE") and "--diagnose" not in sys.argv:
             QTimer.singleShot(900,self.start_auto)
+        if not os.environ.get("FBPM_TEST_MODE"):
+            QTimer.singleShot(500,self._ask_first_run_modules)
+
+    def _ask_first_run_modules(self):
+        if self._closing:return
+        if self.settings.value(MODULES_ASKED_KEY) is not None:return
+        dlg=FirstRunDialog(self)
+        dlg.exec()
+        self.settings.setValue(MODULE_GROWTH_KEY,1)
+        self.settings.setValue(MODULE_POSTS_KEY,1 if dlg.choice=="both" else 0)
+        self.settings.setValue(MODULES_ASKED_KEY,1)
+        self.settings.sync()
+        self.settings_page.load_settings()
+        self.refresh_all()
 
     @staticmethod
     def _set_paths(path):
@@ -6524,72 +7485,127 @@ class MainWindow(QMainWindow):
 
     def build_ui(self):
         root=QWidget();root.setObjectName("Root");self.setCentralWidget(root)
-        layout=QVBoxLayout(root);layout.setContentsMargins(0,0,0,0);layout.setSpacing(0)
-        header=DraggableHeader();header.setObjectName("HeaderBar");header.setFixedHeight(64)
-        bar=QHBoxLayout(header);bar.setContentsMargins(18,8,10,8);bar.setSpacing(7)
-        self.brand_mark=BrandMark(40);bar.addWidget(self.brand_mark);bar.addSpacing(4)
+        self._root_layout=QVBoxLayout(root);self._root_layout.setContentsMargins(1,1,1,1);self._root_layout.setSpacing(0)
+        shell=QHBoxLayout();shell.setContentsMargins(0,0,0,0);shell.setSpacing(0)
+        self.sidebar=QWidget();self.sidebar.setObjectName("Sidebar");self.sidebar.setFixedWidth(240)
+        side=QVBoxLayout(self.sidebar);side.setContentsMargins(14,12,14,10);side.setSpacing(0)
+        brand=DraggableHeader();brand.setObjectName("BrandRow")
+        brand_lay=QHBoxLayout(brand);brand_lay.setContentsMargins(6,2,6,8);brand_lay.setSpacing(10)
+        self.brand_mark=BrandMark(34);brand_lay.addWidget(self.brand_mark)
+        brand_text=QVBoxLayout();brand_text.setSpacing(1)
         self.brand_name=QLabel(APP_TITLE);self.brand_name.setObjectName("BrandName")
-        self.brand_name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);bar.addWidget(self.brand_name)
-        tagline=QLabel("专业主页 · 粉丝与发帖监控");tagline.setObjectName("BrandSub")
-        tagline.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);bar.addWidget(tagline);bar.addStretch()
+        self.brand_name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);brand_text.addWidget(self.brand_name)
+        tagline=QLabel("Facebook 主页监控");tagline.setObjectName("BrandSub")
+        tagline.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);brand_text.addWidget(tagline)
+        brand_lay.addLayout(brand_text,1);side.addWidget(brand)
         self.brand_caption=tagline
-        self.page_nav_buttons={}
-        for index,kind,tip in ((0,"home","返回主界面"),(3,"pages","FB专业ID管理")):
-            btn=icon_button(kind,tip,self)
-            if index==0:
-                btn.setText("主页");btn.setObjectName("HomePill");btn.setFixedSize(90,40)
-                btn.setIcon(ui_icon("home","#FFFFFF"));btn.setToolTip("返回主页")
-            else:
-                btn.setText("ID管理");btn.setObjectName("HeaderAction");btn.setFixedSize(104,40)
-            btn.clicked.connect(lambda _=False,i=index:self.switch_page(i));bar.addWidget(btn)
-            self.page_nav_buttons[index]=btn
-        connector_wrap=QWidget();connector_wrap.setFixedSize(102,42);connector_grid=QGridLayout(connector_wrap);connector_grid.setContentsMargins(0,0,0,0)
-        self.connector_button=icon_button("browser","\u6d4f\u89c8\u5668\u8fde\u63a5",connector_wrap)
-        self.connector_button.setText("\u6d4f\u89c8\u5668");self.connector_button.setObjectName("HeaderAction");self.connector_button.setFixedSize(96,40)
-        self.connector_button.clicked.connect(self.open_login_browser);connector_grid.addWidget(self.connector_button,0,0)
-        self.connector_dot=QLabel(connector_wrap);self.connector_dot.setObjectName("ConnectorDot");self.connector_dot.setFixedSize(12,12)
+        nav_label=QLabel("监控");nav_label.setObjectName("NavLabel");side.addWidget(nav_label)
+        self.nav_buttons={}
+        for index,kind,text in ((0,"home","监控看板"),(2,"bell","通知"),(3,"pages","ID管理")):
+            row=QHBoxLayout();row.setContentsMargins(0,0,0,0);row.setSpacing(0)
+            btn=QPushButton(text);btn.setObjectName("SideNav");btn.setProperty("iconKind",kind)
+            btn.setIcon(ui_icon(kind,MUTED));btn.setIconSize(QSize(18,18));btn.setFixedHeight(34)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _=False,i=index:self.switch_page(i))
+            row.addWidget(btn,1)
+            if index==2:
+                self.notification_badge=QLabel(btn);self.notification_badge.setObjectName("NotificationBadge")
+                self.notification_badge.setFixedSize(19,17);self.notification_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.notification_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            wrap=QWidget();wrap.setLayout(row);side.addWidget(wrap);self.nav_buttons[index]=btn
+            side.addSpacing(1)
+        nav_label2=QLabel("系统");nav_label2.setObjectName("NavLabel");side.addWidget(nav_label2)
+        btn=QPushButton("设置");btn.setObjectName("SideNav");btn.setProperty("iconKind","settings")
+        btn.setIcon(ui_icon("settings",MUTED));btn.setIconSize(QSize(18,18));btn.setFixedHeight(34)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.clicked.connect(lambda:self.switch_page(4));side.addWidget(btn);self.nav_buttons[4]=btn
+        self.page_nav_buttons=dict(self.nav_buttons)
+        side.addStretch(1)
+        self.connector_card=ClickableFrame();self.connector_card.setObjectName("ConnCard")
+        conn_lay=QVBoxLayout(self.connector_card);conn_lay.setContentsMargins(12,9,12,9);conn_lay.setSpacing(3)
+        title_row=QHBoxLayout();title_row.setSpacing(7)
+        self.connector_dot=QLabel();self.connector_dot.setObjectName("ConnectorDot");self.connector_dot.setFixedSize(10,10)
         self.connector_dot.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
-        connector_grid.addWidget(self.connector_dot,0,0,Qt.AlignmentFlag.AlignTop|Qt.AlignmentFlag.AlignRight);bar.addWidget(connector_wrap)
-        self.theme_pill=QPushButton("主题 · "+self.theme_name);self.theme_pill.setObjectName("ThemePill");self.theme_pill.setProperty("iconKind","theme");self.theme_pill.setIcon(ui_icon("theme",ACCENT));self.theme_pill.setIconSize(QSize(18,18))
-        self.theme_pill.setFixedSize(140,40);self.theme_pill.setToolTip("切换主题：蓝橙曜石、石墨黑、清爽白、护眼绿")
-        self.theme_pill.clicked.connect(self.show_theme_menu);bar.addWidget(self.theme_pill)
-        wrap=QWidget();wrap.setFixedSize(84,42);grid=QGridLayout(wrap);grid.setContentsMargins(0,0,0,0)
-        self.notification_btn=icon_button("bell","通知",wrap)
-        self.notification_btn.setText("通知");self.notification_btn.setObjectName("HeaderAction");self.notification_btn.setFixedSize(80,40)
-        self.notification_btn.clicked.connect(lambda:self.switch_page(2));grid.addWidget(self.notification_btn,0,0)
-        self.notification_badge=QLabel();self.notification_badge.setObjectName("NotificationBadge")
-        self.notification_badge.setFixedSize(19,17);self.notification_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.notification_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
-        grid.addWidget(self.notification_badge,0,0,Qt.AlignmentFlag.AlignTop|Qt.AlignmentFlag.AlignRight);bar.addWidget(wrap)
-        self.page_nav_buttons[2]=self.notification_btn
-        self.settings_btn=icon_button("settings","设置",self);self.settings_btn.setText("设置");self.settings_btn.setObjectName("HeaderAction");self.settings_btn.setFixedSize(80,40);self.settings_btn.clicked.connect(lambda:self.switch_page(4));bar.addWidget(self.settings_btn)
-        self.page_nav_buttons[4]=self.settings_btn
-        self.update_btn=icon_button("update","检查更新",self);self.update_btn.setObjectName("UpdateButton")
-        self.update_btn.setProperty("hasUpdate",False);self.update_btn.clicked.connect(lambda _=False:self.check_for_updates(True));bar.addWidget(self.update_btn)
-        line=QFrame();line.setObjectName("HeaderDivider");line.setFixedSize(1,26);bar.addWidget(line)
+        title_row.addWidget(self.connector_dot)
+        self.connector_title=QLabel("浏览器连接");self.connector_title.setObjectName("ConnTitle");title_row.addWidget(self.connector_title,1)
+        self.connector_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+        conn_lay.addLayout(title_row)
+        self.connector_sub=QLabel("连接器 v"+BUNDLED_CONNECTOR_VERSION+" · 点击查看");self.connector_sub.setObjectName("SmallMuted");self.connector_sub.setWordWrap(True);conn_lay.addWidget(self.connector_sub)
+        self.connector_sub.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+        self.connector_card.clicked.connect(self.open_login_browser);side.addWidget(self.connector_card)
+        side.addSpacing(10)
+        theme_row=QHBoxLayout();theme_row.setContentsMargins(4,0,4,0)
+        theme_label=QLabel("外观");theme_label.setObjectName("SmallMuted");theme_row.addWidget(theme_label)
+        self.theme_name_label=QLabel(self.theme_name);self.theme_name_label.setObjectName("SmallMuted");theme_row.addWidget(self.theme_name_label)
+        theme_row.addStretch()
+        self.theme_swatches={}
+        for name in THEME_PRESETS:
+            sw=QPushButton();sw.setFixedSize(20,20);sw.setCursor(Qt.CursorShape.PointingHandCursor)
+            sw.clicked.connect(lambda _=False,n=name:self.apply_theme(n));theme_row.addWidget(sw);self.theme_swatches[name]=sw
+        side.addLayout(theme_row)
+        self._refresh_theme_swatches(self.theme_name)
+        foot=QLabel("V "+APP_VERSION+" · Windows 版");foot.setObjectName("SideFoot");side.addWidget(foot)
+        shell.addWidget(self.sidebar)
+        center=QWidget();center_layout=QVBoxLayout(center);center_layout.setContentsMargins(0,0,0,0);center_layout.setSpacing(0)
+        self.topbar=DraggableHeader();self.topbar.setObjectName("TopBar");self.topbar.setFixedHeight(64)
+        bar=QHBoxLayout(self.topbar);bar.setContentsMargins(24,8,12,8);bar.setSpacing(8)
+        titles=QVBoxLayout();titles.setSpacing(1)
+        self.page_title=QLabel("监控看板");self.page_title.setObjectName("PageTitleTop");titles.addWidget(self.page_title)
+        self.page_sub=QLabel("粉丝与发帖监控 · 数据保存在本地");self.page_sub.setObjectName("Subtitle");titles.addWidget(self.page_sub)
+        self.page_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+        self.page_sub.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+        bar.addLayout(titles,1)
+        bar.addStretch()
         minimum=icon_button("min","最小化",self,34);minimum.clicked.connect(self.showMinimized);bar.addWidget(minimum)
         self.max_btn=icon_button("max","最大化 / 还原",self,34);self.max_btn.clicked.connect(self.toggle_maximized);bar.addWidget(self.max_btn)
         close=icon_button("close","关闭",self,34);close.setObjectName("CloseWindowButton");close.clicked.connect(self.close);bar.addWidget(close)
-        layout.addWidget(header)
+        center_layout.addWidget(self.topbar)
         self.stack=QStackedWidget();self.stack.setObjectName("MainStack")
         self.dashboard=DashboardPage(self.store,self.settings)
-        reserved_slot=QWidget()  # retired history slot; not exposed in navigation
-        self.alerts=AlertsPage(self.store)
+        reserved_slot=QWidget()
+        self.alerts=AlertsPage(self.store,self.settings)
         self.page_manager=PageManagementPage(self.store,self.settings)
         self.settings_page=SettingsPage(self.store,self.settings)
         for page in (self.dashboard,reserved_slot,self.alerts,self.page_manager,self.settings_page):self.stack.addWidget(page)
-        layout.addWidget(self.stack,1);self.wire_signals();self.switch_page(0)
+        if hasattr(self.dashboard,"rail_widget"):
+            _rail_scroll=QScrollArea();_rail_scroll.setObjectName("SidebarRailScroll");_rail_scroll.setFrameShape(QFrame.Shape.NoFrame)
+            _rail_scroll.setWidgetResizable(True);_rail_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            _rail_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            _rail_scroll.viewport().setStyleSheet("background:transparent;border:0;")
+            self.dashboard.rail_widget.setStyleSheet("background:transparent;")
+            _rail_scroll.setWidget(self.dashboard.rail_widget);_rail_scroll.setMinimumHeight(120)
+            side.insertWidget(side.indexOf(self.connector_card),_rail_scroll)
+            side.insertSpacing(side.indexOf(self.connector_card),12)
+        center_layout.addWidget(self.stack,1)
+        if hasattr(self.dashboard,"action_bar"):
+            bar.insertWidget(2,self.dashboard.action_bar)
+        self.statusbar=QFrame();self.statusbar.setObjectName("StatusBar");self.statusbar.setFixedHeight(30)
+        status_lay=QHBoxLayout(self.statusbar);status_lay.setContentsMargins(24,0,24,0);status_lay.setSpacing(10)
+        if hasattr(self.dashboard,"status"):status_lay.addWidget(self.dashboard.status,1)
+        if hasattr(self.dashboard,"next_run"):
+            self.dashboard.next_run.setParent(self.statusbar);self.dashboard.next_run.hide()
+        center_layout.addWidget(self.statusbar)
+        shell.addWidget(center,1)
+        self._root_layout.addLayout(shell,1)
+        self.wire_signals();self.switch_page(0);self._update_window_shape()
 
     def wire_signals(self):
         d=self.dashboard;d.collect_once.connect(self.dashboard_run_button);d.toggle_auto.connect(self.toggle_auto)
         d.view_alerts.connect(lambda:self.switch_page(2));d.open_manager.connect(self.open_manager)
-        d.open_page.connect(self.open_page);d.timing_changed.connect(self.on_quick_timing_changed)
+        self.settings_page.test_toast_requested.connect(self._send_test_toast)
+        d.delete_page.connect(lambda pid:self.delete_ids([pid]))
+        d.open_page.connect(self.open_page);d.open_settings_requested.connect(lambda:self.switch_page(4))
+        d.collect_subset_requested.connect(self.start_subset_collection)
+        d.inspect_page.connect(self.inspect_single_page);d.sync_page.connect(lambda pid:self.sync_profiles([pid]))
         m=self.page_manager;m.add_requested.connect(self.open_batch_dialog)
         m.delete_requested.connect(self.delete_ids)
         m.config_changed.connect(self.refresh_dashboard)
+        m.inspect_requested.connect(self.inspect_pages)
+        m.open_settings_requested.connect(lambda:self.switch_page(4))
         self.alerts.ack_requested.connect(self.ack_alerts);self.alerts.read_changed.connect(self.refresh_dashboard)
         settings=self.settings_page;settings.login_requested.connect(self.open_login_browser)
         settings.save_requested.connect(self.save_settings)
+        settings.theme_requested.connect(self.apply_theme)
         settings.export_requested.connect(self.export_csv);settings.backup_requested.connect(self.backup_db)
         settings.data_dir_requested.connect(self.move_data_directory);settings.cleanup_requested.connect(self.smart_cleanup_cache)
 
@@ -6600,6 +7616,13 @@ class MainWindow(QMainWindow):
             self.settings.setValue("ui/page",index);self.settings.sync()
         for idx,button in self.page_nav_buttons.items():
             button.setProperty("active",idx==index);button.style().unpolish(button);button.style().polish(button)
+        if hasattr(self,"dashboard") and hasattr(self.dashboard,"action_bar"):
+            self.dashboard.action_bar.setVisible(index==0)
+        titles={0:("监控看板","粉丝与发帖监控 · 数据保存在本地"),2:("通知","未读通知与历史记录"),3:("ID管理","一次添加，多模块共用"),4:("设置","浏览器连接、巡检、提醒与数据")}
+        title,sub=titles[index]
+        if index==0 and not modules_posts_enabled(self.settings):sub="仅粉丝监控 · 数据保存在本地"
+        if hasattr(self,"page_title"):self.page_title.setText(title)
+        if hasattr(self,"page_sub"):self.page_sub.setText(sub)
         if index==0:self.refresh_dashboard()
         elif index==2:self.alerts.open_current()
         elif index==3:self.page_manager.refresh()
@@ -6608,6 +7631,12 @@ class MainWindow(QMainWindow):
     def open_manager(self,pid=""):
         self.switch_page(3)
         if pid:self.page_manager.focus_id(pid);self.page_manager.edit_id(pid)
+
+    def _position_notification_badge(self):
+        if not hasattr(self,"notification_badge"):return
+        btn=self.nav_buttons.get(2)
+        if btn is None:return
+        self.notification_badge.move(max(0,btn.width()-27),(btn.height()-17)//2)
 
     def _update_header_icons(self,unread=None):
         if not hasattr(self,"page_nav_buttons"):return
@@ -6624,17 +7653,13 @@ class MainWindow(QMainWindow):
 
     def set_update_attention(self,active,version=""):
         self._update_available=bool(active)
-        if not hasattr(self,"update_btn"):return
-        self.update_btn.setProperty("hasUpdate",bool(active))
-        self.update_btn.setToolTip(("有新版本 V"+str(version)+" 待更新") if active else "检查更新")
-        self.update_btn.style().unpolish(self.update_btn);self.update_btn.style().polish(self.update_btn)
         self._update_header_icons(sum(self.store.unread_totals()) if hasattr(self,"store") else 0)
 
     def refresh_dashboard(self):
         self.dashboard.refresh();self.dashboard.set_running(self.auto_enabled,self.worker_thread is not None)
         g,p=self.store.unread_totals();n=g+p
         self.notification_badge.setText(str(n) if n<100 else "99+");self.notification_badge.setVisible(n>0)
-        self.notification_btn.setToolTip(f"通知 · {n} 条未读")
+        self.page_nav_buttons[2].setToolTip(f"通知 · {n} 条未读")
         self._update_header_icons(n)
 
     def refresh_all(self):
@@ -6652,7 +7677,7 @@ class MainWindow(QMainWindow):
 
     def open_batch_dialog(self):
         if self._tasks_busy():return
-        dlg=BatchAddDialog(self)
+        dlg=BatchAddDialog(self,growth_enabled=modules_growth_enabled(self.settings),posts_enabled=modules_posts_enabled(self.settings))
         if dlg.exec()!=QDialog.DialogCode.Accepted:return
         parsed=normalize_page_ids(dlg.text())
         if dlg.mode()=="replace":
@@ -6677,11 +7702,11 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)
         if answer!=QMessageBox.StandardButton.Yes:return
         self.store.delete_ids(ids,False);self.refresh_all()
-        self.show_toast(f"已移除 {len(ids)} 个专业 ID")
+        self.show_toast(f"已移除 {len(ids)} 个专业 ID",kind="success")
 
     def _tasks_busy(self):
         if self.worker_thread is not None or self.login_thread is not None or self._maintenance:
-            show_hint(self,"请等待当前巡检或连接任务结束后再操作。暂停不会结束当前任务。")
+            show_hint(self,"请等待当前巡检或连接任务结束后再操作。暂停不会结束当前任务。",kind="warning")
             return True
         return False
 
@@ -6698,15 +7723,40 @@ class MainWindow(QMainWindow):
     def start_collection(self,once=True):
         if self._closing or self._maintenance:return
         if self.login_thread is not None:
-            if once:show_hint(self,"请先关闭登录浏览器，再巡检。")
+            if once:show_hint(self,"请先关闭登录浏览器，再巡检。",kind="warning")
             elif self.auto_enabled:self.auto_timer.start(30000)
             return
         if self.worker_thread is not None:return
         pages=self.store.list_pages(enabled_only=True)
         if not pages:
             self.stop_auto()
-            if once:show_hint(self,"请在 FB专业ID管理中添加 ID，并至少勾选一个监控模块。")
+            if once:show_hint(self,"请在 ID管理中添加 ID，并至少勾选一个监控模块。",kind="warning")
             return
+        self._start_worker(pages,"monitor")
+
+    def inspect_single_page(self,pid):
+        if self._tasks_busy():return
+        pages=[p for p in self.store.list_pages() if str(p["page_id"])==str(pid)]
+        if not pages:show_hint(self,"找不到该主页。",kind="warning");return
+        self._start_worker(pages,"monitor")
+
+    def inspect_pages(self,ids):
+        if self._tasks_busy():return
+        chosen={str(x) for x in ids}
+        pages=[p for p in self.store.list_pages() if str(p["page_id"]) in chosen]
+        if not pages:show_hint(self,"请先选择要巡检的主页。",kind="warning");return
+        self._start_worker(pages,"monitor")
+
+    def start_subset_collection(self,mode):
+        if self._tasks_busy():return
+        pages=self.store.list_pages(enabled_only=True)
+        if mode=="failed":
+            pages=[p for p in pages if p.get("status") in ("采集失败","部分成功") or p.get("growth_error")
+                   or (modules_posts_enabled(self.settings) and p.get("post_error")) or (p.get("name_error") and not normalize_name(p.get("page_name"),p.get("page_id")))]
+        elif mode=="uninspected":
+            pages=[p for p in pages if not p.get("last_inspected_at")]
+        if not pages:
+            show_hint(self,"没有符合条件的主页。",kind="warning");return
         self._start_worker(pages,"monitor")
 
     def sync_profiles(self,ids):
@@ -6718,16 +7768,22 @@ class MainWindow(QMainWindow):
         try:self.settings_page.flush_pending()
         except (ValueError,OSError) as exc:
             QMessageBox.warning(self,"\u8bbe\u7f6e\u672a\u80fd\u4fdd\u5b58",str(exc));return
+        if purpose=="monitor":
+            pages=apply_module_gating(pages,self.settings)
+            pages=[p for p in pages if p.get("monitor_growth") or p.get("monitor_posts")]
+            if not pages:
+                self.dashboard.status.setText("没有可巡检的主页：监控模块均未启用，请在设置 → 监控模块中至少开启一个")
+                return
         cids=self.selected_connectors(require_all=False)
         if not cids:
             self.dashboard.status.setText("浏览器连接未就绪，请打开已安装连接器的 Chrome")
             if self.auto_enabled:self.stop_auto()
-            else:self.show_toast("请先确认右上角浏览器连接状态")
+            else:self.show_toast("请先确认左侧浏览器连接状态",kind="warning")
             return
         if len(pages)<len(cids):
-            self.show_toast(f"本轮只有 {len(pages)} 个任务，少于已选 {len(cids)} 个连接器，请减少连接器数量")
-            if self.auto_enabled:self.stop_auto()
-            return
+            # Small rounds (single-page recheck) simply use fewer
+            # connectors instead of refusing the whole round.
+            cids=cids[:len(pages)]
         self.auto_timer.stop();self.next_run_at=None;self.current_purpose=purpose
         self.active_run_id=uuid.uuid4().hex;self.store.start_run(self.active_run_id,len(pages))
         self.run_started_at=time.time();self.run_ok=0;self.run_fail=0
@@ -6786,13 +7842,14 @@ class MainWindow(QMainWindow):
                 item["page_name"]=display_name(page)
                 item.setdefault("name",item["page_name"])
             entries.append(item)
-        if not hasattr(self,'_monitor_alert_popups'):self._monitor_alert_popups=[]
-        self._monitor_alert_popups=[p for p in self._monitor_alert_popups if p.isVisible()]
-        popup=PersistentMonitorAlert(entries,self,len(self._monitor_alert_popups))
-        self._monitor_alert_popups.append(popup)
-        popup.finished.connect(lambda _=0,p=popup:self._monitor_alert_popups.remove(p) if p in self._monitor_alert_popups else None)
-        popup.show();popup.raise_();popup.activateWindow()
-        if is_true(self.settings.value("alert_sound","1"),True):QApplication.beep()
+        # Native Windows toast only. No custom popup fallback (user
+        # decision): the alert itself stays in the notification list and
+        # the sidebar badge, so a failed toast never loses a warning.
+        _ok,_detail=send_system_toast(entries,lambda:self.open_alert_notification(entries[0] if entries else {}),
+                                      silent=not is_true(self.settings.value("alert_sound","1"),True))
+        self._last_toast_result=(_ok,_detail)
+        if not _ok:
+            log_exception("系统通知未发出："+str(_detail))
 
     def on_collection_finished(self,ok,message):
         if self.active_run_id:
@@ -6825,18 +7882,16 @@ class MainWindow(QMainWindow):
         if self.auto_enabled:return
         cids=self.selected_connectors(require_all=False)
         if not cids:
-            self.show_toast("未检测到在线浏览器连接器，请先打开已安装连接器的 Chrome")
+            self.show_toast("未检测到在线浏览器连接器，请先打开已安装连接器的 Chrome",kind="warning")
             return
         try:self.settings_page.flush_pending()
         except (ValueError,OSError) as exc:
             QMessageBox.warning(self,"设置未能保存",str(exc));return
         pages=self.store.list_pages(enabled_only=True)
         if not pages:
-            self.show_toast("请先在 ID管理中选择粉丝监控或发帖监控。")
+            self.show_toast("请先在 ID管理中选择粉丝监控或发帖监控。",kind="warning")
             return
-        if len(pages)<len(cids):
-            self.show_toast(f"监控任务 {len(pages)} 个，少于已选连接器 {len(cids)} 个，请减少连接器")
-            return
+        # Small rounds are trimmed to the available tasks in _start_worker.
         self.auto_enabled=True
         # Deliberately do NOT write start_auto or change the startup checkbox.
         if not self.worker_thread:self.start_collection(False)
@@ -6900,8 +7955,51 @@ class MainWindow(QMainWindow):
     def selected_connector(self):
         active=self.selected_connectors();return active[0] if active else ''
 
+    def _prompt_pending_approvals(self):
+        try:
+            while True:
+                cid=self.connector.pending_queue.get_nowait()
+                if cid in self._pending_dialogs:continue
+                if time.monotonic()-self._pending_dismissed.get(cid,0)<120:continue
+                info=next((p for p in self.connector.pending_approvals() if p['instance_id']==cid),None)
+                if not info:continue
+                self._pending_dialogs.add(cid)
+                try:
+                    ident=info.get('identity') or {}
+                    label=connector_display_name(ident,cid)
+                    detail="\n".join(x for x in (
+                        "浏览器备注："+label,
+                        "浏览器："+str(ident.get('browser_brand') or '')+" "+str(ident.get('browser_version') or ''),
+                        "频道："+str(ident.get('channel_label') or ''),
+                        "资料目录："+str(ident.get('profile_directory') or ''),
+                        "扩展版本："+str(ident.get('extension_version') or ''),
+                    ) if x.split('：',1)[-1].strip())
+                    box=QMessageBox(self)
+                    box.setWindowTitle("新浏览器连接确认")
+                    box.setText("检测到一个从未连接过的新浏览器，是否允许它连接本软件？")
+                    box.setInformativeText(detail+"\n\n只确认一次。已连接过的浏览器不会再次询问。停用后该浏览器不会再自动注册。")
+                    allow_btn=box.addButton("允许连接",QMessageBox.ButtonRole.AcceptRole)
+                    block_btn=box.addButton("停用此浏览器",QMessageBox.ButtonRole.DestructiveRole)
+                    box.addButton("稍后决定",QMessageBox.ButtonRole.RejectRole)
+                    box.setDefaultButton(allow_btn)
+                    box.exec()
+                    clicked=box.clickedButton()
+                    if clicked is allow_btn:
+                        self.connector.approve_pending(cid)
+                        self.show_toast("已允许新浏览器连接："+label,kind="success")
+                    elif clicked is block_btn:
+                        self.connector.block_pending(cid)
+                        self.show_toast("已停用该浏览器连接",kind="success")
+                    else:
+                        self._pending_dismissed[cid]=time.monotonic()
+                finally:
+                    self._pending_dialogs.discard(cid)
+        except queue.Empty:
+            pass
+
     def refresh_connector_summary(self):
         if self._closing:return
+        self._prompt_pending_approvals()
         if not self.connector._running and not os.environ.get('FBPM_TEST_MODE'):
             now=time.monotonic()
             if now-getattr(self,'_connector_last_retry',0)>10:
@@ -6915,15 +8013,22 @@ class MainWindow(QMainWindow):
         elif not online:text='未检测到在线浏览器连接器';state='error'
         elif outdated:text=f'{len(outdated)} 个浏览器连接器版本较旧，可在设置中获取 v{BUNDLED_CONNECTOR_VERSION}';state='warn'
         elif len(online)==1:
-            name=online[0]['identity'].get('profile_name') or ('Chrome '+online[0]['instance_id'][:6]);text='已自动连接：'+name;state='ok'
+            name=connector_display_name(online[0]['identity'],online[0]['instance_id']);text='已自动连接：'+name;state='ok'
         elif configured and len(active)==len(configured):text=f'已连接 {len(active)} 个浏览器，任务将并行分配';state='ok'
         elif configured:text=f'已配置 {len(configured)} 个浏览器，其中 {len(active)} 个在线';state='warn'
         else:text=f'检测到 {len(online)} 个浏览器，请选择使用范围';state='warn'
         try:self.settings_page.connector_summary.setText(text)
         except Exception:pass
-        self.connector_button.setToolTip(text+'\n点击查看浏览器连接')
+        if hasattr(self,"connector_card"):self.connector_card.setToolTip(html.escape(text)+'\n点击查看浏览器连接')
+        if hasattr(self,"connector_title"):
+            if state=='ok' and len(online)==1:
+                _nm=connector_display_name(online[0]['identity'],online[0]['instance_id']);_short='已连接：'+_nm
+            elif state=='ok':_short=f'已连接 {len(active)} 个浏览器'
+            elif state=='warn':_short='浏览器连接待确认'
+            else:_short='未检测到浏览器'
+            self.connector_title.setText(_short)
         if hasattr(self,'connector_dot'):
-            color={'ok':'#26C281','warn':'#F0A43A','error':'#E75768'}[state];self.connector_dot.setStyleSheet(f'background:{color};border:2px solid {BG};border-radius:6px;');self.connector_dot.setToolTip(text)
+            color={'ok':'#26C281','warn':'#F0A43A','error':'#E75768'}[state];self.connector_dot.setStyleSheet(f'background:{color};border:2px solid {BG};border-radius:6px;');self.connector_dot.setToolTip(html.escape(text))
         if self.auto_enabled and not active:
             if self.worker is not None:self.worker.stop()
             self.stop_auto();self.dashboard.status.setText('所有可用浏览器连接均已中断，自动巡检已暂停')
@@ -6958,7 +8063,7 @@ class MainWindow(QMainWindow):
         self.dashboard.status.setText("设置已保存")
         self.settings_page.save_note.setText("已自动保存 · 下次启动保留")
         self.refresh_all()
-        if show_hint:self.show_toast("设置已保存")
+        if show_hint:self.show_toast("设置已保存",kind="success")
 
     def schedule_next_round(self, started_at=None):
         timing=random_inspection_timing(self.settings)
@@ -6976,35 +8081,36 @@ class MainWindow(QMainWindow):
             self.schedule_next_round()
         self.update_countdown()
 
-    def on_quick_timing_changed(self, minutes, j0, j1, g0, g1):
-        previous=self._settings_timing
-        values=normalize_random_timing(minutes,j0,j1,g0,g1)
-        widgets=(self.settings_page.interval,self.settings_page.jitter_min,self.settings_page.jitter_max,self.settings_page.gap_min,self.settings_page.gap_max)
-        for widget,value in zip(widgets,values):
-            widget.blockSignals(True);widget.setValue(value);widget.blockSignals(False)
-        try:
-            self.settings_page.autosave.stop();self.settings_page.save_settings()
-        except (ValueError,OSError) as exc:
-            self.dashboard.set_timing_values(*previous)
-            for widget,value in zip(widgets,previous):
-                widget.blockSignals(True);widget.setValue(value);widget.blockSignals(False)
-            QMessageBox.warning(self,"\u8bbe\u7f6e\u672a\u80fd\u4fdd\u5b58",str(exc));return
-        self._apply_timing(previous)
-        self.settings_page.save_note.setText("\u5df2\u81ea\u52a8\u4fdd\u5b58 \u00b7 \u4e0e\u4e3b\u754c\u9762\u540c\u6b65")
-        self.dashboard.status.setText("\u968f\u673a\u95f4\u9694\u5df2\u4fdd\u5b58\uff1a\u57fa\u51c6 %s \u5206\u949f\uff0c\u4e0a\u4e0b\u6d6e\u52a8 %s\u2014%s \u5206\u949f\uff1b\u4e3b\u9875 %s\u2014%s \u79d2" % values)
-
     def ack_alerts(self):
         self.store.acknowledge_notifications();self.alerts.refresh();self.refresh_dashboard()
-        self.show_toast("通知已标记为已读")
+        self.show_toast("通知已标记为已读",kind="success")
 
-    def show_toast(self, text, duration_ms=3600):
+    def show_toast(self, text, duration_ms=3600, kind="info"):
         self.dashboard.status.setText(str(text))
         if not self.isVisible() or self.isMinimized():
             return
         if self._toast is None:
             self._toast=ToastNotice(self)
-        self._toast.show_message(str(text),duration_ms)
+        self._toast.show_message(str(text),duration_ms,kind)
 
+
+    def _send_test_toast(self):
+        pages=self.store.list_pages()
+        if pages:
+            page=dict(pages[0])
+            entry={"kind":"growth","page_id":str(page.get("page_id") or ""),
+                   "name":display_name(page),"page_name":display_name(page),
+                   "avatar_path":str(page.get("avatar_path") or ""),
+                   "message":"","growth":850,"window_seconds":3600,"threshold":500}
+        else:
+            entry={"kind":"growth","page_id":"","name":"测试主页",
+                   "message":"测试通知：系统通知已接通。"}
+        ok,detail=send_system_toast([entry],lambda:self.open_alert_notification(entry),silent=False)
+        check_file=toast_avatar_dir()/"toast_check.json"
+        status=f"已发送（头像：{detail}）。若未看到横幅，请检查 Windows 设置 → 系统 → 通知与勿扰模式；记录见 {check_file}" if ok else f"未发出：{detail}。记录见 {check_file}"
+        try:self.settings_page.test_toast_status.setText(status)
+        except Exception:pass
+        show_hint(self,status)
 
     def _create_resize_handles(self):
         specs={
@@ -7050,7 +8156,7 @@ class MainWindow(QMainWindow):
         screen=QApplication.screenAt(self.frameGeometry().center()) or QApplication.primaryScreen()
         if screen:
             area=screen.availableGeometry();self.move(area.center()-self.rect().center())
-        self.switch_page(0);self.show_toast("窗口布局已恢复默认")
+        self.switch_page(0);self.show_toast("窗口布局已恢复默认",kind="success")
 
     def resizeEvent(self,event):
         super().resizeEvent(event)
@@ -7061,12 +8167,34 @@ class MainWindow(QMainWindow):
         if hasattr(self,"size_grip"):
             self.size_grip.move(self.width()-18,self.height()-18);self.size_grip.setVisible(not self.isMaximized())
         self._layout_resize_handles()
+        self._position_notification_badge()
+
+    def paintEvent(self,event):
+        p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        radius=0 if self.isMaximized() else 20
+        rect=QRectF(0.5,0.5,self.width()-1,self.height()-1)
+        p.setBrush(QColor(BG));p.setPen(QPen(QColor(BORDER),1))
+        if radius:p.drawRoundedRect(rect,radius,radius)
+        else:p.drawRect(rect)
+        p.end()
+        super().paintEvent(event)
+
+    def _update_window_shape(self):
+        flat=self.isMaximized()
+        layout=getattr(self,"_root_layout",None)
+        if layout is not None:
+            layout.setContentsMargins(0,0,0,0) if flat else layout.setContentsMargins(1,1,1,1)
+        for widget in (getattr(self,"sidebar",None),getattr(self,"topbar",None),getattr(self,"statusbar",None)):
+            if widget is not None:
+                widget.setProperty("flat",flat);widget.style().unpolish(widget);widget.style().polish(widget)
+        self.update()
 
     def changeEvent(self,event):
         super().changeEvent(event)
         if event.type()==QEvent.Type.WindowStateChange and hasattr(self,"max_btn"):
             self.max_btn.setToolTip("还原" if self.isMaximized() else "最大化")
             QTimer.singleShot(0,self._layout_resize_handles)
+            self._update_window_shape()
 
     def toggle_maximized(self):
         if self.isMaximized():self.showNormal()
@@ -7088,7 +8216,7 @@ class MainWindow(QMainWindow):
     def move_data_directory(self):
         if self._tasks_busy():return
         if self._update_thread is not None:
-            show_hint(self,"请等待版本检查或下载结束后再迁移目录。");return
+            show_hint(self,"请等待版本检查或下载结束后再迁移目录。",kind="warning");return
         old=DATA_DIR.resolve()
         parent=QFileDialog.getExistingDirectory(self,"选择新数据文件夹的上级目录",str(old.parent))
         if not parent:return
@@ -7130,9 +8258,9 @@ class MainWindow(QMainWindow):
 
     def smart_cleanup_cache(self):
         if self._tasks_busy():
-            self.show_toast("正在巡检，请等待本轮结束后再清理缓存");return
+            self.show_toast("正在巡检，请等待本轮结束后再清理缓存",kind="warning");return
         if self._update_thread is not None:
-            self.show_toast("版本检查或下载进行中，暂不能清理更新缓存");return
+            self.show_toast("版本检查或下载进行中，暂不能清理更新缓存",kind="warning");return
         candidates=[];updates=DATA_DIR/"updates"
         if updates.exists():candidates.append(("更新下载与解压缓存",updates))
         for root in (DATA_DIR,AVATAR_DIR):
@@ -7178,7 +8306,7 @@ class MainWindow(QMainWindow):
         ensure_private_directory(DATA_DIR/"updates")
         if hasattr(self.settings_page,"cleanup_status"):
             self.settings_page.cleanup_status.setText(f"上次清理释放约 {released/1048576:.1f} MB；核心数据未改动。")
-        self.show_toast(f"智能清理完成 · 释放约 {released/1048576:.1f} MB")
+        self.show_toast(f"智能清理完成 · 释放约 {released/1048576:.1f} MB",kind="success")
 
     def open_page(self,pid):
         QDesktopServices.openUrl(QUrl(f"https://www.facebook.com/{pid}"))
@@ -7192,7 +8320,7 @@ class MainWindow(QMainWindow):
         filename="pages.csv" if kind=="current" else "notifications.csv"
         path,_=QFileDialog.getSaveFileName(self,"导出",str(Path.home()/filename),"CSV (*.csv)")
         if not path:return
-        try:self.store.export_csv(path,kind);show_hint(self,"已导出："+path)
+        try:self.store.export_csv(path,kind);show_hint(self,"已导出："+path,kind="success")
         except Exception as exc:QMessageBox.warning(self,"导出失败",str(exc))
 
     def backup_db(self):
@@ -7201,7 +8329,7 @@ class MainWindow(QMainWindow):
         if not path:return
         try:
             self.store.backup(Path(path))
-            show_hint(self,f"本地主页、当前状态与预警已备份（不含浏览器登录资料）：\n{path}")
+            show_hint(self,f"本地主页、当前状态与预警已备份（不含浏览器登录资料）：\n{path}",kind="success")
         except Exception as exc:
             QMessageBox.warning(self,"备份失败",str(exc))
 
@@ -7258,13 +8386,22 @@ class MainWindow(QMainWindow):
         self.settings.sync();self.tray.hide();event.accept()
         QTimer.singleShot(0,QApplication.instance().quit)
 
+    def _refresh_theme_swatches(self,name):
+        if not hasattr(self,"theme_swatches"):return
+        _sw_colors={"云白":"#F7F7F5","护眼绿":"#0B7A43","曜石黑":"#17181C"}
+        for _n,_sw in self.theme_swatches.items():
+            _sel=_n==name
+            _sw.setStyleSheet(f"background:{_sw_colors.get(_n,'#FFFFFF')};border:{'2px' if _sel else '1px'} solid {ACCENT if _sel else '#C9C9C4'};border-radius:10px;")
+        if hasattr(self,"theme_name_label"):self.theme_name_label.setText(name)
+
     def apply_theme(self,theme_name=None,refresh=True):
-        global BG,SIDEBAR,PANEL,PANEL_2,BORDER,TEXT,MUTED,ACCENT,GREEN,RED,AMBER,CYAN
-        name=str(theme_name or "蓝橙曜石")
-        if name not in THEME_PRESETS:name="蓝橙曜石"
+        global BG,SIDEBAR,PANEL,PANEL_2,BORDER,TEXT,MUTED,ACCENT,ACCENT2,PILL,PILL_HOVER,GREEN,RED,AMBER,CYAN
+        name=migrate_theme_name(str(theme_name or "云白"))
+        if name not in THEME_PRESETS:name="云白"
         self.theme_name=name;p=THEME_PRESETS[name]
         for key,target in (("bg","BG"),("sidebar","SIDEBAR"),("panel","PANEL"),("panel_2","PANEL_2"),
                 ("border","BORDER"),("text","TEXT"),("muted","MUTED"),("accent","ACCENT"),
+                ("accent2","ACCENT2"),("pill","PILL"),("pill_hover","PILL_HOVER"),
                 ("green","GREEN"),("red","RED"),("amber","AMBER"),("cyan","CYAN")):
             globals()[target]=p[key]
         self.settings.setValue("ui_theme",name);self.settings.sync()
@@ -7284,125 +8421,136 @@ class MainWindow(QMainWindow):
         except Exception:family="Sans Serif"
         font=QFont(family);font.setPixelSize(13);app.setFont(font)
         self.apply_style()
-        if hasattr(self,"theme_pill"):self.theme_pill.setText("主题 · "+name)
+        if hasattr(self,"brand_mark"):self.brand_mark.update()
+        self._refresh_theme_swatches(name)
+        if hasattr(self,"settings_page"):
+            try:self.settings_page.set_selected_theme(name)
+            except Exception:pass
+        for _sw in self.findChildren(SwitchToggle):_sw.update()
         if hasattr(self,"dashboard"):
-            for card,color in ((self.dashboard.metric_pages,ACCENT),(self.dashboard.metric_total,CYAN),(self.dashboard.metric_yesterday,AMBER),
-                (self.dashboard.metric_growth,GREEN),(self.dashboard.metric_post,AMBER),(self.dashboard.metric_alerts,RED)):
-                card.icon_label.setPixmap(ui_icon(card.kind,color).pixmap(28,28))
             self._update_header_icons(sum(self.store.unread_totals()) if hasattr(self,"store") else 0)
             if refresh:self.refresh_all()
         for avatar in self.findChildren(AvatarWidget):avatar.update()
 
 
     def apply_style(self):
-        p=THEME_PRESETS.get(getattr(self,"theme_name","蓝橙曜石"),THEME_PRESETS["蓝橙曜石"])
+        p=THEME_PRESETS.get(getattr(self,"theme_name","云白"),THEME_PRESETS["云白"])
         field=p["input"];hover=p["hover"];soft=p["soft"];light=bool(p.get("light"))
-        status_ok_bg="#E4F4ED" if light else "#103D39"
-        status_ok_border="#B8DCCF" if light else "#24584E"
-        status_alert_bg="#FBE7EA" if light else "#422438"
-        status_alert_border="#E8B6BE" if light else "#613447"
-        status_warn_bg="#FBF0DD" if light else "#3B3028"
-        status_warn_border="#E5C893" if light else "#665039"
-        danger_bg="#F9E5E8" if light else "#3B2333"
-        danger_border="#E3B4BC" if light else "#603A4D"
-        table_selection="#DCE4F6" if light else "#263D63"
-        disabled_text="#A09184" if light else "#667C95"
+        accent2=p.get("accent2",ACCENT);pill=p.get("pill",ACCENT);pill_hover=p.get("pill_hover",ACCENT)
+        status_ok_bg="#E8F5EC" if light else "#17301F"
+        status_ok_border="#BFE3C9" if light else "#2C4A34"
+        status_alert_bg="#FDECEC" if light else "#331B1B"
+        status_alert_border="#F2C4C4" if light else "#5A2E2E"
+        status_warn_bg="#FDF0E0" if light else "#33270F"
+        status_warn_border="#F0D9AE" if light else "#5A4520"
+        danger_bg="#FDECEC" if light else "#331B1B"
+        danger_border="#F2C4C4" if light else "#5A2E2E"
+        table_selection="#EAF0FE" if light else "#1E2A44"
+        disabled_text="#A3A3A3" if light else "#667C95"
         self.setStyleSheet(f"""
-            QMainWindow, QWidget#Root, QStackedWidget#MainStack, QWidget#DashboardPage,
-            QWidget#ManagerPage, QWidget#AlertsPage {{ background:{BG}; color:{TEXT}; }}
+            QMainWindow, QWidget#Root {{ background:transparent; color:{TEXT}; }}
             QWidget {{ color:{TEXT}; font-size:13px; }}
             QLabel {{ background:transparent; border:0; }}
             QDialog, QMessageBox {{ background:{BG}; }}
-            QFrame#HeaderBar {{ background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {SIDEBAR},stop:1 {BG}); border-bottom:1px solid {BORDER}; }}
-            QLabel#BrandName {{ font-size:21px;font-weight:800;color:{TEXT}; }}
-            QLabel#BrandSub {{ font-size:11px;color:{MUTED};margin-left:10px; }}
+            QWidget#Sidebar {{ background:{SIDEBAR}; border-right:1px solid {BORDER};
+                border-top-left-radius:19px; border-bottom-left-radius:19px; }}
+            QWidget#Sidebar[flat='true'] {{ border-radius:0px; }}
+            QFrame#BrandRow {{ background:transparent; }}
+            QLabel#BrandName {{ font-size:16px;font-weight:750;color:{TEXT}; }}
+            QLabel#BrandSub {{ font-size:12px;color:{MUTED}; }}
+            QLabel#NavLabel {{ color:{MUTED};font-size:12px;font-weight:700;padding:8px 10px 4px; }}
+            QPushButton#SideNav {{ background:transparent;border:0;border-radius:10px;
+                padding:0 10px;font-size:14px;font-weight:600;text-align:left;color:{TEXT}; }}
+            QPushButton#SideNav:hover {{ background:{hover}; }}
+            QPushButton#SideNav[active='true'] {{ background:{soft};color:{ACCENT};font-weight:700; }}
+            QFrame#ConnCard {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:14px; }}
+            QFrame#ConnCard:hover {{ border-color:{ACCENT}; }}
+            QLabel#ConnTitle {{ font-size:13px;font-weight:700;color:{TEXT}; }}
+            QLabel#SideFoot {{ color:{MUTED};font-size:11px;padding:10px 8px 0; }}
+            QFrame#TopBar {{ background:{BG};border-bottom:1px solid {BORDER};border-top-right-radius:19px; }}
+            QFrame#TopBar[flat='true'] {{ border-radius:0px; }}
+            QLabel#PageTitleTop {{ font-size:21px;font-weight:800;color:{TEXT}; }}
+            QFrame#StatusBar {{ background:{BG};border-top:1px solid {BORDER};border-bottom-right-radius:19px; }}
+            QFrame#StatusBar[flat='true'] {{ border-radius:0px; }}
             QFrame#HeaderDivider {{ background:{BORDER}; }}
             QPushButton#TopIconButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:0; }}
-            QPushButton#HeaderAction {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:0 10px;font-size:12px;font-weight:650; }}
-            QPushButton#HeaderAction:hover {{ background:{hover};border-color:{ACCENT}; }}
-            QPushButton#HeaderAction[active='true'] {{ background:{soft};border-color:{ACCENT}; }}
-            QPushButton#HomePill {{ background:#4443AD;border:1px solid #8C88FA;border-radius:20px;
-                color:#FFFFFF;padding:0 10px;font-size:13px;font-weight:750; }}
-            QPushButton#HomePill[active='true'] {{ background:#5A55D6;border-color:#AAA6FF; }}
-            QPushButton#HomePill:hover {{ background:#655FE4; }}
-            QLabel#QuickTimingLabel {{ color:{MUTED};font-size:11px; }}
-            QSpinBox#QuickTimingSpin {{ padding:4px 3px;font-size:12px;font-weight:650; }}
-            QPushButton#ThemePill {{ background:{soft};border:1px solid {ACCENT};border-radius:20px;padding:0 12px;font-size:12px;font-weight:750; }}
-            QPushButton#ThemePill:hover {{ background:{hover}; }}
+            QPushButton#TopIconButton:hover {{ background:{hover};border-color:{BORDER}; }}
+            QPushButton#TopIconButton[active='true'] {{ background:{soft};border-color:{ACCENT}; }}
             QPushButton#UpdateButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:0; }}
             QPushButton#UpdateButton:hover {{ background:{hover};border-color:{ACCENT}; }}
             QPushButton#UpdateButton[hasUpdate='true'] {{ background:{status_warn_bg};border:1px solid {AMBER}; }}
             QProgressBar {{ border:1px solid {BORDER};border-radius:6px;background:{PANEL_2};height:18px;text-align:center; }}
             QProgressBar::chunk {{ background:{ACCENT};border-radius:5px; }}
-            QPushButton#TopIconButton:hover {{ background:{hover};border-color:{BORDER}; }}
-            QPushButton#TopIconButton[active='true'] {{ background:{soft};border-color:{ACCENT}; }}
             QPushButton#CloseWindowButton {{ background:transparent;border:0;border-radius:8px;padding:0; }}
             QPushButton#CloseWindowButton:hover {{ background:#913447; }}
             QLabel#NotificationBadge {{ background:{RED};color:#FFFFFF;border-radius:8px;font-size:9px;font-weight:800; }}
             QLabel#PageTitle {{ font-size:24px;font-weight:800;color:{TEXT}; }}
             QLabel#DialogTitle {{ font-size:23px;font-weight:800; }}
             QLabel#SectionTitle {{ font-size:17px;font-weight:750; }}
-            QLabel#SettingsTitle, QLabel#PanelTitle {{ font-size:14px;font-weight:750; }}
-            QLabel#Subtitle, QLabel#SmallMuted, QLabel#FooterText {{ color:{MUTED};font-size:11px; }}
+            QLabel#SettingsTitle, QLabel#PanelTitle {{ font-size:15px;font-weight:750; }}
+            QLabel#Subtitle, QLabel#SmallMuted, QLabel#FooterText {{ color:{MUTED};font-size:12px; }}
             QLabel#Eyebrow {{ color:{CYAN};font-size:11px;font-weight:700; }}
             QLabel#RunBadge {{ color:{TEXT};font-size:13px;font-weight:650;padding:7px 8px; }}
-            QFrame#TimingBar {{ background:{PANEL};border:1px solid {BORDER};border-radius:10px; }}
-            QFrame#MetricCard, QFrame#PageCard, QFrame#SettingsCard, QFrame#EmptyState, QFrame#DetailStat {{
-                background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {PANEL_2},stop:0.55 {PANEL},stop:1 {PANEL});
-                border:1px solid {BORDER};border-radius:15px;
+            QFrame#MetricCard, QFrame#PageCard, QFrame#SettingsCard, QFrame#EmptyState, QFrame#DetailStat, QFrame#RailCard {{
+                background:{PANEL};border:1px solid {BORDER};border-radius:16px;
             }}
-            QFrame#MetricCard[tone='pages'] {{ border-top:2px solid {ACCENT}; }}
-            QFrame#MetricCard[tone='people'] {{ border-top:2px solid {CYAN}; }}
-            QFrame#MetricCard[tone='history'] {{ border-top:2px solid {AMBER}; }}
-            QFrame#MetricCard[tone='trend'] {{ border-top:2px solid {GREEN}; }}
-            QFrame#MetricCard[tone='clock'] {{ border-top:2px solid {AMBER}; }}
-            QFrame#MetricCard[tone='bell'] {{ border-top:2px solid {RED}; }}
             QFrame#PageCard:hover {{ border:1px solid {ACCENT}; }}
-            QFrame#MonitorPanel {{ background:{PANEL};border:1px solid {BORDER};border-radius:14px; }}
             QFrame#AlertRow {{ background:transparent;border-left:2px solid {BORDER}; }}
             QLabel#AlertRowTitle {{ color:{AMBER};font-size:12px;font-weight:650; }}
-            QLabel#MetricIcon {{ background:{PANEL_2};border-radius:13px; }}
-            QLabel#MetricLabel {{ color:{TEXT};font-size:15px;font-weight:800; }}
-            QLabel#MetricValue {{ color:{TEXT};font-weight:800; }}
-            QLabel#CardTitle {{ font-size:14px;font-weight:750;color:{TEXT}; }}
-            QLabel#CardId {{ color:{MUTED};font-size:11px; }}
+            QLabel#MetricLabel {{ color:{MUTED};font-size:13px;font-weight:600; }}
+            QLabel#MetricValue {{ color:{TEXT};font-size:32px;font-weight:750; }}
+            QPushButton#MetricBadge {{ background:{RED};color:#FFFFFF;border:0;border-radius:10px;font-size:11px;font-weight:800;padding:0; }}
+            QLabel#ChipBadge {{ background:{RED};color:#FFFFFF;border-radius:8px;font-size:10px;font-weight:800;padding:0; }}
+            QLabel#CardTitle {{ font-size:16px;font-weight:750;color:{TEXT}; }}
+            QLabel#CardId {{ color:{MUTED};font-size:13px; }}
             QLabel#BigNumber {{ color:{TEXT};font-weight:800; }}
             QLabel#GrowthUp {{ color:{GREEN};font-weight:750; }}
             QLabel#GrowthDown {{ color:{RED};font-weight:750; }}
             QLabel#GrowthSoon {{ color:{AMBER};font-weight:700; }}
             QLabel#GrowthFlat {{ color:{MUTED};font-weight:650; }}
-            QLabel#StatusBadge {{ background:{status_ok_bg};color:{GREEN};border:1px solid {status_ok_border};border-radius:7px;
-                padding:3px 7px;font-size:11px;font-weight:700; }}
+            QLabel#StatusBadge {{ background:{status_ok_bg};color:{GREEN};border:1px solid {status_ok_border};border-radius:12px;
+                padding:4px 11px;font-size:13px;font-weight:700; }}
             QLabel#StatusBadge[state='alert'] {{ background:{status_alert_bg};color:{RED};border-color:{status_alert_border}; }}
             QLabel#StatusBadge[state='warning'] {{ background:{status_warn_bg};color:{AMBER};border-color:{status_warn_border}; }}
             QLabel#StatusBadge[state='off'] {{ background:{PANEL_2};color:{MUTED};border-color:{BORDER}; }}
+            QLabel#UpdatePill {{ background:{status_warn_bg};color:{AMBER};border:1px solid {status_warn_border};border-radius:11px;padding:3px 9px;font-size:12px;font-weight:700; }}
             QLabel#DetailNumber {{ color:{TEXT};font-size:20px;font-weight:800; }}
             QLabel#PathLabel {{ color:{CYAN};font-size:12px; }}
             QLabel#InfoBox {{ background:{PANEL_2};border-radius:10px;padding:12px;color:{MUTED}; }}
-            QPushButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:9px;padding:8px 13px;
+            QPushButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:8px 13px;
                 color:{TEXT};font-weight:650; }}
             QPushButton:hover {{ background:{hover};border-color:{ACCENT}; }}
             QPushButton:disabled {{ color:{disabled_text};border-color:{BORDER};background:{PANEL}; }}
             QPushButton#PrimaryButton {{ background:{ACCENT};border:1px solid {ACCENT};color:#FFFFFF; }}
-            QPushButton#PrimaryButton:hover {{ border-color:#A4A0FF; }}
+            QPushButton#PrimaryButton:hover {{ background:{accent2};border-color:{accent2}; }}
+            QToolButton#PrimaryButton {{ background:{ACCENT};border:1px solid {ACCENT};border-radius:10px;padding:8px 13px;color:#FFFFFF;font-weight:650; }}
+            QToolButton#PrimaryButton:hover {{ background:{accent2};border-color:{accent2}; }}
+            QToolButton#PrimaryButton:disabled {{ color:{disabled_text};border-color:{BORDER};background:{PANEL}; }}
             QPushButton#AutoButton {{ background:{PANEL_2};border:1px solid {BORDER}; }}
             QPushButton#AutoButton[autoEnabled='true'] {{ background:{soft};border-color:{ACCENT}; }}
             QPushButton#DangerButton {{ background:{danger_bg};color:{RED};border:1px solid {danger_border}; }}
-            QPushButton#LinkButton {{ background:transparent;border:0;color:{CYAN};padding:4px 8px;font-size:11px; }}
+            QPushButton#LinkButton {{ background:transparent;border:0;color:{ACCENT};padding:4px 8px;font-size:12px;font-weight:600; }}
+            QPushButton#FilterChip {{ background:{PANEL};border:1px solid {BORDER};border-radius:15px;padding:0 13px;font-size:13px;font-weight:600; }}
+            QPushButton#FilterChip:hover {{ border-color:{ACCENT}; }}
+            QPushButton#FilterChip[active='true'] {{ background:{ACCENT};color:#FFFFFF;border:2px solid {ACCENT};font-weight:750; }}
             QPushButton#NoticeModeButton, QPushButton#NoticeHistoryButton {{ background:{PANEL_2};border:1px solid {BORDER};padding:7px 12px; }}
             QPushButton#NoticeModeButton[active='true'] {{ background:{soft};border-color:{ACCENT};color:{TEXT}; }}
             QPushButton#NoticeHistoryButton {{ color:{MUTED}; }}
             QPushButton#NoticeHistoryButton[active='true'] {{ background:{soft};border-color:{BORDER};color:{TEXT}; }}
-            QLabel#NoticeSummary {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:9px 12px;color:{TEXT};font-weight:650; }}
+            QLabel#NoticeSummary {{ color:{TEXT};font-weight:650; }}
+            QLabel#EmptyHint {{ color:{MUTED};font-size:14px; }}
+            QFrame#OptionCard {{ background:{PANEL};border:1px solid {BORDER};border-radius:14px; }}
+            QFrame#OptionCard[selected='true'] {{ border:2px solid {ACCENT};background:{soft}; }}
+            QLabel#OptionCardTitle {{ font-size:14px;font-weight:700;color:{TEXT}; }}
             QLineEdit, QPlainTextEdit, QSpinBox, QComboBox {{
-                background:{field};border:1px solid {BORDER};border-radius:8px;
+                background:{field};border:1px solid {BORDER};border-radius:10px;
                 padding:7px 9px;color:{TEXT};selection-background-color:{ACCENT};
             }}
             QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus {{ border-color:{ACCENT}; }}
             QComboBox QAbstractItemView {{ background:{PANEL};border:1px solid {BORDER};color:{TEXT};selection-background-color:{soft}; }}
             QCheckBox {{ spacing:8px;color:{TEXT}; }}
             QCheckBox::indicator {{ width:17px;height:17px;border:1px solid {BORDER};border-radius:4px;background:{field}; }}
-            QCheckBox::indicator:checked {{ background:{ACCENT};border:2px solid #ABA8FF; }}
+            QCheckBox::indicator:checked {{ background:{ACCENT};border:1px solid {ACCENT}; }}
             QScrollArea {{ background:transparent;border:0; }}
             QWidget#CardCanvas {{ background:transparent; }}
             QScrollBar:vertical {{ background:transparent;width:9px;margin:0; }}
@@ -7412,18 +8560,26 @@ class MainWindow(QMainWindow):
             QScrollBar::handle:horizontal {{ background:{BORDER};border-radius:4px;min-width:25px; }}
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width:0; }}
             QTableWidget {{ background:{PANEL};alternate-background-color:{PANEL_2};border:1px solid {BORDER};
-                border-radius:10px;gridline-color:transparent;selection-background-color:{table_selection};selection-color:{TEXT}; }}
-            QTableWidget::item {{ border-bottom:1px solid {BORDER};padding:6px; }}
+                border-radius:16px;gridline-color:transparent;selection-background-color:{table_selection};selection-color:{TEXT}; }}
+            QTableWidget::item {{ border-bottom:1px solid {PANEL_2};padding:6px; }}
             QHeaderView::section {{ background:{PANEL_2};border:0;border-bottom:1px solid {BORDER};color:{MUTED};padding:10px 6px;font-size:12px;font-weight:700; }}
             QTableWidget#IdManagerTable {{ font-size:12px; }}
-            QTabWidget::pane {{ border:1px solid {BORDER};border-radius:10px;background:{BG}; }}
+            QTabWidget::pane {{ border:1px solid {BORDER};border-radius:16px;background:{BG}; }}
             QTabBar::tab {{ background:{PANEL_2};border:1px solid {BORDER};color:{MUTED};padding:10px 17px;
                 border-top-left-radius:8px;border-top-right-radius:8px;margin-right:5px; }}
             QTabBar::tab:selected {{ background:{soft};color:{TEXT};border-bottom-color:{ACCENT}; }}
-            QMenu {{ background:{PANEL};border:1px solid {BORDER};padding:5px;color:{TEXT}; }}
-            QMenu::item {{ padding:8px 18px;border-radius:5px; }}
+            QMenu {{ background:{PANEL};border:1px solid {BORDER};padding:6px;color:{TEXT};border-radius:12px; }}
+            QMenu::item {{ padding:9px 20px;border-radius:8px;font-size:13.5px;font-weight:600; }}
             QMenu::item:selected {{ background:{soft}; }}
-            QLabel#ConnectorDot {{ border-radius:6px; }}
+            QMenu::indicator {{ width:16px;height:16px; }}
+            QPushButton#MenuButton {{ background:{PANEL};border:1px solid {BORDER};border-radius:10px;
+                padding:0 13px;font-size:13.5px;font-weight:650;color:{TEXT};text-align:left; }}
+            QPushButton#MenuButton:hover {{ border-color:{ACCENT};background:{soft}; }}
+            QFrame#SegmentedChoice {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:11px; }}
+            QPushButton#SegmentedButton {{ background:transparent;border:0;border-radius:8px;
+                padding:7px 14px;font-size:13.5px;font-weight:650;color:{MUTED}; }}
+            QPushButton#SegmentedButton:checked {{ background:{PANEL};border:1px solid {BORDER};color:{TEXT}; }}
+            QLabel#ConnectorDot {{ border-radius:5px; }}
             QFrame#MonitorAlertPopup {{ background:{PANEL};border:2px solid {AMBER};border-radius:18px; }}
             QLabel#MonitorAlertHeadline {{ font-size:18px;font-weight:850;color:{TEXT}; }}
             QLabel#MonitorAlertSymbol {{ background:{AMBER};color:#16110A;border-radius:17px;font-size:22px;font-weight:900; }}
@@ -7438,13 +8594,6 @@ class MainWindow(QMainWindow):
             QSizeGrip {{ background:transparent; }}
         """)
 
-
-    def show_theme_menu(self):
-        menu=QMenu(self)
-        for name in THEME_PRESETS:
-            action=menu.addAction(name);action.setCheckable(True);action.setChecked(name==self.theme_name)
-            action.triggered.connect(lambda checked=False,n=name:self.apply_theme(n))
-        menu.exec(self.theme_pill.mapToGlobal(QPoint(0,self.theme_pill.height()+3)))
 
     def restore_ui_state(self):
         self.alerts.filter.blockSignals(True)
@@ -7548,6 +8697,8 @@ class MainWindow(QMainWindow):
             self.set_update_attention(True,(result.get("info") or {}).get("version",""))
             info=dict(result["info"]);info["path"]=result["path"]
             save_json_atomic(DATA_DIR/"updates/pending.json",info)
+            if self._try_silent_install(result["path"],info):
+                return
             dlg=self._show_update_dialog(info);dlg.ready(result["path"])
             self.dashboard.status.setText("新版已下载并校验，可选择更新或稍后安装")
         elif status in ("error","cancelled"):
@@ -7589,6 +8740,24 @@ class MainWindow(QMainWindow):
         if self._update_info:
             self.settings.setValue("update/snooze_version",self._update_info.get("version",""))
             self.settings.setValue("update/snooze_until",time.time()+6*3600);self.settings.sync()
+
+    def _try_silent_install(self,path,info):
+        """Hash-verified silent install: only when idle and the user left auto-install on."""
+        if not is_true(self.settings.value("update/auto_install",1),True):return False
+        if self.worker is not None or self.login_thread is not None:return False
+        try:
+            plan=(info.get("asset") or {})
+            validate_staged_update(plan,path,DATA_DIR/"updates")
+            allowed,reason=signed_install_available(plan)
+            if not allowed:return False
+            self._install_command=prepare_install_helper(plan,path,DATA_DIR/"updates")
+            if self._update_dialog:self._update_dialog.close()
+            self.dashboard.status.setText("新版已校验，正在退出并自动安装…")
+            log_exception("静默安装已启动：新版 "+str(info.get("version",""))+" 已通过 SHA-256 校验。")
+            self.exit_application()
+            return True
+        except Exception as exc:
+            log_exception("静默安装未启动："+str(exc));return False
 
     def _install_update(self):
         if not self._update_info or not self._update_dialog or not self._update_dialog.ready_path:return
