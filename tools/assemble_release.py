@@ -40,13 +40,10 @@ def locate(name):
     return m[0]
 
 
-def bundle(path,installer,icon,plugin_files):
+def bundle(path,installer,plugin_files):
+    # ZIP 内只有两样：当前系统的安装文件 + 浏览器插件。不放 README，不放图标。
     with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as zf:
         zf.write(installer,installer.name)
-        if README.exists():
-            zf.write(README,README.name)
-        if icon.exists():
-            zf.write(icon,icon.name)
         for src,arc in plugin_files:
             zf.write(src,arc)
 
@@ -90,12 +87,12 @@ def main():
     plugins=plugin_files()
 
     bundles=[
-        (OUT/f'ProfessionalMonitorTool-{ver}-windows-x64.zip',win,ROOT/'PageOperationsMonitor.ico'),
-        (OUT/f'ProfessionalMonitorTool-{ver}-macos-arm64.zip',arm,ROOT/'PageOperationsMonitor.icns'),
-        (OUT/f'ProfessionalMonitorTool-{ver}-macos-x64.zip',x64,ROOT/'PageOperationsMonitor.icns'),
+        (OUT/f'ProfessionalMonitorTool-{ver}-windows-x64.zip',win),
+        (OUT/f'ProfessionalMonitorTool-{ver}-macos-arm64.zip',arm),
+        (OUT/f'ProfessionalMonitorTool-{ver}-macos-x64.zip',x64),
     ]
 
-    for out,installer,icon in bundles:bundle(out,installer,icon,plugins)
+    for out,installer in bundles:bundle(out,installer,plugins)
 
     (META/'RELEASE_NOTES.md').write_text(notes(ver),encoding='utf-8')
 

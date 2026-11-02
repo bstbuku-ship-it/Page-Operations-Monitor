@@ -41,8 +41,8 @@ import base64
 import shlex
 
 APP_TITLE = "专业监控工具"
-APP_VERSION = "1.6.0"
-APP_BUILD = "professional-portable-deployer-ui-v160-20261102"
+APP_VERSION = "1.6.1"
+APP_BUILD = "professional-portable-deployer-ui-v161-20261102-fix2"
 DEFAULT_INTERVAL_MINUTES = 120
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -3020,6 +3020,262 @@ def _extract_platform_bundle_installer(plan,path,updates_dir):
         except OSError:pass
     return {"name":expected,"size":target.stat().st_size,"sha256":h.hexdigest(),"installer":kind,
             "platform":key,"version":version,"source_mode":False},target
+
+
+
+# ---------------- 卸载：设置页入口 + 注册表 --uninstall 入口 ----------------
+# 卸载流程（简单化，不再有单独的维护程序）：
+#   1. 确认对话框（可勾选是否一并删除监控数据，默认不删）；
+#   2. 程序退出后，后台 PowerShell 脚本删除程序目录、系统注册与桌面快捷方式；
+#   3. 最后弹出一次完成确认。静默卸载（--silent）全程无界面。
+UNINSTALL_REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\ProfessionalMonitorTool"
+
+
+def _ps_quote(value: str) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def uninstall_target_info(target=None):
+    """Return (target_dir, mode, data_dir) for an owned install, or None.
+
+    mode is 'portable' when the install dir carries portable.mode or a
+    portable install marker, else 'standard'. data_dir mirrors app_data_dir()
+    for that install. Source runs (not frozen) have no install to remove.
+    """
+    if target is None:
+        if not getattr(sys, "frozen", False):
+            return None
+        try:
+            target = Path(sys.executable).resolve().parent
+        except OSError:
+            return None
+    target = Path(target)
+    marker = None
+    try:
+        marker = json.loads((target / ".professional-monitor-install.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        marker = None
+    mode = (marker or {}).get("mode")
+    if mode not in ("standard", "portable"):
+        mode = "portable" if (target / "portable.mode").is_file() else None
+    if mode is None:
+        # Last resort: registry InstallLocation match (old installs without a marker).
+        if os.name != "nt":
+            return None
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_REG_PATH, 0, winreg.KEY_READ) as key:
+                loc = winreg.QueryValueEx(key, "InstallLocation")[0]
+            if Path(loc).resolve() != target.resolve():
+                return None
+        except OSError:
+            return None
+        mode = "standard"
+    if not (target / "ProfessionalMonitorTool.exe").is_file():
+        return None
+    override = os.environ.get("FBPM_DATA_DIR", "").strip()
+    if override:
+        data_dir = Path(override).expanduser()
+    elif mode == "portable":
+        data_dir = target / "data"
+    elif os.name == "nt":
+        data_dir = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "FBGrowthRadar"
+    else:
+        data_dir = Path.home() / ".fb_growth_radar"
+    return target, mode, data_dir
+
+
+def _uninstall_backup_candidate(target: Path):
+    """Non-colliding sibling backup dir for portable data (mirrors the deployer)."""
+    candidate = target.parent / (target.name + "-数据备份")
+    if candidate.exists():
+        candidate = target.parent / (target.name + "-数据备份-" + time.strftime("%Y%m%d-%H%M%S"))
+    return candidate
+
+
+_PS_UNINSTALL_TEMPLATE = r"""
+$ErrorActionPreference = 'SilentlyContinue'
+$waitPids = @(__PIDS__)
+$deadline = (Get-Date).AddSeconds(20)
+while ((Get-Date) -lt $deadline) {
+  $alive = $false
+  foreach ($p in $waitPids) { if (Get-Process -Id $p -ErrorAction SilentlyContinue) { $alive = $true } }
+  if (-not $alive) { break }
+  Start-Sleep -Milliseconds 500
+}
+foreach ($p in $waitPids) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Seconds 1
+$target = __TARGET__
+$dataDir = __DATADIR__
+if (__KEEP_BACKUP__) {
+  $backup = __BACKUP__
+  if (Test-Path -LiteralPath $dataDir) { Move-Item -LiteralPath $dataDir -Destination $backup -Force }
+}
+try {
+  $loc = (Get-ItemProperty __REGKEY__ -ErrorAction Stop).InstallLocation
+  if ($loc -and $loc -eq $target) { Remove-Item __REGKEY__ -Recurse -Force }
+} catch {}
+$desktop = [Environment]::GetFolderPath('Desktop')
+Remove-Item (Join-Path $desktop __SHORTCUT__) -Force
+for ($i = 0; $i -lt 8; $i++) {
+  try { Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop; break } catch { Start-Sleep -Milliseconds 700 }
+}
+if (__DELETE_DATA__) {
+  if (Test-Path -LiteralPath $dataDir) { Remove-Item -LiteralPath $dataDir -Recurse -Force }
+}
+if (__SHOW_FINAL__) {
+  Add-Type -AssemblyName System.Windows.Forms
+  [System.Windows.Forms.MessageBox]::Show(__FINAL_TEXT__, __FINAL_TITLE__)
+}
+try { Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force } catch {}
+"""
+
+
+def build_uninstall_script(target, mode, data_dir, delete_data, show_final, wait_pids):
+    """Pure builder: returns the PowerShell uninstall script text."""
+    target = Path(target)
+    data_dir = Path(data_dir)
+    keep_backup = (mode == "portable" and not delete_data and data_dir.is_dir())
+    backup = _uninstall_backup_candidate(target) if keep_backup else target.parent / (target.name + "-数据备份")
+    if show_final:
+        if delete_data:
+            final_text = "专业监控工具已卸载完成，监控数据已一并删除。"
+        elif mode == "portable":
+            final_text = "专业监控工具已卸载完成，监控数据已移到旁边的备份目录。"
+        else:
+            final_text = "专业监控工具已卸载完成，监控数据保留在系统本地目录。"
+    else:
+        final_text = ""
+    script = _PS_UNINSTALL_TEMPLATE
+    script = script.replace("__PIDS__", ",".join(str(int(p)) for p in wait_pids))
+    script = script.replace("__TARGET__", _ps_quote(str(target)))
+    script = script.replace("__DATADIR__", _ps_quote(str(data_dir)))
+    script = script.replace("__KEEP_BACKUP__", "$true" if keep_backup else "$false")
+    script = script.replace("__BACKUP__", _ps_quote(str(backup)))
+    script = script.replace("__REGKEY__", _ps_quote("HKCU:\\" + UNINSTALL_REG_PATH))
+    script = script.replace("__SHORTCUT__", _ps_quote(APP_TITLE + ".lnk"))
+    script = script.replace("__DELETE_DATA__", "$true" if delete_data else "$false")
+    script = script.replace("__SHOW_FINAL__", "$true" if show_final else "$false")
+    script = script.replace("__FINAL_TEXT__", _ps_quote(final_text))
+    script = script.replace("__FINAL_TITLE__", _ps_quote(APP_TITLE))
+    return script
+
+
+def start_background_uninstall(script_text):
+    """Write the script to %TEMP% and launch it detached (no console window);
+    it runs after this process exits and deletes the install itself."""
+    if os.name != "nt":
+        raise RuntimeError("卸载仅支持 Windows 安装版。")
+    import tempfile
+    path = Path(tempfile.gettempdir()) / ("pmt-uninstall-%d.ps1" % os.getpid())
+    path.write_text(script_text, encoding="utf-8-sig")
+    powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+    subprocess.Popen([str(powershell), "-NoProfile", "-NonInteractive",
+                      "-ExecutionPolicy", "Bypass", "-File", str(path)],
+                     creationflags=flags)
+    return path
+
+
+def _read_running_instance_pid():
+    """PID of the currently running instance from its descriptor, if any."""
+    try:
+        guard = SingleInstanceGuard()
+        data = _unprotect_local_secret(json.loads((guard.directory / "desktop.json").read_text(encoding="utf-8")))
+        return int(data["pid"])
+    except Exception:
+        return None
+
+
+def confirm_uninstall(parent, target, mode, data_dir):
+    """Return (accepted, delete_data). One checkbox only; data kept by default."""
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("卸载" + APP_TITLE)
+    dlg.resize(520, 300)
+    root = QVBoxLayout(dlg)
+    root.setContentsMargins(22, 20, 22, 20)
+    root.setSpacing(12)
+    title = QLabel("确定卸载" + APP_TITLE + "吗？")
+    title.setObjectName("DialogTitle")
+    root.addWidget(title)
+    if mode == "portable":
+        detail = ("程序将关闭，并在后台删除整个程序文件夹。\n程序目录：" + str(target)
+                  + "\n文件夹内的监控数据会移到旁边的备份目录，不直接删除。")
+        box_text = "同时删除文件夹内的监控数据（不备份）"
+    else:
+        detail = ("程序将关闭，并在后台删除程序文件、系统注册与桌面快捷方式。\n程序目录：" + str(target)
+                  + "\n监控数据保留在系统本地目录，不会自动删除。")
+        box_text = "同时删除监控数据（位于系统本地目录）"
+    info = QLabel(detail)
+    info.setObjectName("SmallMuted")
+    info.setWordWrap(True)
+    root.addWidget(info)
+    var = QCheckBox(box_text)
+    var.setChecked(False)
+    root.addWidget(var)
+    root.addStretch(1)
+    btns = QHBoxLayout()
+    btns.addStretch(1)
+    cancel = QPushButton("取消")
+    cancel.clicked.connect(dlg.reject)
+    btns.addWidget(cancel)
+    ok = QPushButton("确认卸载")
+    ok.setObjectName("DangerButton")
+    ok.clicked.connect(dlg.accept)
+    btns.addWidget(ok)
+    root.addLayout(btns)
+    if dlg.exec() == QDialog.DialogCode.Accepted:
+        return True, bool(var.isChecked())
+    return False, False
+
+
+def _run_uninstall_cli(app, silent, target_arg):
+    """--uninstall entry point. Runs before the single-instance guard so a
+    second process (from Settings/Geek) can uninstall while the app runs."""
+    if os.name != "nt":
+        if not silent:
+            QMessageBox.warning(None, "无法卸载", "卸载仅支持 Windows 安装版。")
+        return 0
+    info = uninstall_target_info(Path(target_arg) if target_arg else None)
+    if info is None:
+        if not silent:
+            QMessageBox.warning(None, "无法卸载", "找不到已登记的安装目录，已停止。")
+        return 0
+    target, mode, data_dir = info
+    delete_data = False
+    if not silent:
+        ok, delete_data = confirm_uninstall(None, target, mode, data_dir)
+        if not ok:
+            return 0
+    wait_pids = [os.getpid()]
+    run_pid = _read_running_instance_pid()
+    if run_pid and run_pid != os.getpid():
+        wait_pids.append(run_pid)
+    script = build_uninstall_script(target, mode, data_dir, delete_data, not silent, wait_pids)
+    try:
+        start_background_uninstall(script)
+    except Exception as exc:
+        if not silent:
+            QMessageBox.warning(None, "卸载失败", str(exc))
+        return 1
+    return 0
+
+
+
+def log_window_event(kind, detail=""):
+    """Best-effort diagnostic for the flashing-window investigation: one
+    timestamped line per main-window show/hide/state/activation event in
+    DATA_DIR/window.log (last 200 lines). Never raises, never shows UI."""
+    try:
+        path = DATA_DIR / "window.log"
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            lines = []
+        lines.append("%s | %s%s" % (now_iso(), kind, (" | " + str(detail)) if detail else ""))
+        path.write_text("\n".join(lines[-200:]) + "\n", encoding="utf-8")
+    except Exception:
+        pass
 
 
 def prepare_install_helper(plan,path,updates_dir):
@@ -6172,8 +6428,10 @@ class PageCard(QFrame):
             diag_parts.append("诊断："+str(row.get("diagnosis_detail"))[:110])
         diag_text=(row.get("diagnosis_detail") or PAGE_UNAVAILABLE_DETAIL) if row.get("diagnosis_code")=="page_unavailable" else " · ".join(diag_parts)
         diag_label=ElideLabel(diag_text);diag_label.setObjectName("SmallMuted");diag_label.setMinimumHeight(18)
-        diag_label.setToolTip(html.escape(diag_text));diag_label.setVisible(bool(diag_text))
-        layout.addWidget(diag_label)
+        diag_label.setToolTip(html.escape(diag_text))
+        # Parent first, show second: setVisible(True) on a still-parentless
+        # label opens it as its own tiny top-level window (the title-bar-only flash).
+        layout.addWidget(diag_label);diag_label.setVisible(bool(diag_text))
         layout.addStretch(1)
 
         footer=QHBoxLayout();footer.setSpacing(4)
@@ -7030,6 +7288,7 @@ class SettingsPage(QWidget):
     backup_requested=pyqtSignal()
     data_dir_requested=pyqtSignal()
     cleanup_requested=pyqtSignal()
+    uninstall_requested=pyqtSignal()
     theme_requested=pyqtSignal(str)
 
     def __init__(self,store:Store,settings:QSettings):
@@ -7208,7 +7467,19 @@ class SettingsPage(QWidget):
         clean_btn.clicked.connect(self.cleanup_requested.emit);maintenance_row.addWidget(clean_btn)
         self.cleanup_status=QLabel("扫描后会先显示可清理内容和预计释放空间，再由你确认。")
         self.cleanup_status.setObjectName("SmallMuted");self.cleanup_status.setWordWrap(True)
-        maintenance_row.addWidget(self.cleanup_status,1);ml.addLayout(maintenance_row);data_layout.addWidget(maintenance);data_layout.addStretch()
+        maintenance_row.addWidget(self.cleanup_status,1);ml.addLayout(maintenance_row);data_layout.addWidget(maintenance)
+        uninstall_sec,uil=self.section("卸载软件",
+            "关闭程序后在后台删除程序文件、系统注册与桌面快捷方式，最后弹出一次完成确认。监控数据默认保留。")
+        uninstall_row=QHBoxLayout();uninstall_row.setSpacing(10)
+        self.uninstall_btn=QPushButton("卸载软件…");self.uninstall_btn.setObjectName("DangerButton")
+        self.uninstall_btn.clicked.connect(self.uninstall_requested.emit);uninstall_row.addWidget(self.uninstall_btn)
+        self.uninstall_note=QLabel("仅 Windows 安装版可用。")
+        self.uninstall_note.setObjectName("SmallMuted");self.uninstall_note.setWordWrap(True)
+        uninstall_row.addWidget(self.uninstall_note,1);uil.addLayout(uninstall_row);data_layout.addWidget(uninstall_sec)
+        if os.name!="nt" or not getattr(sys,"frozen",False):
+            self.uninstall_btn.setEnabled(False)
+            self.uninstall_note.setText("仅 Windows 安装版可用（当前为源码运行）。")
+        data_layout.addStretch()
         self.save_note=QLabel("所有设置修改后自动保存，下次启动继续使用");self.save_note.setObjectName("SmallMuted")
         root.addWidget(self.save_note)
 
@@ -7448,7 +7719,7 @@ class MainWindow(QMainWindow):
             try:self.connector.start()
             except ConnectorError as exc:log_exception(str(exc))
         self._connector_dialog=None
-        self._pending_dialogs=set();self._pending_dismissed={}
+        self._pending_dialogs=set();self._pending_dismissed={};self._approval_dialog_open=False
         self._connector_timer=QTimer(self);self._connector_timer.setInterval(1000)
         self._connector_timer.timeout.connect(self.refresh_connector_summary)
         self.build_ui();self.apply_style();self.refresh_all();self.count_timer.start()
@@ -7456,7 +7727,7 @@ class MainWindow(QMainWindow):
         self.size_grip=QSizeGrip(self);self.size_grip.setFixedSize(16,16)
         self.size_grip.move(self.width()-18,self.height()-18);self.size_grip.raise_()
         self._create_resize_handles()
-        QTimer.singleShot(0,self.restore_ui_state)
+        self.restore_ui_state()
         if not os.environ.get("FBPM_TEST_MODE") and "--diagnose" not in sys.argv:
             QTimer.singleShot(1800,self.startup_update_check);self._updates_timer.start()
         if self.store.upgrade_backup:self.dashboard.status.setText("升级前安全备份已保存："+self.store.upgrade_backup)
@@ -7607,7 +7878,7 @@ class MainWindow(QMainWindow):
         settings.save_requested.connect(self.save_settings)
         settings.theme_requested.connect(self.apply_theme)
         settings.export_requested.connect(self.export_csv);settings.backup_requested.connect(self.backup_db)
-        settings.data_dir_requested.connect(self.move_data_directory);settings.cleanup_requested.connect(self.smart_cleanup_cache)
+        settings.data_dir_requested.connect(self.move_data_directory);settings.cleanup_requested.connect(self.smart_cleanup_cache);settings.uninstall_requested.connect(self.request_uninstall)
 
     def switch_page(self,index):
         if index not in (0,2,3,4):index=0
@@ -7615,7 +7886,9 @@ class MainWindow(QMainWindow):
         if not self._ui_restoring:
             self.settings.setValue("ui/page",index);self.settings.sync()
         for idx,button in self.page_nav_buttons.items():
-            button.setProperty("active",idx==index);button.style().unpolish(button);button.style().polish(button)
+            _new_active=(idx==index)
+            if button.property("active")!=_new_active:
+                button.setProperty("active",_new_active);button.style().unpolish(button);button.style().polish(button)
         if hasattr(self,"dashboard") and hasattr(self.dashboard,"action_bar"):
             self.dashboard.action_bar.setVisible(index==0)
         titles={0:("监控看板","粉丝与发帖监控 · 数据保存在本地"),2:("通知","未读通知与历史记录"),3:("ID管理","一次添加，多模块共用"),4:("设置","浏览器连接、巡检、提醒与数据")}
@@ -7640,10 +7913,19 @@ class MainWindow(QMainWindow):
 
     def _update_header_icons(self,unread=None):
         if not hasattr(self,"page_nav_buttons"):return
+        # Icon state changes rarely (unread count, connector presence, update
+        # availability), but this runs on every refresh and every 1s connector
+        # tick; redrawing every icon pixmap each time is pure repaint churn.
+        # Skip the whole pass when the visible state is unchanged.
+        try:_online=bool(self.selected_connectors())
+        except Exception:_online=False
+        _buttons=[b for b in self.findChildren(QPushButton) if b.property("iconKind")]
+        _sig=((unread or 0)>0,_online,bool(getattr(self,"_update_available",False)),len(_buttons))
+        if getattr(self,"_header_icon_signature",None)==_sig:return
+        self._header_icon_signature=_sig
         colors={"pages":CYAN,"browser":GREEN,"theme":ACCENT,"settings":CYAN,"update":MUTED}
-        for button in self.findChildren(QPushButton):
+        for button in _buttons:
             kind=button.property("iconKind")
-            if not kind:continue
             if button.objectName()=="HomePill":color="#FFFFFF"
             elif kind=="bell":color=RED if (unread or 0)>0 else CYAN
             elif kind=="browser":color=GREEN if (hasattr(self,"connector") and self.selected_connectors()) else RED
@@ -7669,7 +7951,12 @@ class MainWindow(QMainWindow):
         elif index==3:self.page_manager.refresh()
 
     def open_alert_notification(self,entry):
-        self.show();self.showNormal();self.raise_();self.activateWindow();self.switch_page(2)
+        log_window_event("open_alert_notification","visible=%s minimized=%s"%(
+            self.isVisible(),self.isMinimized()))
+        if not self.isVisible() or self.isMinimized():
+            if self.isMaximized():self.showMaximized()
+            else:self.showNormal()
+        self.raise_();self.activateWindow();self.switch_page(2)
         self.alerts.focus_alert(entry or {})
 
     def schedule_refresh(self):
@@ -7956,6 +8243,7 @@ class MainWindow(QMainWindow):
         active=self.selected_connectors();return active[0] if active else ''
 
     def _prompt_pending_approvals(self):
+        if getattr(self,"_approval_dialog_open",False):return
         try:
             while True:
                 cid=self.connector.pending_queue.get_nowait()
@@ -7964,6 +8252,7 @@ class MainWindow(QMainWindow):
                 info=next((p for p in self.connector.pending_approvals() if p['instance_id']==cid),None)
                 if not info:continue
                 self._pending_dialogs.add(cid)
+                self._approval_dialog_open=True
                 try:
                     ident=info.get('identity') or {}
                     label=connector_display_name(ident,cid)
@@ -7993,6 +8282,7 @@ class MainWindow(QMainWindow):
                     else:
                         self._pending_dismissed[cid]=time.monotonic()
                 finally:
+                    self._approval_dialog_open=False
                     self._pending_dialogs.discard(cid)
         except queue.Empty:
             pass
@@ -8035,6 +8325,21 @@ class MainWindow(QMainWindow):
 
     def activate_existing_window(self):
         # Restore this window and the user's current page; do not start a task.
+        # Never toggle window state when already visible: redundant
+        # showNormal/showMaximized calls re-present the layered window
+        # (DWM ghost frame). Only restore state when hidden/minimized, and
+        # only raise when the window is actually in the background.
+        log_window_event("activate","visible=%s active=%s minimized=%s maximized=%s"%(
+            self.isVisible(),self.isActiveWindow(),self.isMinimized(),self.isMaximized()))
+        if self.isVisible() and not self.isMinimized():
+            if not self.isActiveWindow():
+                self.raise_();self.activateWindow()
+                if os.name=="nt":
+                    try:
+                        import ctypes
+                        ctypes.windll.user32.SetForegroundWindow(int(self.winId()))
+                    except Exception:pass
+            return
         if self.isMaximized():self.showMaximized()
         else:self.showNormal()
         self.raise_();self.activateWindow()
@@ -8147,7 +8452,12 @@ class MainWindow(QMainWindow):
         if hasattr(self,"size_grip"):self.size_grip.raise_()
 
     def show_dashboard(self):
-        self.showNormal();self.raise_();self.activateWindow();self.switch_page(0)
+        log_window_event("show_dashboard","visible=%s minimized=%s"%(
+            self.isVisible(),self.isMinimized()))
+        if not self.isVisible() or self.isMinimized():
+            if self.isMaximized():self.showMaximized()
+            else:self.showNormal()
+        self.raise_();self.activateWindow();self.switch_page(0)
 
     def reset_ui_layout(self):
         for key in ("ui/geometry","ui/maximized","ui/page","dashboard/scroll","manager/header","alerts/header"):
@@ -8181,6 +8491,8 @@ class MainWindow(QMainWindow):
 
     def _update_window_shape(self):
         flat=self.isMaximized()
+        if getattr(self,"_shape_flat",None)==flat:return
+        self._shape_flat=flat
         layout=getattr(self,"_root_layout",None)
         if layout is not None:
             layout.setContentsMargins(0,0,0,0) if flat else layout.setContentsMargins(1,1,1,1)
@@ -8197,6 +8509,7 @@ class MainWindow(QMainWindow):
             self._update_window_shape()
 
     def toggle_maximized(self):
+        log_window_event("toggle_maximized","maximized=%s"%self.isMaximized())
         if self.isMaximized():self.showNormal()
         else:self.showMaximized()
 
@@ -8212,6 +8525,28 @@ class MainWindow(QMainWindow):
         self._update_manual=bool(manual)
         self.dashboard.status.setText("正在检查 GitHub 正式发布版本…")
         self._start_update_task("check")
+
+    def request_uninstall(self):
+        if os.name!="nt" or not getattr(sys,"frozen",False):
+            show_hint(self,"卸载仅在 Windows 安装版中可用。",kind="warning");return
+        if self._tasks_busy():return
+        if self._update_thread is not None:
+            show_hint(self,"请等待版本检查或下载结束后再卸载。",kind="warning");return
+        info=uninstall_target_info()
+        if info is None:
+            show_hint(self,"找不到已登记的安装目录，无法卸载。",kind="warning");return
+        target,mode,data_dir=info
+        ok,delete_data=confirm_uninstall(self,target,mode,data_dir)
+        if not ok:return
+        script=build_uninstall_script(target,mode,data_dir,delete_data,True,[os.getpid()])
+        try:
+            start_background_uninstall(script)
+        except Exception as exc:
+            QMessageBox.warning(self,"卸载失败",str(exc));return
+        self._closing=True;self.auto_enabled=False
+        try:self.auto_timer.stop()
+        except Exception:pass
+        QApplication.instance().quit()
 
     def move_data_directory(self):
         if self._tasks_busy():return
@@ -8350,6 +8685,7 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0,self.close)
 
     def closeEvent(self,event):
+        log_window_event("close_event","closing=%s visible=%s"%(self._closing,self.isVisible()))
         try:
             self.settings_page.flush_pending();self.save_ui_state()
         except Exception as exc:
@@ -8608,9 +8944,21 @@ class MainWindow(QMainWindow):
             try:self.restoreGeometry(geometry)
             except (TypeError,ValueError):pass
         screen=QApplication.primaryScreen()
-        if screen and not any(sc.availableGeometry().intersects(self.frameGeometry()) for sc in QApplication.screens()):
-            self.move(screen.availableGeometry().topLeft()+QPoint(25,25))
-        if is_true(self.settings.value("ui/maximized",False)):self.showMaximized()
+        if screen:
+            frame=self.frameGeometry()
+            anchor=QPoint(frame.left()+60,frame.top()+12)
+            _ok=False
+            for sc in QApplication.screens():
+                area=sc.availableGeometry()
+                if area.contains(anchor) and frame.width()<=area.width()+80 and frame.height()<=area.height()+80:
+                    _ok=True;break
+            if not _ok:
+                area=screen.availableGeometry()
+                self.resize(min(max(860,frame.width()),area.width()),min(max(640,frame.height()),area.height()))
+                self.move(area.topLeft()+QPoint(25,25))
+        if is_true(self.settings.value("ui/maximized",False)):self._start_maximized=True
+        else:self._start_maximized=False
+        log_window_event("restore","start_maximized=%s"%self._start_maximized)
         try:index=int(self.settings.value("ui/page",0))
         except (ValueError,TypeError):index=0
         self.switch_page(index);self._ui_restoring=False
@@ -8794,6 +9142,14 @@ def main():
     app.setApplicationName(APP_TITLE);app.setOrganizationName("GrowthRadar")
     app.setQuitOnLastWindowClosed(False)
     wheel_filter=NoWheelSpinBoxFilter(app);app.installEventFilter(wheel_filter)
+    # --uninstall runs before the single-instance guard: a second process
+    # (from Settings/Geek) must be able to uninstall while the app runs.
+    if "--uninstall" in sys.argv:
+        _target_arg=""
+        if "--target" in sys.argv:
+            _ti=sys.argv.index("--target")
+            if _ti+1<len(sys.argv):_target_arg=sys.argv[_ti+1]
+        return _run_uninstall_cli(app,"--silent" in sys.argv,_target_arg)
     instance=SingleInstanceGuard()
     try:
         primary=instance.acquire()
@@ -8816,9 +9172,21 @@ def main():
     try:window=MainWindow()
     except Exception:
         exception_hook(*sys.exc_info());instance.close();return 1
-    window.show()
+    # Single presentation: show once, already in the right state. Calling
+    # showMaximized() inside restore_ui_state and then show() here used to
+    # present the layered window twice at startup (DWM ghost frame).
+    if getattr(window,"_start_maximized",False):window.showMaximized()
+    else:window.show()
+    _last_activation=[0.0]
+    def _maybe_activate():
+        if not instance.take_activation():return
+        log_window_event("activation_request")
+        now=time.monotonic()
+        if now-_last_activation[0]<0.5:return
+        _last_activation[0]=now
+        window.activate_existing_window()
     activation_timer=QTimer(app);activation_timer.setInterval(100)
-    activation_timer.timeout.connect(lambda:window.activate_existing_window() if instance.take_activation() else None)
+    activation_timer.timeout.connect(_maybe_activate)
     activation_timer.start()
     if "--diagnose" in sys.argv:
         def diagnostic():
