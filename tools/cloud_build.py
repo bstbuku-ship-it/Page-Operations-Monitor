@@ -106,11 +106,11 @@ def sign_windows(path,material):
     cert,password=material;tool=find_signtool();timestamp=str(os.environ.get('WINDOWS_TIMESTAMP_URL') or DEFAULT_TIMESTAMP_URL)
     run([str(tool),'sign','/fd','SHA256','/td','SHA256','/tr',timestamp,'/f',str(cert),'/p',password,str(path)],secret_values=(password,))
     run([str(tool),'verify','/pa','/v',str(path)])
-def find_iscc():
-    """Locate ISCC.exe (Inno Setup 6 compiler). Fail loudly if absent."""
-    direct = shutil.which('ISCC.exe') or shutil.which('iscc')
-    if direct:
-        return Path(direct)
+def _inno_install_roots():
+    """Program Files roots where a real Inno Setup install lives (deduped,
+    order preserved). The Chocolatey shim dir is deliberately NOT here:
+    the shim forwards to the real compiler, but the language files live
+    next to the real compiler, not next to the shim."""
     roots = []
     for key in ('ProgramFiles(x86)', 'ProgramFiles'):
         value = os.environ.get(key)
@@ -118,7 +118,21 @@ def find_iscc():
             roots.append(Path(value))
     roots += [Path(r'C:\Program Files (x86)'), Path(r'C:\Program Files')]
     seen = set()
-    for root in roots:
+    out = []
+    for r in roots:
+        key = str(r).lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(r)
+    return out
+
+
+def find_iscc():
+    """Locate ISCC.exe (Inno Setup 6 compiler). Prefer the real install dir
+    over a Chocolatey shim: the shim compiles fine, but the language files
+    live next to the real compiler. Fail loudly if absent."""
+    seen = set()
+    for root in _inno_install_roots():
         candidates = [root / 'Inno Setup 6' / 'ISCC.exe']
         try:
             candidates += sorted(root.glob('Inno Setup */ISCC.exe'))
@@ -131,15 +145,38 @@ def find_iscc():
             seen.add(key)
             if cand.is_file():
                 return cand
+    direct = shutil.which('ISCC.exe') or shutil.which('iscc')
+    if direct:
+        return Path(direct)
     raise RuntimeError('找不到 Inno Setup 的 ISCC.exe，请先安装 Inno Setup 6（choco install innosetup -y）')
 
 def find_inno_language(iscc_path):
     """Official Simplified Chinese language file. Fail loudly if missing:
-    never silently fall back to an English wizard."""
-    lang = Path(iscc_path).resolve().parent / 'Languages' / 'ChineseSimplified.isl'
-    if not lang.is_file():
-        raise RuntimeError(f'找不到 Inno Setup 官方简体中文语言文件：{lang}；拒绝静默回退英文界面。')
-    return lang
+    never silently fall back to an English wizard.
+
+    The compiler path may be a Chocolatey shim
+    (C:\\ProgramData\\chocolatey\\bin\\ISCC.exe), whose directory holds
+    no Languages folder, so search every known install dir too instead of
+    only looking next to the given path."""
+    checked = []
+    dirs = [Path(iscc_path).resolve().parent]
+    for root in _inno_install_roots():
+        dirs.append(root / 'Inno Setup 6')
+        try:
+            dirs += sorted(root.glob('Inno Setup *'))
+        except OSError:
+            pass
+    seen = set()
+    for d in dirs:
+        key = str(d).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        lang = d / 'Languages' / 'ChineseSimplified.isl'
+        checked.append(str(lang))
+        if lang.is_file():
+            return lang
+    raise RuntimeError('找不到 Inno Setup 官方简体中文语言文件（已查：' + '；'.join(checked) + '）；拒绝静默回退英文界面。')
 
 def build_windows(ver):
     if not ICON_WIN.exists() or not ISS_SCRIPT.exists():raise RuntimeError('缺少 Windows 图标或 Inno Setup 脚本')
