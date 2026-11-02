@@ -159,6 +159,12 @@ def find_inno_language(iscc_path):
     no Languages folder, so search every known install dir too instead of
     only looking next to the given path."""
     checked = []
+    # Repo-bundled copy first: the official Inno Setup 6 install on CI runners
+    # does not ship ChineseSimplified.isl (it is an unofficial translation).
+    bundled = ROOT / 'tools' / 'ChineseSimplified.isl'
+    checked.append(str(bundled))
+    if bundled.is_file():
+        return bundled
     dirs = [Path(iscc_path).resolve().parent]
     for root in _inno_install_roots():
         dirs.append(root / 'Inno Setup 6')
@@ -176,7 +182,7 @@ def find_inno_language(iscc_path):
         checked.append(str(lang))
         if lang.is_file():
             return lang
-    raise RuntimeError('找不到 Inno Setup 官方简体中文语言文件（已查：' + '；'.join(checked) + '）；拒绝静默回退英文界面。')
+    raise RuntimeError('找不到 Inno Setup 简体中文语言文件（已查：' + '；'.join(checked) + '）；拒绝静默回退英文界面。')
 
 def build_windows(ver):
     if not ICON_WIN.exists() or not ISS_SCRIPT.exists():raise RuntimeError('缺少 Windows 图标或 Inno Setup 脚本')
@@ -204,7 +210,7 @@ def build_windows(ver):
         # Compile the Chinese Inno Setup installer. ISCC and the official
         # Simplified Chinese language file must both exist; both helpers
         # fail loudly instead of producing an English installer.
-        iscc=find_iscc();find_inno_language(iscc)
+        iscc=find_iscc();lang_file=find_inno_language(iscc)
         OUT.mkdir(parents=True,exist_ok=True)
         name=f'ProfessionalMonitorTool-{ver}-windows-x64-deployer'
         run([str(iscc),
@@ -213,6 +219,7 @@ def build_windows(ver):
              f'/DOutputDir={OUT}',
              f'/DOutputName={name}',
              f'/DAppIcon={ICON_WIN}',
+             f'/DLangFile={lang_file}',
              str(ISS_SCRIPT)])
         result=OUT/(name+'.exe')
         if not result.exists():raise RuntimeError('Inno Setup 安装程序未生成')

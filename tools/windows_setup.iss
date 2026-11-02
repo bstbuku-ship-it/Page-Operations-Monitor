@@ -5,8 +5,9 @@
 ;   /DOutputDir   安装程序输出目录
 ;   /DOutputName  安装程序文件名（固定历史名 ProfessionalMonitorTool-<ver>-windows-x64-deployer）
 ;   /DAppIcon     安装程序图标（.ico 绝对路径）
-; 界面语言：官方简体中文（ChineseSimplified.isl）。构建脚本会在调用编译器之前
-; 先核对该语言文件存在，缺失时直接报错，绝不静默回退英文界面。
+; 界面语言：简体中文（tools/ChineseSimplified.isl，随仓库提供，来自 Inno Setup 官方仓库
+; Unofficial 目录；云端 Inno Setup 自带安装里没有该文件）。构建脚本会通过 /DLangFile 传入
+; 绝对路径，并在调用编译器之前核对其存在，缺失时直接报错，绝不静默回退英文界面。
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -19,6 +20,9 @@
 #endif
 #ifndef OutputName
   #define OutputName "ProfessionalMonitorTool-setup"
+#endif
+#ifndef LangFile
+  #define LangFile "ChineseSimplified.isl"
 #endif
 #ifndef AppIcon
   #define AppIcon "PageOperationsMonitor.ico"
@@ -47,7 +51,7 @@ SolidCompression=yes
 Compression=lzma2
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "chinesesimplified"; MessagesFile: "{#LangFile}"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
