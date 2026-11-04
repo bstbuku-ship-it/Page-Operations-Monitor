@@ -41,9 +41,9 @@ import base64
 import shlex
 
 APP_TITLE = "专业监控工具"
-APP_VERSION = "1.6.1"
-APP_BUILD = "professional-portable-deployer-ui-v161-20261102-fix4"
-DEFAULT_INTERVAL_MINUTES = 120
+APP_VERSION = "1.7.0"
+APP_BUILD = "professional-portable-deployer-ui-v170-20261103-rev23"
+DEFAULT_INTERVAL_MINUTES = 240
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
 DEFAULT_ROUND_JITTER_MAX = 25
@@ -269,7 +269,7 @@ def _window_label(seconds):
         return ""
     if seconds >= 3600:
         hours = seconds / 3600
-        return ("%g 小时" % hours) if hours != int(hours) else ("%d 小时" % int(hours))
+        return _hours_1dp(seconds) + " 小时"
     if seconds >= 60:
         return "%d 分钟" % (seconds // 60)
     return "%d 秒" % seconds
@@ -285,8 +285,53 @@ def _age_label(ts, ref=None):
     if seconds < 3600:
         return "%d分钟" % int(seconds // 60)
     if seconds < 48 * 3600:
-        return "%g小时" % (seconds / 3600)
+        return _hours_1dp(seconds) + "小时"
     return "%d天" % round(seconds / 86400)
+
+
+def _hours_1dp(seconds):
+    """Hours with at most one decimal; a trailing .0 is stripped: 8 / 8.3."""
+    text = f"{float(seconds) / 3600:.1f}"
+    return text[:-2] if text.endswith(".0") else text
+
+
+def _scaled_stylesheet(sheet, scale_pct):
+    """Scale font-size, padding and margin in a stylesheet by the UI zoom.
+
+    Every px number in those declarations is scaled (shorthands included:
+    "padding:10px 20px" scales both). Font sizes keep an 8px floor;
+    padding/margin keep a 1px floor so a 1px gap never collapses to 0.
+    Border widths and radii are untouched.
+    """
+    if scale_pct == 100:
+        return sheet
+
+    def _decl(m):
+        prop = m.group(1)
+        floor = 8 if prop == "font-size" else 1
+
+        def _num(n):
+            return "%spx" % max(floor, round(float(n.group(1)) * scale_pct / 100))
+
+        return prop + ":" + re.sub(r"(\d+(?:\.\d+)?)px", _num, m.group(2))
+
+    return re.sub(r"(font-size|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?)\s*:\s*([^;{}]+)", _decl, sheet)
+
+
+def _normalize_legacy_hours(text):
+    """Rewrite long-decimal hour figures in legacy stored text to 1 decimal.
+
+    "8.00003小时" -> "8小时", "8.30002小时" -> "8.3小时". Figures that
+    already have at most one decimal are left untouched.
+    """
+    def _fmt(m):
+        try:
+            hours = float(m.group(1))
+        except (TypeError, ValueError):
+            return m.group(0)
+        return _hours_1dp(hours * 3600) + "小时"
+
+    return re.sub(r"(\d+\.\d{2,})\s*小时", _fmt, str(text))
 
 
 def _toast_body_parts(entry):
@@ -330,7 +375,7 @@ def _toast_body_parts(entry):
     if growth_part is None and post_part is None:
         message = str(entry.get("message") or "").strip()
         message = re.sub(r"\s*ID \d+\s*$", "", message)
-        return message, None
+        return _normalize_legacy_hours(message), None
     return growth_part, post_part
 
 
@@ -435,6 +480,36 @@ def _record_toast_failed(detail):
         pass
 
 
+def _toast_activation_is_view(*args):
+    """True only when the user pressed the toast's 'view' action.
+
+    windows-toasts delivers ToastActivatedEventArgs with an ``arguments``
+    string: 'pom:view' for 查看通知, 'pom:view' never for 关闭, and an
+    empty value for a body click. Anything else (including a missing or
+    unrecognised payload) must NOT open the notification page.
+    """
+    ev = args[0] if args else None
+    value = getattr(ev, "arguments", None)
+    if value is None and isinstance(ev, str):
+        value = ev
+    if value is None and isinstance(ev, dict):
+        value = ev.get("arguments", ev.get("Arguments"))
+    return str(value or "").strip() == "pom:view"
+
+
+def _record_toast_activation(arguments, is_view):
+    """Best-effort diagnosis record: what Windows actually delivered."""
+    try:
+        record = toast_avatar_dir() / "toast_check.json"
+        data = {}
+        if record.is_file() and record.stat().st_size < 200000:
+            data = json.loads(record.read_text("utf-8")) or {}
+        data["last_activation"] = {"arguments": arguments, "view": is_view, "at": now_iso()}
+        record.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def send_system_toast(entries, on_activated=None, silent=False):
     """Send the native Windows toast. Returns (ok, detail).
 
@@ -513,7 +588,14 @@ def send_system_toast(entries, on_activated=None, silent=False):
         if on_activated is not None:
             def _activated(*_args, **_kwargs):
                 try:
-                    on_activated()
+                    ev = _args[0] if _args else None
+                    raw = getattr(ev, "arguments", None)
+                    if raw is None and isinstance(ev, str):
+                        raw = ev
+                    is_view = _toast_activation_is_view(*_args)
+                    _record_toast_activation("" if raw is None else str(raw), is_view)
+                    if is_view:
+                        on_activated()
                 except Exception:
                     pass
             toast.on_activated = _activated
@@ -589,6 +671,22 @@ def format_compact_count(v) -> str:
 
 def format_delta(v) -> str:
     return "—" if v is None else (f"+{int(v):,}" if v > 0 else f"{int(v):,}")
+
+
+def format_delta_compact(v) -> str:
+    """Short delta for card values (V5): full below 1000, k-units above.
+    The exact value stays in the value tooltip; notifications and metric
+    cards keep using format_delta."""
+    if v is None:
+        return "—"
+    n = int(v)
+    if abs(n) < 1000:
+        return f"+{n:,}" if n > 0 else f"{n:,}"
+    sign = "+" if n > 0 else "-"
+    a = abs(n)
+    if a < 100000:
+        return f"{sign}{a / 1000.0:.1f}k"
+    return f"{sign}{a // 1000}k"
 
 
 def compact_elapsed(ts, now=None, approximate=False) -> str:
@@ -1386,16 +1484,23 @@ def latest_inspection_stamp(settings, rows):
     return max(candidates)[1] if candidates else ""
 
 
-def toast_position(parent_width, parent_height, width, height):
-    """Bottom-center in logical pixels; never float near the screen middle."""
-    return (max(12, (int(parent_width)-int(width))//2),
-            max(12, int(parent_height)-int(height)-26))
+def toast_position(parent_width, parent_height, width, height, position="bottom_center"):
+    """Toast anchor inside the parent window. Default is bottom-center."""
+    pw, ph = int(parent_width), int(parent_height)
+    w, h = int(width), int(height)
+    if position == "top_right":
+        return (max(12, pw - w - 12), 76)
+    if position == "bottom_left":
+        return (12, max(12, ph - h - 26))
+    if position == "bottom_right":
+        return (max(12, pw - w - 12), max(12, ph - h - 26))
+    return (max(12, (pw - w) // 2), max(12, ph - h - 26))
 
 
 def migrate_runtime_preferences(settings):
     """One-time reset of the OLD accidental autostart flag; never overwrite later explicit consent.
 
-    Existing custom intervals survive. Old untouched 30min/3s defaults become 120min/8s.
+    Existing custom intervals survive. Old untouched 30min/3s defaults become 240min/8s.
     Removing selector keys does not delete any stored browser files or logins.
     """
     marker = "migrations/default_browser_191"
@@ -1802,10 +1907,6 @@ class Store:
         with self.lock, self._connect() as c:
             return c.execute("SELECT * FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()
 
-    def has_recent_alert(self, pid: str, seconds: int) -> bool:
-        with self.lock, self._connect() as c:
-            return bool(c.execute("SELECT 1 FROM alerts WHERE page_id=? AND alerted_ts>=? LIMIT 1", (pid,time.time()-seconds)).fetchone())
-
     def add_alert(self, pid: str, current: int, baseline: int, growth: int, window_seconds: int, threshold: int):
         with self.lock, self._connect() as c:
             cur=c.execute("""
@@ -2044,13 +2145,12 @@ class Store:
                     threshold=int(opts.get("alert_threshold",500))
                     ts=float(result.get("collected_ts") or time.time())
                     if is_true(opts.get("alert_enabled"),True) and should_alert(value,previous,ts,bool(result.get("approx")),interval,threshold):
-                        if not self.has_recent_alert(pid,int(opts.get("alert_cooldown_minutes",30))*60):
-                            diff=value-previous["count"]
-                            alert_id=self.add_alert(pid,value,previous["count"],diff,interval,threshold)
-                            notices.append({"id":alert_id,"kind":"growth","page_id":pid,"name":name or display_name(row),
-                                            "avatar_path":result.get("avatar_path") or row.get("avatar_path") or "",
-                                            "message":f"粉丝增长 {format_delta(diff)}",
-                                            "growth":diff,"window_seconds":interval,"threshold":threshold})
+                        diff=value-previous["count"]
+                        alert_id=self.add_alert(pid,value,previous["count"],diff,interval,threshold)
+                        notices.append({"id":alert_id,"kind":"growth","page_id":pid,"name":name or display_name(row),
+                                        "avatar_path":result.get("avatar_path") or row.get("avatar_path") or "",
+                                        "message":f"粉丝增长 {format_delta(diff)}",
+                                        "growth":diff,"window_seconds":interval,"threshold":threshold})
                 except Exception as exc:
                     ok=False;errors.append(str(exc)[:220])
             else:
@@ -2089,7 +2189,15 @@ class Store:
                 cached=AVATAR_DIR/(str(r["page_id"])+".png")
                 if cached.is_file():r["avatar_path"]=str(cached)
         for r in growth:r.update(kind="growth",message="粉丝增长 "+format_delta(r["growth"]))
-        for r in posts:r["kind"]="post"
+        for r in posts:
+            r["kind"]="post"
+            _ts=r.get("last_post_ts");_lim=r.get("limit_hours")
+            if _ts is not None and _lim is not None:
+                try:_ref=float(r.get("alerted_ts")) if r.get("alerted_ts") is not None else None
+                except (TypeError,ValueError):_ref=None
+                r["message"]=f"最近贴文 {_age_label(_ts,_ref)} 前，标准 {_lim} 小时"
+            elif r.get("message"):
+                r["message"]=_normalize_legacy_hours(r["message"])
         return sorted(growth+posts,key=lambda x:x["alerted_ts"],reverse=True)[:limit]
 
 
@@ -2104,6 +2212,11 @@ class Store:
         with self.lock,self._connect() as c:
             c.execute("UPDATE alerts SET acknowledged=1")
             c.execute("UPDATE post_alerts SET acknowledged=1")
+
+    def clear_acknowledged_alerts(self):
+        with self.lock,self._connect() as c:
+            c.execute("DELETE FROM alerts WHERE acknowledged=1")
+            c.execute("DELETE FROM post_alerts WHERE acknowledged=1")
 
     def acknowledge_notification(self,kind,alert_id):
         table="post_alerts" if str(kind)=="post" else "alerts" if str(kind)=="growth" else ""
@@ -3424,7 +3537,7 @@ import queue
 from dataclasses import dataclass, field
 from pathlib import PureWindowsPath
 
-CONNECTOR_VERSION = '1.4.1'
+CONNECTOR_VERSION = '1.4.2'
 CONNECTOR_PROTOCOL = 1
 CONNECTOR_PORT = 17831
 CONNECTOR_EXTENSION_ID = 'lpjmbcclokpbgfogjhjepmnpoplgheoh'
@@ -3433,276 +3546,628 @@ CONNECTOR_ORIGIN = 'chrome-extension://' + CONNECTOR_EXTENSION_ID
 # BEGIN BUNDLED CONNECTOR PACKAGE
 # IMPORTANT: Connector version is independent from the desktop app version.
 # Do not change this package/version unless the browser connector itself is intentionally updated.
-BUNDLED_CONNECTOR_VERSION = '1.4.1'
-BUNDLED_CONNECTOR_FILENAME = '专业监控工具-浏览器连接器-1.4.1.zip'
-BUNDLED_CONNECTOR_SHA256 = 'e1303ee81789fa1fccf519e9d9f35a6b61863c33a68ba9423e657a4840e0b8c9'
+BUNDLED_CONNECTOR_VERSION = '1.4.2'
+BUNDLED_CONNECTOR_FILENAME = '专业监控工具-浏览器连接器-1.4.2.zip'
+BUNDLED_CONNECTOR_SHA256 = 'b7b251ede9580ea0b95568be8268f44308a5709d6d6e2280019c0e656669c064'
 BUNDLED_CONNECTOR_ZIP_B64 = (
-    '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'
-    'k93lvUWH2VlVYXlyM1h0mgNLaSc+26rVfC4FK4OPRqFNtKZ2TWaKwYoeme/9gi05f/ppsf/I5WlNkRlr6TaVCqtdZTNHMAVdBXoL'
-    'kaRgSPF2XNLhB/HlEwo6cV0z6oQJ17ST4nYzKoPILi16A5LVcKaPfy7ujl/uHeJy+u/jB2WXGDUYnuUT+9PtIKT0XDjccog1vf2r'
-    'S5BEGsx1XC0yM34Z73mGJBo133hrfT2InGdXYdwemB81bMuH4DxbCPtuZ+V51azgDLtcYPyDYY2LcouhEMtd7T6NQ4e2SO3GFhU9'
-    'wOlOkqtcIzQo32flo25SBdTGj+vBfuJCJKlEesilSwudqmo419XdtVwQuFxCl0fJAjKIv8YpAeC7q//QZtdaptUsV2zLlrGy+x9Q'
-    'SwMEFAAAAAAAAABfXQAAAAAAAAAAAAAAAAYAAABpY29ucy9QSwMEFAAAAAgAAABfXRL2tsjUAgAA3AIAABEAAABpY29ucy9pY29u'
-    'MTI4LnBuZ+sM8HPn5ZLiYmBg4PX0cAkC0g0gzMEGJA/bJZ5mYGBa7OniGFJx6+1d36DHDgIuiaXs1yXyP2Z+iPyYeSy6ZsLMqZ0N'
-    'ku31KZzlT6driwkoPF8drivYZrZ2Rnz+/v8+RYbH/25b+3XvrEObGzO8zrct1LSTbln2I0dg16fj5+7wzXq0OffC1Pm5zev+5HDs'
-    '+rRZ8cWp820LtO2lm+ACcfPelFyen9sIEljDoH3gi3p0A6MElHJ4xLjg/x3TAww8CgwTbpj8ns/IwsDEwNjA4MCgwCDAwMGgoqA/'
-    'Vf/d479fPz8++27BWxHmmj376zT/W/MIbWMy2314y01ZhwkbmP6Fb3oky6TK2JCtNpdXwkGLKWGTpEMQ447SXzebGFUYG1Tl/s+b'
-    'ZxS28cQHhjWhLlePnw5z+HHXff2vR/GX/usejf11Z6KiRj7DfjY9rgNzXm7nmsMoplnmwnGK8cPlU/K8TXG1WtrzH0gmJGrfqT4n'
-    'wbkmLvPX9Wv1rBwyTOli9lYstrW/puu9vKn4ojP494tHbnU3vnziuWz9a+39l+kW5b3F62pfZhezVSQoKs9aEK535DMjW8TeDxd1'
-    'LkxeVp9neb3ur4fAlymfrm87+PJvxzsmrjtaofvy0hu01fdrHbjrkjbvn6QDw4M/TAxsH4QYGi4158dLNoCD6OTt/xcZKs4rMHMw'
-    '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'
+    'UEsDBBQAAAAIAAAAIQCh7PzdRwMAADEGAAANAAAAbWFuaWZlc3QuanNvbo1VW4+bRhR+319h+SXS'
+    'OsEG39jNE9jGxgu72OsY21VlwTBcDMywAzb2RvtYVepDpKpPbaS+RY36B5KHSv0z2TRv/QsdfInX'
+    'ycqpkBDzXQ6Hc84ML09yuXxoIM+GcTJdQBJ7GOXPc+WnGYGMENJF/sP7Xz68/+2f1z9/fPXH/bs3'
+    '9z+8+/T37x9fvbn/9W1+Ldwb8yxTYbgNGnrIC+fhFLgEh3D6UMSVNhILxoB4UbLFP/345/1PbzfB'
+    'v37pv3+93rh8uMrUqiyL8ky4FB3/xvW99llaEoVeSxKEq4bQ44WMbzgX9LklxOMWL6fDVk0cDJpk'
+    'OBQXksahgepo3QYvoGLA1rpy3RRURVuK0vWq2xSr8mpi+qomc9yFY49aPde6viT+WVg5u5h1tMGl'
+    '2ParUSfVZ0Nr3Bo2ezrnG6UXNw2zXrQnwA9GSCSoMPLn3W5RSPmBWZcKGrnlw2JTKVcFzJavrrV+'
+    '22ZVVRK4qKk7LazbYHSjNPSegm5dzS7UEdAXMi9EwvUkwVxPsRYvnFQiWLX6Ah5ysNrWzFHBHS+M'
+    'skzGylDvy2aotz2pL1m4rJQ6ywEbW9ok7OndsdIkbAW7tatC2ob9fijyaCRdVsGguujUlkGrJ0u3'
+    '2EzZ2qSuugYtWUXt3/jBuNHxqnEx5i+AwkFdSa2rsjuy+6ncFHqCuGlKBEnoxVmHY9qc7yhEwTjB'
+    'xHDgWkGXRmCQMN6ttq1HTp6uv18HcTEdw0cjuUkSxefFYpqmjG0AaGLsMwCHxdNduJ3iOJtC8xv+'
+    '8Bv8KWObwEIMgsnjZGwuv3ZSjuXqTIleLGU+f7FpAN8heI4s+q0vt4WBZOEBOE0x8SHJRn2vYmZx'
+    'Zr5bmw2w3TlbowVtYx4k08RLgv+1cx94IhzNo8yzfmDcJAy+lHjgwcsoztYyfYbGxezO1piIdvPp'
+    'ji9zh3yZO+Qr/CFf4Q95lvtCQIG1Yi24+1yGtWBfhaNpHU/qeEpHE9qkQrEEomQaQzAnXrKiZQ08'
+    'sNonB5eUz2Z7GtGNkWW93QfPYgJyT2IY2E+e57A5g+AQopHRDkvjh+N0fpp7ZDZzj4zk832iHgLY'
+    'QV6CswwQTqZGEOAUWgcH+nT3B9ic6id3J/8BUEsDBBQAAAAIAAAAIQCaJTBechEAAJo9AAAMAAAA'
+    'ZXh0cmFjdG9yLmpz3Ttrb+TWdd8N+D9cTY0dcpfiPCStZkeiBMeJEQNJvPDG8IeZWYFD3plhl0NO'
+    'yEvNqqI+1I0T1GjTAAUctEGLNGjrtkDSotgUjtPm11he7b/oOffBx5Az0m6DWskCK/K+zj33vM+5'
+    'nNZd8vV3v00cO3A912aUhJFLIy+YkkUYMeqSSRTOCZtREieLhe9BT8d8YHaIS+MnLFwQJ/R96rAw'
+    'Msnd1uuvTZLAYV4YEPqURbbDHtpT+vVwri3g+Y5rkKUdsIdhzGKdnL/+WiOJATCLPIc1Dl5/jQC0'
+    'IGZk4bnEIo8Y4iFX6oVhx6d2ABNiYh2pWTFJU9Jo6GZEF77tUK01jO+1pgZpEOiEOXOtCCIIo/l3'
+    '7DlVUDhILS4tvztIh0m7Pd4fwfvb0DkOwyfm3TdanlHe6fFQG7r3hjpMa/Ghwkantu+5xZ3OY0tt'
+    'DvsdRJQlUQBDd+6QeMuy8Oj4avo0mLLZYafXhjbCI2Sr9VibSDxSP5wSL8AH/I29aUCSRToL5zSd'
+    '0yBJg5B5E8+xkRdxGlNKbN9PF0j5dDELWRinp55L4WGPw4TpcCqT0ZgBTqX9jvtIfyDELt0ZD5MH'
+    'vf09aOx17jv4d79THEACDPp/NDqGJxCkHiRAnIDIhEsaxcepeAUGpr73hELHMNl3eg8QasflG+3v'
+    'DJP7Du3hyP192GlvsocoYB+O9xy9HvWhOxiCwJkj4JgaP7gosOZECN7JrHOSiT+wiGgChPqnUR8A'
+    'I+fK/QoMUA8WDUYHq8OTMCKamEN9Ek4IB1SBouBEAIX65pSyr4UJoBNM3wJ1C9h7oF1SduuWxbg7'
+    'LHornC8SUNhH7MyngHPdCm9CtK0INSUyl57LZuSQdEVzRr3pjOXtccgYKP4haYs2qvoRCFxAo2+K'
+    'qXdJV0ccmBckdM1mMTNPvdgbe77HzohlWaQ581yXBk2ECqOuF4MSyaEgDCgf+E4yH9MIV4cL28Gl'
+    '0NnR+az2tZsCER0/jJHjzUEU+tRqBPapN+W60BgZso/ZY9+LWd6BepO3XM8G3WqMmvrGDQUTGFg7'
+    'lBzYmpPou9gGnKGNQ2/BeuAk9jSbVRPVJM2SiaphGpMA8SlNA7ADjMNG5EA0zUUSz7RzXGcQYGKf'
+    's9IgPp0weMeHQSYxaHkU07f90GZI9gnAfOT9CeUYt5s6PtsXVewuVjtwxxgch6bZxphrjWbjhttj'
+    '/MvhaGNzEm/b8Ec0bY4ETMCHXt1DWkgO2feAbG2DdNur81YwKZrgk0UUTjyfntg++//T9BzZnXZb'
+    'v4V631tV/N4mze9029dr3m1W9/+DdoPcSOUGer/JQFPHQHGtCf1CNV5RqREurIZHrtLd7uYTC4y8'
+    '+KGQacALPWozhl2lmMMbem3wbElEha/X001jz//2+5f/+Ozyz/5KvH0Kjatnz7DxxWf/9sXnn8tB'
+    '+ZjAGgj+yIJGAFHA4G2+g9wIJMBNvfnchuCEwqgvh8M8zoBTryVMdryXsG59AFiycDHYr/63bTYz'
+    '5/ZTTQq+kUm8/rszZ7gTGDR83NB+7byU/YqpPznxveDJtdbLIDJafhUrJkWrEnpLCV8z30nQgAV0'
+    'Sd5/71uaH4qQ05xFdLJhyUPgCyyDN3MBrwFEwwUNakHsaNTuudnSciNVa2q/orjg9yGm63Ruo2W/'
+    '1XGVTxlJDgiLzsg5SQriD3ih4EN4VdYDcgEZNnNmRDsB8cxBVy1OlgILBUleTj1yJf6mh4QTyaQm'
+    'gCFnWk1yD3vhyNhpxsyOWPyBx2ZaNnYPp9UYsgw1YZvfcbMNEjOmduTMHtqRPY9R3LWm5zYFnz13'
+    'vZzDuXJLwN8AWoat7FvHO02cEo+SYYTCKIFu1s/ceVTHCBcHo3Yg8y91ozeLo+uXLsXSd4Js4QdC'
+    'fXHpbrvdBPPW5gCgUQsC0tkwmParVKlOfkXfJ9UZPB7fSt+WHbbqUBH95ogfmktsLm/oLe+/lLcM'
+    'QBRPVIlhs8cch+6ZAcpLXQw16lymGMs9omy/gsHhIqu2kqdc64Rt34c934wi+8zEApzmhk4CfoiZ'
+    '30todPaIipLbm74PUagRL+zAcL3TOqUV8GYei2+YusDWOeX32rfMoX5FDuG6qFzYI4GcZZFcSjgY'
+    'L3D8xKWxlB79DyZy2L2NkQPKujTt1Id4/ya2jpOCLxQs36ShfFolKYikzYtyq4edsrQRrStuSKm2'
+    'I+AZcA5hD9ojM1oz8ZrYvWTsbmY9Zh1j1lWqOKM2ShropjQqwqzX2ZWK3cj3vsXm47Zo1bVaI1Ts'
+    'UEoGb2yTnW5J/eSY1M175MH1ysjTYXsca0IgAaYEwsUTYD64jRr9VecCqrNg22+A7wSV8Abh4HoA'
+    'SwXgZkHhWkDAD2YHDoYxWT0EtLMkW8rG11FntYys4GHhGP4vC2WXVy6qKJhgLNXr7yR27L1U7Gif'
+    '2kCVlaCRl0Hwvq4aIkrJ9BhYonojixZ2JVErLEK7Y/E3cix61tkm0idB4vs1gBC773IMMkTTtJlJ'
+    'O3DlWxgJv2XHVKtDBH2OteJSxMgyjNzYask8gmRlQ9XG0l8qSJbKQfAEKWKRT+YNsSLNKomqxghv'
+    'L372i6v//G859PyjT5//+Q9T8bj8+d+kX3z2mxf/8CvRbnk1ODrhKY2sFn9IjMS7N8d7y8v/+NMX'
+    'f/dz+VDQf/rZ5Q/+Ir387JPLX/z48qe/rYLOLrG51EMUEcN/r+LIsAwQHbDo7Dyy1nuVC575nwvh'
+    'PFiRPm+iKpOHO+00VT5CNkChjsD+8HehnodtXQIqw5HuDV2nVal5ZiXPVjbUMcSrF1RnrSoM4oiA'
+    'j7pmd9PuzJ4iGeCBMrhB7gp1dUvmVfW19TSt9keeve3bY+rjcLUGgjyJIwcRcZIoAi48ipwaODCn'
+    'Fj7Wa2oHnmIBtq+Gm80qkbYAZk2wI846nlp1AYQ5tp0n0wjF5h0usFXICsLcGk+BdyBLWiuJ/KE2'
+    'aDRHx5p591jnb0O9VZd1anMd6TEfdFajxosayjlhRK1VTwJAuCnIC/c6n3jP6uzuVedy/Vudu209'
+    'qJma2a47d/AWpCQyedqUzcr23e2ukdFDq2N2u2raTs2WUtyPrN29O3eU7sHMNraEBqgxqYs4qCB2'
+    'ayGinlocALwd7u/k02tImRl+vSIqyAL0flYWpwng9xQura6+nQPgQ3krm1IrBgj3sHM/Q63COYK1'
+    'dJpN3enkp+hslhypzeCyY/B4VjGutweoMaOKmsIuav6dO62h8jFDczFbpNAEjsfDVqq+dhmaTjgf'
+    'trK7I7mUV1e5FcgEsoY/RXwgwZCJQ55qqFRibGNYCS3w/PY2ogD8sN5Dor5ne/6omYlyp46vpWNH'
+    'zHN8mq/orZfEw91ewfDv9tSSvZoloMmlki1i2ueerpXToG4djhyB9OqF7BiMSB8AonPjoUqfe7nA'
+    'pU/7nsFXGHinxpHsKy8h0OwrfFfivZJgDEzT3JB5enNILEcQ1EbfsMGmadzFWkfK5fJx6ClvcA3M'
+    '+HQqHP9GyPmsl4Uvc05ADRPODVuUJlZ2kYHqSiXBOhqbgve2eOpZGNvdLQK4KH/dEMbrP2vQzhee'
+    'axC8QLhYF77i52hWbB1pcSluXMmgRAJ1XSwJuLz7xJpZRzPIlZpKfVF7m2k6M2ngSsk1S2N1sBYo'
+    '5lZiHZ1jhCVtjKVuWhJj5YoFHbDYHrIJfMEz6zJeIRWvqu5JLHvN3QUC9Fy1vnKJIfvtmvuZx2C4'
+    'hq03kGZAMkiFPYaXK/qgPToQwaBG9fMcsYuLmtPbvmfH/LSPAKMBcpETZOWGFUTQ8xmk1V8LQ/yE'
+    'Ua+jZLgMLNs64iDNmY0OFSHZAoTIq/AIePmCwoAF/Dyj1oGTvFcQtAQfHZa0dZBDbNadue0FROqF'
+    'XNMYGaoHRxujyjgoWWlD5LLaUNXqbopAya4/thpvQyb/fuCxE0TDTGKQa3HiDyJ7saDR6t7ZPhkC'
+    'kvZA2y0UBIw2v+FT3P64UtoqHKmOR1G4rGRhYF1kiQ0W89q82ljZhQ44+/M6wUb+WRrMz2slQrkz'
+    'i1K9VAHatuJkCp6Xf/cbRuQsTCAD+/yL//nZlz/6l6u//HH6/EPV+OSf03gBW4GZctOrX/395cf/'
+    'evmDjy5/+ev06tnH2PjoU2goh43o6Pqakom0QnxbKwB951JlBZtIqL6btSFw3LKQIwcXtWAhVJiF'
+    'kZANJEfN/YkKUUZFfgp0NLsSTElDR20X8k4JPaNqb02ik7AZEsoSy8Dmz6kGWlnDgS01dzO1MBmJ'
+    's+1zvDGUwm98wQRhgHR2MhmDjQNzJD725ZYpotTnLyDjcxshQWQlAytpEuo5FLp0EyGZN6eoYxRf'
+    'RoY9HkdC5ZJCBw9XVYwlBoDyq5GoOlGQcyLAj3vJVlEq8lzwrtWA1AoVDwvDpf6rf//+1S8/b6gt'
+    '8ZieC/2Oml+tbud6h0dGxeNHz7i8U1G6IlssnFwTAaOZ5WxDP1BTTleqDiknbjloKlI2jWZOLWhw'
+    'EsKzkAqPqgjlNYGlwKiUzuIu9YVQyKOWOlojGSVC01Ay2WdRQg2MG/Egx/iHC0y/2TTiMIkc2m+K'
+    'is3Vs2dffvLDL3/yXy9+8uzq4w+ff/jr5vWlwZVmq0XeDfwzqWu5tBKkA0TB8wXhp4/xChdLPvgr'
+    'hUni+wRVQFRswYjh1adkdmyuYzSHC1TnDMqNZA2j8zVAGc4oTob1VQqjZlywUA5lFrqWi4IjKPvw'
+    'yH4VsNu+GY/E5yh1vHnx17/98kf/JDj0srwpNaQlRnSKMWr+irCxBSfJghfI91johD7Y7saMsUXc'
+    'b6B+bA0ay+WyFBs2jMZKc0nHqzPm5Y5RXjvIw6UsJFQxsET8HCOCE8/tY4xFowgSocb7AX26AMsG'
+    'fjDPEw9AwLyYMHtM4BGEoKtE/SyEV2EbRjiGKOKUuiec/sVITXinC0kHMNPacV/8dsOZUefJIvQC'
+    'lkaU105StgxP4EBgWMXvOzAr1mHBoHU8St/Ifu+QU1PGoDc6W4YyB40aElMnifBChqOCh4vo9xIP'
+    'hInABP7bH27noS3z9BuedPVWUgU40tK5rqWd2j6IqxBQyIDOeTv/hQxv8licv6Ea8BelCBbezBeu'
+    'HgvfgxYhX6hffhS0F3W39icg2jVxJBb0R7oO6GN1Bm9E8hp/VtiMrTWfnV8HHVLGAaxAr6jXoYyw'
+    'C3vnaYf6DFg/3vCx7xv8ZzS93WGy92AH/7adSbGvu69Geu7OLo4U5rU8zGjA8fCS/zYv0dZTteaD'
+    '1evOnYdhBghrmbwIbxvhVfaLxeXzoDmnzB7AwcFLsDOrEU773MZi9i3GUD+sBlt6DAKLbHDE91lz'
+    'dQPAdQjkRVIgwKAjlkiUFnJ44Kdle1sa+IJMAPq5AuQHkPhfQ5vCJz6jzDvtl27X1xa6ai/VRa2r'
+    'eotuVBI0+WZsyJ6aldBeCsOGWxEjBjZtuFIv1MdKt+eqhYXW/Db8qHO/3Ra3z2fq+hkLENnlM/bn'
+    'l9Y4JK+s6zFnlvhBYPGuuYCZuh4+6u7xXbdahZ+0rfyCrTeZuPCX3t8tNLp2GtNp4rngseN0AcC8'
+    'JwnDn+IFQZYzVajKRUiYOIlNwcpmX7zx1A8FShUP+LKC3HR3dfOPwd9ozWEgRRRdMwcuU+pVhV73'
+    'TV2uAPxTOg4Dwtuy9uLi7YxAFRW+kQasfqBS1INeQQuuF7yKfB11eXClav+yJUr62fthB5SNJyAv'
+    'oWTXKhV+s4KUKooZOBNxyGaFxdyEFZzd3F5okXUk6KxDzhS4WvZ70/ySSvokbrTBLVXuuEVhR6Vc'
+    'EVYJI1NWjHd7eOjWYxGjDVtZphiZ4Pj1vJ5wX2CLqTtPQJWlw7uj7Ce/YmS1YilqlKJEmcOTFc+6'
+    'QIasDz5EqbMAvF/zXRJ+8C6/oC1pjUEqtOlLshlkBek+P4tBKCbWgUNPIG6LAYt+BwMNYBqaibMF'
+    'BdGeh27iU4x0QRopcIm6DV10mhBmhljmPC//XBph/C9QSwMEFAAAAAgAAAAhALt871uKAgAA5QQA'
+    'AAgAAABwb3B1cC5qc3VTMW/UMBjdK/U/pFJVx+IUlQ0lSk+iugEJWOiOXOe71GrOrmynxynJyMAA'
+    'CwsDZaJjhUAIBlT6Z3qlP4PPcS4Eyi3n+LO/5/e9946UBgJjteCWJJsbXEljg+1UZOlepng5A2mj'
+    'HOykAPf5cPEoC0VG8ea0lNwKJYMTJqQNjWW2NLTa3AgCD4K/EriFLN3a8qfjqK+NAtBa6cFRu09c'
+    '+3ZIfPEAXlhCI4vLvpIW309Xt12trsMeb0yW37/cXn24eXN+e/np+sc3EpNfF6+WP192W7qCzpTD'
+    '5AUz5imbQeoKAbk3hFKyEBJI3FIak3ZBvDkTVsi8hWo2N5hZSB70MnBWFOHM5LTy4+uUuYaAH2k1'
+    'g0iX0gpcDcjsCRjDcmhvJ2Ia6nGkjtM0nbLCALXYMA8kzIOJezjUXpq6JjdvX19fvl9+/Hz79RxZ'
+    'aLClloFO7pIpFMvCoRk9G8eysosTiDuRSUNHAU+182Yq8rqumpVUJ1pNRQHPJeqEmp2yooSUR8My'
+    'siKJT4COugx4eZyL7NT1KckLwY/TlmNI070Br8O0v5ccRpkw7LDAxFhdQtKdZP9EgJCWn9WL6j8z'
+    'OaiRHyWuhkzjNQNFmP1ZSJuGrn0Qo3V9dba8eEcSA/YAbVSlDdtJ1nNsRvcf7O7SxHP0hjincHJm'
+    '+VEIdF0zRDMfkLp+huRkjnd951RInHVRDZRqM+NOnWt3R2RZNjlF0MfCIDbokBzDIlNzSUaA9DF8'
+    'EGEFw0cm+Lom9I9vrWuOtHO0i7GxSiMz9HT/iMkcMvdCDx7ytmhGTAOjHt99OvhCoU9kZ2d1p0tL'
+    'Xa/23jRKvVSRV6kVuek4/HXi6PvgVU68uFdt1P5dYhehVeNvUEsDBBQAAAAAAAAAIQAAAAAAAAAA'
+    'AAAAAAAGAAAAaWNvbnMvUEsDBBQAAAAIAAAAIQDeMIE9SxUAAHQVAAARAAAAaWNvbnMvaWNvbjEy'
+    'OC5wbmd9mHc0HE60x5csWVbvLSyCSHSCEC1WTfTerRo1Vo/OKqu3RI9eFtF7XV30TqKXIKJF7zy/'
+    '/997c6bdOTNnvnPmnnPv+YSrKsvh49LgAgAAfAV5qPrjGPBfA2E/9t3isCEAgFxUASql6Zmx/83b'
+    'yXDGt18C7XIobjmQcNtHgm1Oi/aUoOnoFIyTBBHJ5wULOGQqpfPZpFkk1PLvRMHTdz4osApMfbFi'
+    '9f1QWCuATIqDgwQC9nsku5jDMSQ8qcwNfsoKeulOih+Koe/hF+UW9notkyTuOjepv+Jr58W8L+7b'
+    'Lzz8th+rYQ6Hpm5LL2zXi9uncOPuhjJitwyjRVZzTGOPOrtGiiR78/WKKR1wXOCHWmdrIdNCp73G'
+    '2NLsSeKUCXe7/b5VctmuT1yCSusXHzyjCxFX/59PdZ26+RX6bVr0xmNzvVKF4/WYuEroUWH6WaFH'
+    'r6IhfRhwnLG66ysh4s/q8d4+6Ae5MEGjDMyYmpmesqTjNK7XrpHo383JZr9QLumgLEqhKiqy3YIO'
+    'r6SO9SAIpABcKkWNyn2x1iRYzutIQjT9Hl0y6GH+5qFch14/qeD9s2aW2qHGD6YofGxHHaL9y45y'
+    'O/yqTwrPm/TbyP5a370DF8L+eeBqkYEhysPEQuFbGty61SY7n017u7MxG8D2tRt1PO1rgihYnu6s'
+    'o7uovugBD+s1i+q0ivcLbOITQZ887ESZGSZdOAkXaHbrYI/6zxWNwZy3jEFmcCI4ezxsuGWzwSVv'
+    '/nYlRtS8LWv/QqoAdvlSbiYIRWrn4vPJ00U51NF34/7Euz8SrEwmKcUZWe4Pa5cljUUmGlq6PPkM'
+    'ZUInco9n86G2lGpf5/rZhv2enNvzdjpbS/wc1GA4QotHO3E1d+cVI0sSiwwvq27yq4Dd0kCfm7nc'
+    'Zab8fBn9nD7Vf6liu5IYf72Zl5v2TiuEC6/NIL/GsjOPVeRksOOy786IwRuBmzvLPyE4t4Xt77f6'
+    'M6c0tUV5py+0KUjttSvsDwU6z/LgmfL3u8GOfaEokxMk3MERctgzX7H3MdX76dL61Gvbi44nQHPZ'
+    'h1pad5N92cRYVPK5JG1fxaseUqE1r6bp10+FOP0FapswyLVzX7UI/AV55GiroYl35mj/0k6XMC/W'
+    'Vb/P+w6V6q10j+yWrer+tZTFXzVr+bfIt0cAqPoJyfs4I7UzEsxYumuC9Nf0Eqvu/PHi40qtT+4J'
+    '59RM1/oYdbZLWmdmlut37hZ9wb27085hLqnpvC+U+meY4KymHnbrJRt1rWeXyy/6fM6PFIndp30F'
+    'jN5p2QmmsI/h+DsvujJm5U67Maq5a2NuVrSsRr4RUbecTRrJLeQn2DYqHJ5qK7bAc+8qCS2zjk5M'
+    '2bGe2o1C1cj2FPCMLZqKZKOQkaiavhdegSWEm5pPX6PcoDNyE2C88fCzIP1M7KknUpX0kkVSrjEl'
+    'cnkPWcpIlBdEpB/EukyFoSxH1tmj1H05Re1rJyWP2JFdUrqiIe2ridAaD0WIsrgxA8wxzYv4FJfB'
+    'g8tmaoz05LWMwfBiMAYVKZUxkMs43nQmlbf682aqkY3xYjILBXluuSktk3BgGmUAL09GtWHt204T'
+    'HwuKOUMRBIo26uNN7NXixU/ISltFrNC12Hp8KGg5wnW5tsVKJZyXR8Ds88rmyOLZzNRHG1wzfTu5'
+    'B8J/XZkcDC13ALlrMaZygWYE7/Teiw4qKoVXu9y2697+1FQrFwipMt48XqllxIx17+W6nFX8AHth'
+    '/IFITBpZAKCdkD8hNDrr21BUcGfDqnC/ykdkwG6A1uW4Fr9em7CyyAJRp66tOqCvw2neeSrNSpsz'
+    '5mkfw3Y6EpiZ/cam8TqBle+Nw/O2flUXTKKOk5y23rVYiXFtH8fcixdOIyz8KfF4rTKIgHnSgEDX'
+    'WeflSeHtDHI5N4GftA9KgSCKYWebCFr7vNMC+REcyO+tOk6AJf5uLnGnG2sWGQlOM01RjDsUxY6B'
+    'lGQt4tiPgr+XAhQAXQuJnnJkkK6tk+PwvTHQhlDRiCfrYMtxIJiT7I0RtS7R4JxCEilZSLpWubCQ'
+    'gsukaZ0AhuQqO92TZy7MIVSQKDzW++GMIgvnwYSYF/+JAbq3pm0W3OnlEjNSfDU7yJlFUWMEd5oY'
+    'RHb3V3zCz9Qc5LIwmKfGbw4kic4aYD+xavI5SHJvLreFuds5DV7HXC2iN6kebtG+dH9GEpEzhSDb'
+    'QjDo+C6Jdk7A5SDB0+ksGX6aU9q+l/Gc31r48r54qYGs/Hb0M7HfZbTy/R5if9jRrYrGM/GcImxs'
+    'cVr2YsWtOp9ZkbXU8plKnSp/2HcsSr+NlvRIf5XQrXxGYn5S4zKmuBF2/7OjNxwmZMyHWFk2FgKF'
+    'P7ydtmzU2o+KTpzw8An/ucOAk28sz/TgXEapHOI6jrQlPP7aweCxmMSBX3AxyTir+u9t2eG05R/7'
+    '5iF5wudnTERwRNTv68i0y+loB7yivUacYtsCVgId4PHnzdmLYTzn+0S6/jCpDWpwrhQtGw4keFVR'
+    'uQ/f5GGazkyNnb5bIbaMZ9tp4XDMbM0w2bC9ni9aizugKhXtRilInpWOO/HjkjM4vBCczCLsr4f5'
+    'zbTM9Y+ecvq+8663vsLMT0PpGTBk+AZ9eGyV9I3+legl7fuPya/GVChY45TxngMZDzsLSkmk0OUi'
+    'Vau4TJe/bwx2MmiL2blVZzCpvM8eBkaklv0VZYax8jjSGArY4cflUK1wmeBHL4/1n2KnSv/YfCbG'
+    'bzcI1mwAvPPwcaf+/KBRp3P5a3adxz8pcnsXZ6r/jUqqxNBmAjlOdpRpDSRIZTqFEuWIQZQxTTv3'
+    'JetCwsabBOjJqRT6XocVV1ZkWXH2nUbX+JcXh9N021jLBqLG2bZYpkB1vc3WArh4Y/tp6wM0mMbW'
+    'zl35BwsVsXOm81EElHfGcFaLzitw164frFkGgEIO2Rl8P9lVrReRsPHbr0ecJIQIm37HJdPSbROm'
+    'uNWyqi+maJPUwpUM8AkJ8+t/TcAhzjk4zPsmZN1Quqb7sAw3QenTPr2iA/oP1pYWmhKliEH1ZCdq'
+    '83ooXW+e+tvk+KFmFmw4RSEnqD917sBZW07Ap+TW3c4eqvoVUxVrLt5sQo49s3F6RiInkGI4wqmz'
+    'Gtj0Ltr054NJ88vOqJ7n1w9V06ocqm6YPJg736vXh6koubl9X7BaLqJYT19EUsoe3U58qayrrDV3'
+    'vnvQtWWnQIlgQFYNNqeEaicmBeB3xlTdDguZ6wsXdFiKWexvff3yeT7n9QJV+1txv8pPIylRLzFS'
+    'usj2fkWaLVZzOT2QfhPA8AGvtG+/uBDn0/UZKxYgqr86OEmorRO+pDhu52tY2jQq7frVV6y3a1El'
+    '+XqUTPs0DiqLKK1mwIxhzudLGhpj/+Kj5HpmIGmqohJT5FF45PNnn3txshLIPb74myh2IKXpDlRj'
+    'JRLCzb85BTd0d1qjS7Y3hmewZzBrXH1rfalNQhGzUNM0oNOnCwZbyV1enpWxtMAx6H3MkK6jky7P'
+    'x2paJlsPj7eysZ1ar+6DYFv1TRno551jmTR9DYNpLunIxqBP5EWY3+rZLegpR8P/7dAuNN6ZeEUO'
+    'zbAh6ohiUyO8EiJAkIyKwwzKNTBDpswQ3tMVbvRYDYV2JvXGnkyVWcsG8Sj49Nx78e4f4AgZN8B+'
+    'Jw3TGy0GY3czTVhG5t6eJndmSHpHaixjJEvqcv/bNqoR9lDIyNH8TD7AI/JS5LSw38PP88s9o2jB'
+    '8XmVJhQgG+w6Wr3VyirubrT7ZWGKJNR0jdxvxRyxtzMwsbweN3j99sgnQqLR3WrAt3EXlFk07ODS'
+    'hOLB0ByM+bw2wM0iKwVZx50z5MvLNxchjxUTHX64c07ZYtUQwwTFvwN+KvtQTQtitR4sPvM/3SGm'
+    '4/f62tooEbnN7gijvoRiN69nPJ9A8hTNWOpZ116KseYaHhYGv0YkvrBkpUrC3i6sVpPsHep6Rmoo'
+    'kUgqaWMy2iB1g77cB6nsf0iMSjdbC63Tn/wO86RPzqRnJuY3dHLPKOzpscN/p9Y2sR3/ytW7AKQE'
+    'oqxUHg0oOa7HYy51MuXjhR3c33P2U70kMyvBV2w7px+uMf+ELezGQJ05lMQq/T4RpmBtgwMxuHxo'
+    'iyU4lqP1/rHp1jVWYmWrDFibcbfoMF84JxvwrNyPJNkj5BHeqylio2w9JzOXiofEpMTz+GwVCmpn'
+    'qoHesjW+iwa1E6J9GHsr3PN/nl6qVpXp5wtiAW63uxGtk4nMFNTPtEOwnou1GSs4hJTfRzKkjtQd'
+    '4mLWargZ5VzK8ol7ex335IUeSozrcPBWyHCramCOv7t1tejYOMgiIIqlR+8kYvYR199aAe0Qnvlk'
+    '6V/mG0Idzs5v8AhuBNjwx/YUa2wWiGRRA75PbWUBJZ0+bcSNNzkY562ZorzF6lQLhAQ3nu0UWaWL'
+    'vMBosSufiMeMwVDO6dlaugfDZp30G0M24T79YyA5eYAtzzTO3JjWbxg7hQPU0NNKJ+3wAZVVeBlu'
+    '0M5O5BZyF3ayt5jOSa9RANpAfPOu6d3Z1tX86c3Tz3ZfGKZDuBXxCulzc54RqajBi4EK2sXe8J+j'
+    'NpIW2pSDSYfeM2YdLq30sz3Uh90zMsy94S0ooQEG3UmLcx9wg7LfcUGG3xbWDCZy5yObg0ooIuU9'
+    '9kecd00YVtH09JCvOLKsa3RyLPSjKVcBiurxbyWFv14vvrJ5DMoF7LBCgSx6JhJDo/SsZ1tV1rI/'
+    'r/SToB+QSpVr5nGEKcf9DHIp7Z/v5DMRciedfoiQhyuKBJzuQKFjn7WFsMsGpSeGbmqk/yVBtW+I'
+    '98jCQLiNsn/2Lzw3JWM+5jt7P9O2z5NnTFFXguJPsH/wbP1qzixeHEUSq1iJ7R80yNDfsYrcJKxw'
+    '2BQ1MSYChpLLZweTQiU8nQK4H7pz1ml6q4Jl2HeiEkZejSh0RwUXIwlJcGblf5+QnQuh8MiHgC+l'
+    '2kW32VN9cIaKFZ+v4zqMBMqxswwSaHS1nFselVG0RChaTlxjtwVdEC/bhvJwyfcEW7xFCYsnVZO/'
+    'ocyJM2qohivJaHTCJPQGHBXJb/naq0g8AwMZswIZh/ZmB4f/URP7gMfaU3D4YosascvUaxMMBnD6'
+    'cFpXLFCXPDytuC/PUoa35Zi72rs/Zy5/xSzMLACL/VitHIvR4Q8BVJ5eaO/x1lXA1W1ZCVUJmFav'
+    'FFeyTTytIqR01/YXTEbHFw7nZkKnztgDusaKPAoQ6CIqQPCBX38ptewkhUYZS3tiNhcWEXbQ2OFA'
+    'wkWtriiPXhdwfE28wnaohe29ES4ECra7K5zuSwGObyxoYF2YsN1niZAHYFbJx5Est3Eb+DhWO2DQ'
+    'vfUyw0TRo1QwyNS7fBHiLcbgbSCrdf0/39hPKnDXjopL4dtvhVxYgLxA008mNnUYpHCLju65SVxZ'
+    'u/Bm8gCS06V0fzF1FGNGxi4BqeSj6FXlOECJzF9tgJRDwL+tbKFmStXUejCp5BNp8TF0QnHpkb/8'
+    'Eq5koDxU2LNnY/MuEQyUNpdAs3XHB14rAkKmKwACP7rRb/6cLGYOYAXltPgffMXrtjGI3zSbkV3C'
+    'hVi87E2DdcwtHGptTh4oqs5hgtjss5aM/BQ9BTAsPt82TeBme+WVYxEVBjegM7hEWd6mAY6FPfPv'
+    'SSQZzzgBQfMBOV8sP+a30lRVkXfIPd3lfnz1CiaVBu2/6dFj2yd92oAFeH1SxdO/+gCiL2qbJ4qH'
+    'kjt1GLAHiYR6KSynfPEb/xRsTIDkalMyAitvExjETP3+8cdeYJSq/DUGlBDBg609ihDed1+JQKEP'
+    '/nCTmHZzNhOEKvd0G+Ddl8k53GCc7MfgiDs0tlvzEGYDCZj44pSZueyj0FsoG/TqvkmMOoPkkFe3'
+    'dBoNIGMioHv27yprBEF6wEgVQ0JAP3IyPSpw9NHyfL1Y+/EyIo6ltHiB2ylf39u9Yhgd/736gdOn'
+    'LoYHM6TQ8ilyeudSwkIfBAiCGbFaX908CL/jYtibp+baJJiDe/rxBE5L/D45TL8O13TCN67jcwAS'
+    'la/7HmxymDws01o46xsOcgIllroo+E3u+rv3xDwT7p7+jYvgJCgjhwZ5E5m0vu20/uRovRSiVCtA'
+    'fR179fa0FHZ/FujnvjeSEDWHPoLR4AK6OEwqE3dSi2Q+2rkLi6yezOfQxRCTHM23kl5aoFIX+nUS'
+    'skVBoU9uCLd/3XjR9+NgytQKfsIU0yssAJhO/5hAQiYm9h0Kaae0AYyJRiGG3B/S1SQRiSeCi0HZ'
+    'UvsQql4rGqaUGFDECJVmDLLxw2GmU3POy/WgQeIndB2NZ2KbM6ueZL2NgKdREDQxPKiI9gOlZo9U'
+    '3AoVuX96iQ5aKxZfGUqkRfhowc3COWdVCCPgSswEKQSoCHj02RRCmaOqd29X/KTSNJOoSEGtEMZl'
+    'n5ajC0/T5FH5b9kpDkRyhxFdter6DlewPyBC9sbP3gUhtt6D67Fio5qFImezsneslMvzlcAm757n'
+    'VFa52LQhbmd3VM+ewJ/m1V7MR/4byTwYmvq+tA5CVWLoNZF6vDhZP1nvSy5JVs+fFJ0S8pRTs+tV'
+    'ivBKTU7fsM6qcWGhp1V7krsHdXd/P6rjKB0FUe4GT9Ou6/YgKxbrawyc96CSAo2DLb1F778h0pMk'
+    'bE+kPUQmBClnbkV9fuC/DLFdDq9vEpRw3e5UGmL4D+30hm0w+ZM385w6xo8mYcWm/Rl+5VC+Ij1c'
+    'W0GNspn2Yp3fml9cHSOkE3V97TLHvqRLFLLxFwO60270q3l0bFuDQZ27rhuqbzitbZXXho32fjwx'
+    'uV6SPB8/ViTeM+smvtRg99FHOAdikWf5xPkyBxwrL+4bPb9HMPWHwJZ0pvVRjG2N6POs9q1/0pT0'
+    'sCeYtLGRh8pRp0IRBbvG1iuIUkJryz8vd4sERavOQRGxgs5ArdgSmaNvut4918UjetTNtv/tmXKr'
+    '6JZ90+m3Yf3wv2Om+D6eqjTVOpB2RjA4qK5J1Bvbq71v9sx4IokNFnR6iP1EKmviKNBojsZsJUHe'
+    'uc6LfXrsOoTiw6bjwHT221phf+b/BWxlrZ73q0esBf9fbI0Ct2GWNJ8R2QCeebem7FQebReVDgSe'
+    'TVaUHC/pjqJ3v4YlWYKl28a5NtSbc5oP3P7cVxJWroZaJ8RMuddkM8ic8cGZaqCGmmKqhHX30KyF'
+    'bHsgLwHyvWf5zBg6/EdixOLGzZ2ESO3Ouinbd976tMaZalXYPkVY2W6kdHfMxaHJi/IG7D0aNTGV'
+    'KuuAUWwFAagq+/+HG2+rulvDL/1Zvr5OuTfqbwI8FgUZZWj5O9Og/wFQSwMEFAAAAAgAAAAhAAdk'
+    'Zr95AgAAdAIAABAAAABpY29ucy9pY29uMTYucG5nAXQCi/2JUE5HDQoaCgAAAA1JSERSAAAAEAAA'
+    'ABAIBgAAAB/z/2EAAAI7SURBVHicfZM/aFNhFMV/93sv772kSZuUoFhoSaGC1qGLKOomDrVCEemg'
+    'IuigYF1c3Qri4uRULHRws07tYgcXQSjugmBVFIcWYqQhbdI/7yXvuw75Y9sUL1z4hnsO93znXBkZ'
+    '/9YbevoSk7iBrXughv+WWEwiwtYX/Uim3dCL54zXf8tGZQWR9pjjCNYqqocJ1GBD33j9t0PKIoOT'
+    'qwpYQFqNAJVaTDIw+AlBBNTCPi5ttWmva9pggHqsPL6ZZ7TgsxcpO7uK1X0DzadpAzvlGNjetZw9'
+    'neTpg2NMXe6juhNzaSyF7wlxl5x9BCJN3bGFuxM5rIWBvMtoIWDp+RD3ruXYqsV4LUkHCEQgjJT1'
+    'Up3hgQQTF9NYVQonPK6cSwNwfzJHPutS3GiwF2mHRArXv+pmLebRVD9XL2QYOp4gm3F4/a7CnfEs'
+    'n3+GjI0EBL7wYy2iWG6wvFJlbqlMX9ppbqAt/ZmU4Xe5wcx8iaUPW/QkDefPJFn+WOXJbJFKLSaT'
+    'MjjOP0dkcHJVRWAvVKKGYgw0GsrJQZ/3s8NkUoaZ+RLPXpXI97nUY8VLCIEnqIILoAqBLyQD6XhU'
+    'LDdYK9U5VfD59H2XfNYlnTRYbYarHbCOC6pgbbMRYasWs/6njhH48isk4UJsFWs5kE6321lQqwS+'
+    '4cWbDd6uVNnctp2VD9eRUW5b2/6X3h5zGLw/yrpgvJw5kPSWpKQvZNPOUQdFC7Pg+pHzMKSiGL/r'
+    'nK1CN1osxotsVFn0I2f6Lx/m98hod81nAAAAAElFTkSuQmCCUEsDBBQAAAAIAAAAIQCuCEIzrCcA'
+    'AFUoAAARAAAAaWNvbnMvaWNvbjI1Ni5wbmdtegc41PH/+OeGc1buzDPiIiJknJlwRnZ2ZTu7jFDZ'
+    '487eo0KIaAhFCSHzbMoqZWYXIit73u/T9/d7nt/zH/c899x9Xp/X+7Xer/m83/FGBloMtJy0AAAw'
+    '6GhrmAAABPj3RSLAH+u7xS4AIMSto6FqFpC7mhfsbb2Tsdi86O+l8j3o0POzlCDBcWwU47F1ly+u'
+    'DT83A7R4vK4ocXoY/dLFzc3VVDEj70+vvMfD7J7TB31S9VZ0Y+czevRZ4wMD9HPxARjYuRZIkl2C'
+    '3Wim2IGYiuXyXmNzJfFHU1mmR0/Q9mrT5OX8i6oWJtNHpntK09MHeffCFrWKkfrmjFTAqLbfpuH4'
+    'sJ8Ms8CdQRdvjpZazZXeu1c1E11ENJ1+AMOsHO+xSbQmhOo9YakjmYnFDNpVwqhWRsZkj3XN+mhm'
+    'IDvi5DRIFgC4nkHmKhhrGmo+c4U9+DJweN9QWnussPRPsPTEG4ioAEEwG43iIHhCCCQZc9fPitaq'
+    'GOqXEYAwADcRzPIsz4DCioA/Jk4NV8cDFD632FwgKlywCJgNkv0kBv+FJjGUDtLcZaDUHZ2JkrLf'
+    'Ukao4Mmc0D6ByjODCuX9JN8zhGGgVkITCjFzaWGK2iTTx7i39+P0X2pT4S/Ci4FRXVJLF0dABv6J'
+    '2u2VDnXxS92Ad1TB2aSunnv+I46RnFfmBwI38G9alkXodxQKI+RILKMG4b6ZHOXx8fjS9sHo8SgO'
+    '/Zz4bCDSLK07Dih95uvHq6ri+ejUeGCLrg6S3sG/8WkQedaKwaN+AkoaplZ8nHYm9GzUwEX+r+TL'
+    'sGoTzpfSQAaFKaonBlHQYvmAw/il2qDfxTOdlaVS0+thTaGMQIHjm3hP/wlA9xK8kB1U1nqk0Hc1'
+    'RcFJNoSLvJjBQeP2hnewOrlBz+xvMJ3ah7lLgRn2QjiEZ2EFcJpRtj/t52UxBSOkeWYkfKUlvTBj'
+    'uxMoNXh576kXal48nSP77b3HgAsX3Gedyl4jq2UQK2VWgB7XzbNvVfHlJR4EB6y/+RiRnBHHxDGP'
+    'iGaYhvJcUHKdPLViYD3Od9L0+mXN3ZtJlWZcF0zT+pIEqY7XfwRlIIgcpJRVUt67brX6cxvOWAE8'
+    '+eVyEj4vrCl0MC7e95CC1XAYF2ZhOk3qWjUTG6DuEqKahewFPKRW9Iczr5Y33fMYiuiC0Fc0bkpJ'
+    'zvfW83vuNSkm8l9TMXb5Y5vXmOW/15M1+IFKFYP1Mr04CvfcadYoSSQG/SlkvXCh7jymGbhfHu/p'
+    '9OHtZGUC1PdJOjq38J5P9g5VC47bC0/Fqe/panj30iZ+L1NgwsaKe4C1iz3eP5k4OSX+hnAiAv+Z'
+    'nK8vGaa6QctH0s9LtIL3mrQc3rQcWT2Rqn4QfUa2y7dDspnP69hz5TKvQOWscFHahSJV3a9BEUaX'
+    'zN1NIFc14R4dvIrVH09i5zfhnYLA1U5GEKv6oexoZm4T1gzqwiCV1Vsc7pNAXmKQI84qdHQy6sVv'
+    '0qlFY01IhaO64xJcT3Mq3259eX+JWtO14azVNQ9+97WTPDtpWLLh+wzvJF7d4aMII2MWBb608j78'
+    'vOm99fXj5/xQKy0B6E25mZAD+5Xxs2/MCnxEzGMtFrG4Zuw+0uXaRSBNd+VHYX19jei0cs7X2TdI'
+    'QAS4QjmdHBK7XpOofc1VUQCiorrBXyrDge4oHci6/H67m07uKQRP3uCTqDj3zh/Op/UsXxh3Jc93'
+    'nGmeHZ6vpvvewOoTveGA8ZIrQCt7hbuN617XDWaunjtH21PNuIhre/Q/D6hUN8QN8khoj7qi1aFg'
+    'yhmuHh5hHm9n3+53ZxfKJuqt39T5F1TSljtfyMeaUfWSnj2LsPzdXmbzhH0dc4nHm4qRRJNXsLsT'
+    'HJGTzIsuAUZjMM1YMzoNApfGxYKxfeOjQyXV+xFAU2+MODsphO5dE8tJBq2MuKuifU8nj2qxVBx9'
+    'NXMmCFjX+2Jnzz8WbfCjo1l2P7+UPBPovtc/GD5oS8ohK9zuFEZep8EJkQE7s4+9c2/FEg0Xn6yw'
+    'ZUIjWe2VkBoeIodarMVe4f0V/5iLaAxa3Ag/ZLP6ohIRF+tChTh9wMjUa7vXFR1DuxrVT/XXHYEG'
+    'VIttMdgY2p8eeRZ+DlvPTzogLRDGgiHJ+482rzlrqBGCCy40Y5HfacM9b2ied5JqoikgrPQzQuRx'
+    'SpvHR/595Wb76hLPSRqnVM9kCX6H29jby9taKQ3l21XuWynUaalnxlmOX0utrJAz2ebZoyzDkR63'
+    'nYdHxliOL5Ii+h7Nw2+52RCvJOk7pJrMulsU+Z5641RRbtDhl626K9v2UcuZ971ynyBYRO43uEDb'
+    'L082a1Itv3NWFOgUR8pQC1ebWoKP33+fygCSl21x17VOuwRLYmkSVKd4tYWQalTYr/AOEAApgKVQ'
+    'DMtWUqMfGIRoa95iu695lxJh9EhCPTputVcnakX5a+N7sTJAoujo8QN0NkRRpEVFtdgijuAqw/GA'
+    'I3fNLiakjRE1a+usyRLXcQIqEWMugnse5y0OCBEiod/yZrjJJvv8SBmGSLICsGxAiHweeFYx575j'
+    'AG/JIH3mTjP2m3zvS7X2y/csbXSnCcu39i8bFUQrXPinAyP6XopqONvZDt+EyCrdEgJgea8wVhCp'
+    'xjGYk0GLkNd+wyI58HnkJA5Atv4kqdK2XzGUXBJ04UrLI0ZIWGBduOjrdMIlrwoSVbM8JMhZz4H2'
+    'mZeUDhgqqgfyy1P5lXZJdGkloIPAowSpNNov05m4PYtgodC0/ozawaRQs8OfLaAgqCidJCQJq++g'
+    'AcDtmfihWOQjDOgUWe3/eJ7vLN0Gor4YW7/qMPkolo5EA7zq0RSgrtg2EWn0888MShIlGIEkMfow'
+    '5HN0u3DoQr6UQ3+l+vT8xJSItkkDQ94salF4DCMfoBxp3TYg+fxc9C+6ttr5zsuiH2WjSL+FyCW2'
+    'dM3Tee27/SxB/QsF6fxwPmir+bOPK7s9jvPMccBnB3gkbY0o/fyzes5yF2d6nOWlkd/6Ke9XCJwD'
+    'jTxdXtV78z8/cutH4tP6JluX0JANGg18v0Nv/tn2m2tenSe8ZV1Vgl0bsW93aGCqqp8RU9P5rZSJ'
+    'EJ7mwCLeagYhAT2o/f1uJjK10F2X7d2Dc8c1XS4z/YXGAExT/35g/Y0911eQUrdUguqEfq/H746B'
+    'sFB0tcsmPMr4nC/AGpOQRFG0u5dkV+k4c1PqeG7EWJm5QGaQBbeRr6JCtTfJE+lcWeWP1oxG4ql8'
+    'Ro4TF2M3Jt/1kVf1uOdv8mNOnUdI83/dGaS/cQRs48Ru5fGQnHUe+c8uxwFmSD5yNceQlf7xzuNX'
+    's9V887wjO39XwAWx3tOekuWiQJQxFmqkmhUeu+bWPinXRXuJEuBj5ybUGukv47CWBIgmdtChNDXg'
+    'BdBaNMXdhXpz0IbB6MDQ/nn1MudRMi/NLLOIY9oL26g350AqyoHBSmw2zNAX91d8+wyMB5cLjdv5'
+    'aC31rhhheNAkKdPcdWI5v8rRY+9Xfsmhsw2oBX06bU08Bo0m0W6WKOqqHL1YsvTEwWpPOotZ4DT8'
+    'fFAjzR9jxKle7HBoVdPPyubEenrzMR5V6dKCXz9c7TEawCckpFym/E+dBFt1NKLpNxpnpa+hdl5L'
+    'Bdn2by0GT8aKNionEchjjReYK410wAUaLSf5rOSuTK3Pdw0tTuluqsMLklC53+yOZOwXp3muUdac'
+    'Xauysr7eas2MAP7DgaR4VNNHP4fjdd8IqX8rIjrSSzuTwsX/kAYVcxVeQM8SQRyJfV8uJr9xjdEH'
+    'B3kz/sJAsKCXSvXOdKuDeKxEdbJBxF4ckA6R268phbY0Z5te01A/8LN3ri2pvzZWEX4/036sv/p8'
+    'DH/E2p7m+LJoOuNt5Jxk9KdmC9WQ7Vd/4RSEsebetExIWZ5Nymf2KJ/PDGjpDnoJkoauY9cpC+iB'
+    'nfGVCijIq9/SMmnXdZ1RECGYwYb4QuCG15IShGBZGb+gCWv04YqZ7UueXFMf43bUTIyXEXEIWFpD'
+    'iNYrJ5k7lT/K/iSxy2PgOMTl07B9FLad29didN6z92IUkhTL4nfSRzsXnhI+Y2cBxxJTDyphtaE6'
+    'LNSpzkr1qcOk29C9SdtU8bDXHCIT/Mgc2Oonm3pB4AHKvuM5MlM8aQYMsw1xcdt2Oq+dcxkumJg4'
+    '/EcwqDDQjZIJx1v5vJcCJynfvWHhNZdSHObdfczZ2M+wCFPBu/YjIa3EfX3c6XGl6aDRYu9+5CEH'
+    'W2PnSdMz0hN2zUFllaSVxZiN9oHgL/lf52jSOWigQe0F3/Kp6087W/+UCC638sChW66YKxWv0MSD'
+    '9VfPn/X3yNaq+Qu8FzltcsFyn79ymM0WEmhz7+r0i54EJEmrtqT5F12rufzAUR3lrvrP0gP2PsbZ'
+    '99Q5aBp0ld8hc8rugNnPIGHy42FZ++vB8Gzu1HqxHAk/DeCKg9Fks0V2HXEvzPSJvvQIl8A7pDTD'
+    'TEsKAkwZcBxtXnJnxKdg9FCOfshqi3CWUp9Gf+YNl19qcDIMUX2CKA+yoDIhXp0HchPIE5npb+Xw'
+    '9rvNgkkf/Icfz0SkIENCrp5t2uhxydJNURBh5wN4jOO/TWcM0sP1Wz31nsMaIYLeSkVPJAfNvGa+'
+    'UOdIerkUODFciycRiV7Md2yYrhpw5mRSoUlM9wpn8nldKhWGoAZYI8dWdzRiHhQwZMGRofCzUK1e'
+    'uAuMkdgAJtq/HUc3VkBHxcjJ+G2pEakoupJP6jLCwIC6EuIf+WhF3McGBjOvlIphTeTrTmCfUeAD'
+    'BDTbehrFG9/ebWkWMbZOw9kiSc64t0+4Wj+UPTOhd9/Y2RKINuWkD9ldiwn/VjjDAa5oV1p+4+kC'
+    '+N+Q2L+ZJKIMvpW+JsFcwIHMiUqdZLlqqh9o+X0/PkOy1JyFVZzsqAHoJnEdW5nNztjZX7kjSNht'
+    'l4JoGNi0pWvC3oxvFbE/vpWkvt5GXxXHbsQG4rbjP4sXrU1v6GwweneiJWhqxOP5chjhKVqPq1yk'
+    '5TBZU3NmacFlnvnmHG2f/HqQAfFIPI2PK6WDtfiIl+ZmrGVRdtxV+tF5IRpBeT3S7WuCnMtJTKne'
+    '3Y0JjaR6TqMLHJABML4g6q7E6eEq5uRg8+gdyl+hnJXrY/A7fZ8wN6q02uk2kKDNZ16d3rHAtDAo'
+    '6558rFW/fVtiEGM66JhrkDhCqalbIaZSrUmJY5+HPDIuEQClJsVUdtoGhWIgvIWn1ogMuDiPHdbI'
+    'vRPUEVeU7npil2TFnlYZsts5DPABzO3XTvry0OSzckHsZ/OF7uhsrMpp5vGEz3syWWrCWMTJwSBB'
+    'Mn554Pf+yuJqadkQzPEMvA5CztTcqmCz+6XWAHihIFlAR4vKYrEXZbE0XsIFdncojrdeOGEh6EUp'
+    'x5lNaMNVOCHiX+Dvac0OeNe2ub2Vy+1XemF2kY/8lfxNE1YjdskQ8JZvpxNS4gPmf+qWqNgNnAZG'
+    'ZsuJkKwmuvws04aTMhEw3CczQDr98xtYB50QK4gHyl1m/nPg27TRD9+QcnmUPC0/n3yn3IceUenj'
+    '0vPuN9rLK2waSCbGB4ZVusIvT99uuS57nR93gaMTOcu1vnDhK+8FdGk9vvrFbGGHKNlhS1ZnohMC'
+    'HWq+oHzFK2boHu8GiC+vOVE7JAbkjN+aqRbIsKGwV4I1XkSAzYhJA+ikgdSu72Lu1Hb6UE5yD7k+'
+    'mQfBzCqAW0I3/0IFx+c8KvihEprHDSvrbrUxXzE4I97GIMGCNIqXhDHvzsiLuSBIZgCEudUu341V'
+    'QmjfP5kSSYwUukhj+53H5xCWQrJSqq1rXaE4IAIh/ozt0KjNcyA16xfmfjYYyIu6CGK0Pp7kvfhV'
+    'iI9/GyFkS5kOe0EcpnSUWkii6IqrJK6L8AGO5NsJv7+dTNeN1s/wvpBWOtZ0AMse53P+x/CJHMmy'
+    'nvY/JRl2FPZ72exYX8i8JpzA/cPfij5xIZj9mH+mQl1GL9nkrSLROVv4OA74Nf/bty8hPAzyHHDU'
+    'ghPSwfwWiGukO/04MhEqlEw50Rc3yK9BhDaz1Mqa8MrkCh0ifQDEIItpXNSJq0WbL8Pfae2TZCQZ'
+    'Q/hpFWZjdVhHrGm7I1W2+fMV3f5u6sDc9FTc4zXEpavh5IzEGHGaYe9+2YZ7FjZjckAy6wgdmBsk'
+    'XDQAzRayBXGq6HRqPJs8vHdo7975Vp3D/CBSSs8Pypj7vj6cLCJD45tKyRl3ot+W37AAUEJ/oZyF'
+    '/jMBaAhGwBL2hk2rvDvyW77i0QUTzgGP1bZoZa4Y1cHep1cG1wTeZZ/VCJ3MgIVb4l4dSgDy3Gs8'
+    '4R4GUlBHVTiBpfZotvH1kT9DxZY2YmJP0F4ICpG/N6VG1GU8LWRyoGdG3h+K7tuhlcxnBRici9lR'
+    'j5Sgjq3T+W8Zvf/OJg1z9MtaFmxXLymXBqe89FG+oy58QZdYrJh4YpPNNO05E+aLhvnOfoaFr226'
+    '+IsmP3/fPw1uewIOet5wt3jjZOJlcYUdQLAgN75xoNprTi9pdtij1Cg+SqGj6wIM7co3Do/iv/K2'
+    '/EJAXRHlczEt4eS5HUqe3gotrjRfeBfKU/cG8gCr6q6lIXLwxyzyVk4GD1lbAnY78Z1lxTJrOgV1'
+    'Uyxl5h7xK7Kt7HhrJjI02J+peSIv6vbDJ2Gx1eFvTRXMZRX1GNM7P/jCwp8VmC7UH5TJewTPjFe7'
+    '9N6SlXS19C2l2GDI+aUJ9hNndwLWdmpN9a+rbkqlV2aMD+zfAH5Qby8c2FvjRMwfFKUBIS9l4o7u'
+    'vOnauZcXk29bePo0UCxlqjbZiFDeXdu53AAIBPP+0OvLP6uhnhd+j10sC8FKS9KGvE6olq9bv2na'
+    'GE45LBr6AtbqyC4c69ira0AFm+P0F3rlPz2H45F/C4FagRr3dQ+yXLM8gylXcsI1dU2OpJkyG52G'
+    'j7hwkuS+rQZ5jI6N6XYygfxkvlafGXPXSoJ0GKcmb64EnWkFXAxlNhcZa/SXzv+MPxMB4ZbP7JA7'
+    'HRFuqBePJpDzGRxDLwBrQZe4zfb3xSR7b0kqKcUcutXyWpasryOGmYSTXe0S59V+8GynSQBtWO4/'
+    'PXPk9/r266olX8bj99lPk8OBAjs/ICXaIbWEe06JaXVLvdZXh2V9Te/6fW7+2c9YLI6A8U4wGw0U'
+    '+qhmd4ebnNiMBnZ5embyQpa9lgautelQBaGR98VZE+nT4fUQ8u1riBviZVwNx8V8PwZKTQboZ5Ai'
+    'OKObz+6xaCa+01pU3o76FBoYHbyqxPvqyxPDEwYZWShhjDzLrOBaSad7K+0AUtVHP7MQfTCUpDoI'
+    '5oKx9j8X6QDbeF1lHBX670fSoSXglqG2LF62WT+p8/OiUeNC/9osdvaF3HeFEpzLLT9ZIDAQmsaV'
+    't/fRU59WA7jYPVH/MEAx/5CL5l1ViwzZfRH+BYMjjB1swR5rfMFs3TlZ70/5/sfmGy0f4PwqYJe4'
+    '8EFvKXmC/84lE/i27V0piC1aAhnDNyrr6PYiXPFxoBWw/Yn3cHPIzkbD7uvBk+M1wREpcGVn6PBe'
+    'SFbL+t4rQgqqxA8Hia2rlA+4YvX3fa1/ShTygURLBQfYXPTm2R7uNLv/PBFOzj/+y3f6maIQbdcQ'
+    'VBLlj+qMROKzhc+c5jVL//2z7gIFk9bGYfBUBrymDzm3EP2g9VURKfa7u6u4+ZLCE/VLXQGHv/Tk'
+    '7/JZsbZUWIKdeRI97emqTsrrZNYWnb7Q0UfCgYIFKCQ9es3OJtVcw75/G+B06CSLp2ft7RV9uScY'
+    'e8vcnngTId7w/ebhE+QLTXDgaWh0L1gjfkurMd4C+8OA/XmGgIIXYQXcHzVG/CLjS5I6P08coQ3d'
+    'MAlplZgn00mJ7Eaq4LzQPjNjd/y6pdkhjrT12OO8EhJep5cgfE2waWeJPsTB2WNwT0/t1Kth9J3P'
+    'tobseqA8V247XbEoaLGFmoM64r1bkFMJFmooo+9jZdSSGrD8wu3bPCe7egOt6wB1+UGf/BmQDRpk'
+    'Qx78Nv09gqhut4KA1oDuxn1XXDz+goe1rlvRsiSxmaQzesEW3wH2K/zNk9ntVrxJPqup4fiZZ2tf'
+    'qaHUk13zn3IneV/5vB7hrFoP7/4dXH6QLH9mT94WXyi7eU0T7G07Zcz8V4lNXtuVFCPk95vKKwhg'
+    'iKNThKiNfTAceRrmgkVh/6hkthiGBaLHuNV7TAo84oCApJWK5h1VJq9k+1UVFr4CubVr2EFTWgie'
+    'S8vQJbZPFIVUIf7ie/rjfpP3cH4cCZyLAuCw6Kb7RUFix/vRdAb16z69p3ewG96GbLxBGOT2w8RQ'
+    '2bn4cLDi9/YfpfdKPN0PFD9d31p80JdIEqUGG5WC9toWsYgto/yPhFne0wPRqak8bv+bWWrY8pHW'
+    'G+I5UZnhSrG4x2WURHu/oKXCiqQLYV8SL+QrpibVc5MCYLaz9Sn479o+7LwZ0yx3xpJWg00D7g4F'
+    'NuzaOrReKpvgmpmRvIDC0AeMFFSZsbyj2IXW8PZUacprt/UvU6G1cU9HRxOZF0VDbnsys/XTsf6N'
+    'vSz+Nuy0/g3NNB1Q2TxJnot9MMN9bneqieVpsFLKzeq9ead317+OH+r6151lNniMtl6q8al1va/H'
+    'XsNldrltf9HOrn2i/tH+9nJQqZVNavSWWqRlxdHBR0JTw8hz3s08oLbS8nJbNJNxvv8NTcGupcvZ'
+    'HaeOFg3v+cNvTl+b+fmRO/35Q7nI0s7sdZP85Cb7YcrNCIVpKzsIdarrRmQRbvTvDd61RrEYK3Yt'
+    'n5Mf2AV9xoC70sE92KLGwwfMX1kDeuUbf2PA7WHis49esRIZYjt+LeH90+mM17ouYbFF2mDXUvtl'
+    'LrUSxhth7TbfPOjKn/0FSdX4m+kPVXCqk/dy68YKRaTlgFI7NRQ+z8Et/7TFkOiL3nJBlDsYw2vE'
+    '4h0sK2cVYfzAx2OmjWTGzvwDYWpp/0nl/MZQ2GgOWqJ7ZHFIwISzh77NyIDdMoPXrYRXt8bDzyUx'
+    'vug0SPZOT/7S/M1U7PoJf55zyAn1hc0fK5voEcrNthNFz1X9M7140dcomofrbvzIfvmjh0HYSz9N'
+    'Q35DarNitsjWf7a81qyE6YOQjTnJP/TJJVPctkSVeHCQDHE/BmhpvZXvKAZjBOWHw29Mw1abcBaa'
+    'l+fltnjxwhf6FqbRh9YALW9dfuOkFEJ4Up/c9FYabKP9EtJ4hdnaTRqudYyYnvrSQ8y05k3t6EiJ'
+    '08MBrEUJUpBQHa4T4dV4Lmux9fD8zY8xtOrn7n5yM+WgXEpM+H0lt6Vky5EOoP2lDi9IEEqH53fP'
+    'dsdbF8biRKOhBaLz3/2ZtV9t18rhaab4oEZX6c/ABXO9Dn0c+rgOD2qTwWr6tAbH3JmKxGeoAqJ0'
+    '+/NfpKUUdn8dhK55z9Fwhep4DVPUbqMgxSbmRwMbsV8Dz0fiHEUBpk+JSDyrGrz9EedtXgR0svXx'
+    '/czN8Xqa804n6+4awGv6Cygk91rPXLcO+HYrZiq4p/X0bVUpJTQF5DMLh9KAIeqx5YM12sLbwVua'
+    '4wCzc2vV80qxQ91OJ6zI+7Gzaw827mU8x0KNvptzloc67KsfzH+hN9CDpK2jIcUOLAcrsPswEgcN'
+    'cIMhLCgs6j0eTzThz9sxFsR6LS1eshidFqDCfyeBIs65QFNyu+eWhClOUGvHdb1bwsBrsH1/jZJj'
+    '9q4Yaa0+e/oZ/mflIbTATRVeoGsM3FXoXFM/7YazDFMULCg3mfmA6ynDyr9TnvC2gf3D5VRdiNEH'
+    'UKo+1GD+1+59IVTxhy2BfqIvCCqUyD0N0DJw+vLrBZ4g9eJB//+gFu7LoGrfiUTiTAAzGVBRyYRc'
+    '/Ew/LTV08gw+W9RxpZ5mWw8odwNN7IcsF4t563S+vBgo3ipmAa6D3GXwIKme6/0/EZcBHZDgOahR'
+    'Bz0cek/er+5vOBnWJSV/gQp/PRrUFFcsR+JCiu5hJGoB7WHKdxCW8QLZvYDh5dZm/+rlLNN03Nhv'
+    'XV6+WA5S5gIpq8l2lYtgkFWei3q5lGU1eIGmN+PzUpaSEKwJLek1HZpkSSI51VVkk/5xEYGQX4P+'
+    '9ckHB7Epuisf9qohm6QGMUp5v6MEbgI/aCaDZ+f3c6PlPuXRCI2DUy15WQNegDCCO4l1Hh2JPKJZ'
+    '0nPb1oMYXQd9UN3sIrP3RgDb4qWxitN3ahqAW9z9zAcipljvpUOVB1+NQOBlEAjIoQL+mFWHhJOf'
+    '71DWGId+fSwyuvs/8DmQk4p25s5UqE7yabrYAeXi1X/yw8LXV/UyBFBLtoeDm6L9Nuk7xA8gQ0en'
+    'TyjkfTnA+V5S2briARHc2AugATRfcYeTj38Z5teUbxF0lylvMGgS5zMU8kre1b2xv6CR2fjde6rs'
+    '+uKAb8gO1vBftHCXu/SfHzLgvych8QyzsgsBe6lTCCgdhLwm2q8LlL8GXVPVhCM5V+tt4DnglqQt'
+    '0Q405FmQqIZwwGJm/VnSXwj+Wd0/LCmLGOfgRQhgQD1z+jJzh5jBD5qlNps0XyS2nfv+SuPI7FPR'
+    'IGeY0fd/cLDrW9zYveQVBBO6+5U44acNMRIDHcsRxAeNwJc9LNAHrx1R8OlvDT5yOrGjA+XF9OIH'
+    'zzfUqETbNU7ajbsvUppBD2R2vSfB4EN580+iyFknyKXdif2pgf45ufXtx+10BB55YLtjemfWRO0H'
+    'xRIPbp49AoqY3f/N/XT/qnhKXn+GBhxJ3u1nsQ2Wg6g/zc3BK3dyXsWhaJn8ePTtt7g2aWw+s6Z4'
+    'pIC59LH3QgRVGzb7xB0AWXUNkyvfdb1/JwLjw6+8b3wqOXPa3ARWmdM00jl3Sg4YdzEgJ8FZ8nv6'
+    '066hRvnglgiTFH+JnDErHODnQEu8ktPCrLJ+dV1AL4gygnIppMYG0OEIQq3vptci+WZUQu/QslVF'
+    '06rUz7nPvGSe5MyfXjWYa6Z8Vvgzmq9GZhlpzkRBsjQ8wnApYK4zp2xqhvxNCarqQ1pv7llTN4ND'
+    'HWVXk3vAK/HFhfxd5vl3YrfW6kL/PjBgErLrcOWM6hiJ8aGAFdSWreN4TBWu3/Xn0e1kWFdFwOpk'
+    '2PGhf6j8j0dUSIdjmQQk+XzbNeo6NYng1/GpVTEoGgUoyvAW95U17u0evCqmfd+d2QKqL2WtfgaR'
+    'y3Gyn82d8vQT6ydwum7DZjnsP4KiSToJ7qOQRyjuQ1zcrCGbBiCo0Hv3+bqT5vL/7+RDE45HCUry'
+    'ARES8ej/PSRh0ZYGwQIvC8xXTl5GAHqbRVh92qxsM1TpThhVgco61X+f1GzJTr/DL529BTn37wlQ'
+    'e8e3Qa2BwPKAJNiyuoFwFSP9b1TDpFrIv1OccgSzr/Cnv35llQpCCgvXUYJUug+Gx7idA+tNerbP'
+    'ea9dMS6I6tKmjZgxzIqHwvvzboLQ7x88TXNV67uR0CRJHq5zSLXrLYNO8JYCG5sJ2Q7WjVrEtpcq'
+    'hHQeJYSUYQhXhQCHNeT5cWGA0PCyLB2hZ1GA/Satr2sl3Jf0GHAVB4zlqx+tfruNUVXY1kG5sblg'
+    'VDv8lqWjHRUhactLo273vTz0hJ9PC/H3An90GU1RcMPyDLTL1e0na8meJSkpZTHjmZT4jkOOGEGJ'
+    'z1J4lBvapWPQ6X0YAqg+Z8eI/D8P+GScnoDMUaU60RnDv9uQ38V+T8nLMQjdAGArz+rkqgtZloqc'
+    'opxdQRzOXn1NDO32EMhEuDQWKj+NcnrxiCInf/Sy+pAJaxoRHmGEk4jULyxrimoZuwBh8VBeX2B2'
+    'VOLSsjUPyqk6KaX9xpxVKKSNcoO4lEF3NMbDdrvp9AxBBEDS6AdT6aQwtAJJfLdqhnBCOcUWYM0U'
+    '6aW0J0qSru4HA1RW1AlUMz5fzQc64/sSdyszgiypuFjNE9mxyO/07mURyQll34YuyIqPp+54zPhc'
+    'HN1JO0v6v85p755JZoM/qyMgqDAziRcfW/z44Lx5G4XEoEjnSpS/BsBfr9zUM2jpD7OjWmZ9KaGN'
+    'es1qBf7782evPuzDTxae8IuyYTMJ1/BZ5TyvzwYnN1UdBEu9+DymO9pdw8AEf0ZLqO4pxY3qrhUz'
+    'WtX4Orxf1Ti9bWS9Ttuh3H6L2v+O9cPrTsRoi0U84ryYEPI7FNcNVPYLVzR//eijM0xz/MVZNuSX'
+    'W3OXzgvHN2MfAjfPVBw2v4lIRjgJg/pFgOohLE6mV8cbAqgvV+d0hDc7aJ5ZK3OFcT2zGjkb0INs'
+    'X/vysZYq7XdPGpWqEMSjBB95e/HQbm2qYca2NLZVk9PvL8/HKeKLR+L03gt047r551hlBWSEkMrR'
+    'HwRZZT9kKDPP9LIDLB4B8m8rZmOlZUn/DoulrTaPIAYLhmgmNAqu0lKqQwXxfli2f/JvMzm5EEXH'
+    'b9u/+x//modMWmV6uSqeuDppsmhLFggICSGb8DhtyWx0h9/hQN2/6wJf65qzvrDv/+dKRZ/FyEGx'
+    'veyVjhtfEaJU2oo+qsXcORDTRxwyHiKn5gMLu7x11ZdzbqaGDVBkKwZbXP5BWhNUNF2+AfpinyGq'
+    'xajecZmwpLb98M1cRHqz6kRdv1aPR0DCKov5orS2DgytKsReKlNC4uOHVs+lnuWK3YTNK50RJb4Y'
+    '9g1uLk0aZSTXPfW1NImKMGIb5WOVVX1tOHFCHGsM3Eztcjwma/TD7l8lrD69zlI88TJpRrTIAIjx'
+    '4GGCixMQhDf4yJLVPzr9AjxLUxVORwHJvBg9eoLQRPfdCphetenrPTbPIluTFhdmLLTSjIFWTdi+'
+    'GsLH6iH7IS8o3qSxRr6z2fdHJ2P6nMbMTrNE+SaaCxjnkS8Ptz9lEB5yEjk3BWYijOvwhcp+J08L'
+    '+Ipil6xYADcZO8Elzsz4wzOkHSEr5EHw/Xer5UN/WUz1tHEL26Pu8yQxbddzqhgR+vKrTg9pq7MG'
+    'dxUtF2/wTlTN+HgQqDyMmGXCClh48JL/boHUT7SKGSIsF6e2GByOo6X4h3zXHs63otID4BESTL2E'
+    'WyiOi4NIz8J+idn8utTmY6WGve/WLZ26Gr+TfWAiNdCS//e6EAMJf3eNhGXxXr6N+SSRzhFZbWIB'
+    'UD7dOPaqrxFdh0h0V+tG36yUfOb4Zvbi9ZXIPD3t2KYzra4Z6NuEPIiVMIMJZ7+URjs+K+kWwFnK'
+    'mo2+ehHuWTRHuPL54tbJ2uLEHuCt5M7FI1qo5NeVt6a25teuwMhzS8Y8NPqZcpHZBiItwlQ73Rnh'
+    '4cCH+iylWmyc1fIyO4tGQpsqPglJ5rR03UNvD8n+5t250lzAhbdXPM3gDExP+IsZR9xYgn9U854M'
+    'pVbLLg/kjeTFEhjCFx5aUC9xm7uSL8vNMH10vJ/DkSCBvA7gaiWsFAckHvCxAiWoAihBBILgdZ25'
+    'DvWkLSxjZ2ysxcLIksd+3iWTJyLGLpGcf9AAudRwTyMy3ebTpyatykZOsgnU5SEH5AFk+OA81L28'
+    'P9O/NkLijDbVlpY7k3Y2obrlBi19LrRc78Em2+35X6LU/nnHv3KdZqOdszbFudw/3pHOakABmPGy'
+    'l56eN3HGcwhPxGN0kntVv+hNp6pb1Q4anQxpjVoR+eeoXILz+SrtKkNtSwbPxISaWYzl9foepXhm'
+    '+9sPrr9zLRq7k80w/YsCq+ijN/OgYmMGwI/OVQONt2qEiP8CUEsDBBQAAAAIAAAAIQBhSSd4LgUA'
+    'ACkFAAAQAAAAaWNvbnMvaWNvbjMyLnBuZwEpBdb6iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYA'
+    'AABzenr0AAAE8ElEQVR4nLWXS4wUVRSGv3NvVb9mpqcZcQYRRNBEQRBiFCKJxhhQExUfIbIgJi5M'
+    'NC7cuTAuiPGBCzfEhYnGGF2YGIiwkI0mJGw0MUbFJ/gYHGAAhxmmewb6UVX3HhfV0zD2CN08TtKb'
+    'zr3/+c9/zvmrStimhlfFD97/9VCub/BlRR8Hfz3qLSBcmVDEODCjguypT49tH9t39z9sUyMA1z/8'
+    '02ob9n4mNrtMkyqqyRXKOztEAiQooK4x7OIzT47uXXVAlj3xw2Ds8t+asG+xj8oJIhbkSlX+n1BF'
+    '1ZlMKfDx9NHQ1u4M4iT3isnMJDfB1Uk8EyKIBD4qJyZTWhxH+opR2OyTqqaVdwxzuTysT6qqsNmI'
+    '6HVoIp3ASjN5FOtlkhBBExHR60w39ThNky8aDIliRfVySKRETOdHIUmUt19cwP53l/LS1vlU6x7b'
+    'RLAGAitdK9MRAWtguuq5744etj5YopAzPPPIPK7pt8SJYgxMVT3jlYTEdTcjHSogqIetD5VQBeeg'
+    '2GNYNBSSOKjWlcfuKfL6c0P09xjipPMZuejaGYFaw3PrjVk2ru0FAUUJrHDLDVm+/rHK+tsLvP/y'
+    'QqwVliwIeea1UbKhwXUwJBdVwBihWvc8taFILiMkyTnQ25Zmqdc8D6zrxVqhESmb7ily98oC01WH'
+    '6UDfOY9YKwTNn/fK4EDAlg0lFAgDwaYOzvKlOcKsYfXNOZS09yLw4lMDOA+hlRaWtXP3pI2AVzhd'
+    'SRivJJSnHSMnYjau7WXh/AAUTkwknK17AJYsCLlhQciKpTkEsEZwHh5Y18faFXkOH48oTzvGKwmn'
+    'Kwl+jo60ZkAA56G3YHj6oRLWgohQb3ie3TQP1bS61z4Y44XNA6xclmN+v2XtijxD1wRN5UiVAF5/'
+    'foiVN+XoyRlUlShRdu+folrTWa05R0Agdsq1Jcv2F4bamHoPx8djdu6rsGVjPwC5rGHLhn6yYSrv'
+    'b383WDwUUsga7lqe567l+VkY+787y9SZmKyVlom1teD/tscYeG/PJOOTjt+PRCl7C4/dWyRxKdp7'
+    'e06z49OJjoavTQHV1MnGK443PzpF2GQ5M1yHRhp8+c0Zin2Wn4frLbIKraH881jEh5+XOXIy5qZF'
+    'mbRtnHt+lM94gvOqn02A1PGmznre+vhU+sd5Ya1Q6jVkgpSMKpgmmBGYqDj+Go3oyRt27qvMWtcZ'
+    'tsUe26ZOmxEZA/P72/1JVfEKmUA4OhYzOe0YKFqcV4wVDo40ODWZ0JM3ZAI7pxPOtOqCBP7vYOtC'
+    'IEyUHYePRwwU83gPWPjhjzqNSOkryAXvtxXc8cmZC0aoNXxrEGfi+0M1rJGuH9FdE5gZvF8P11FN'
+    'd78eKT8PN8hmBO2SQdcEvCqhFX453EAk3YBjYzFH/4nIhDKn211ZAk23/OqnKp98UWai4nhn5wS1'
+    'hrbWsZuQxZsOXtKLlfepGvOKlvFJRy7bff8BAlou311YA1aE8pQjn+1e+jRUjaqcQAKlS/5K0z2D'
+    'S0muigSqKieMwC4TFARV1y1ME+pSLjkTFERglwmD+hs+nj5qMqUA9cklQnacGfVJ69MsqL9hhnev'
+    'GfMuelRdY9hkSoFIeJW+C0EkFJMpBeoaw95Fjw7vXjNm2KZmdO+qA/Wpk+s1qe1QGEFMQtvj6LJC'
+    'EZMojGhS21GfOrl+dO+qA2xT8y9T+jPxgs7/uAAAAABJRU5ErkJgglBLAwQUAAAACAAAACEA4C3S'
+    'EqwHAACnBwAAEAAAAGljb25zL2ljb240OC5wbmcBpwdY+IlQTkcNChoKAAAADUlIRFIAAAAwAAAA'
+    'MAgGAAAAVwL5hwAAB25JREFUeJzVmltsXFcVhr+1z2VmbE/GiZM2TeLYaho3gTRSqaCp+kIUEple'
+    'eKBN1SAE5TEgQh9A4vLaN66iEgVEaYRAKkUtEkmaPKSPSBQEKlHSpE7AudhJqBNf47mds/fi4czx'
+    '2PHYofYYO0sazWjmnL3Wv9b6/305I6S2Xz3+IHZN719WtWbXfkUwz6B2h6ptB4TlMRXxRhHvtOLe'
+    'nCzfeG34xK7xNFamAqt90fnU2acJsj8wEvSoxqirgrplir1mYhATIuLjNOojKn/zytHtR9KYJf2w'
+    '6enTX/fC1T9VF6FxyQKCiLB82U9NUVVAxc95YgJsdeTQwJEdL7NfPQHY+NS5z/qZ/NsumrRoLIgx'
+    'yxx0Y1PnEF9N0OrFlYknBo9uOy4P9PatKgf2lPFzmzUu6ooNPjV1TvwWcXHpcjbydppqaF/wgnyX'
+    'xiW34oMHEGM0LjkvyHdVQ/uCr8jzaKwsf69/FBPVWBV53ld1O3DVlLB3h4kYdVVU3Q5fxOSbIZUi'
+    'YERAQJ3itAmBzmfqEDF5vxljiYBzMFa0qCrZ0JDLyNKDABZNWhGIreIZ+PaX1vKzb21gx5YMxYpi'
+    '/g9N2ZQKWAuvfm8jvbvaAOh9LM/ur/ZzYywm8AVdwkosqgKeESYmHXsfbaN3VxtRrFQipaPgsW9X'
+    'G5MlhzetDJ5JuULTqrPoCijwhX0FVJOgREAVtm4KmZ54IzBRdISBENvkuly4eJ4suAJGoFh2PLQl'
+    'w+5HktYxXqLGIvCx+7NkAoNzCT9ulRy9u/Ic+1E3v3+pk57OkFJFWezUuXAARihVHPv3FMiGgnOK'
+    'UG+NrZtC1qzysA7KVeX+jSG//M4GHu7JsvuRVn713Y1kQsEtUsEXBECAaqTc2+Hz+U+vSr5LI6+9'
+    'rW33WN/hYx2UKsqBfe20ZA3VSIli5cGuDAf2Fhi7ZfG9hRNiQQCMJ0yULE88lmfjugDr6pIpJHOC'
+    '7wlbO0MqVUcmED7Rk0UVPE/wTKJMB59Zw5pVHlG8cCIsCIBzSi5j+PKT7TWiJgGlhHQ13XxoS5ZK'
+    'pKxt93iwK1NXIJNc031fyHN7CoxPLrwK8wKYLnnpy/eEYtnxye05Hu7Jgc6Ux/Q+gJ7NGaJY6dmc'
+    'YX2Hj2r9N2FmFaxNCH27vzut0OYEIEAUK8XKzFep4pgoOr7Y244I2FraB4ci3j1TBJiauLZ1hWQz'
+    'hu3dGaB+Lcyswv49Ba4Px1Si2f6iWOddJjecBwSwDu5Z7dNR8BKlkDqoezt8nnw8P+OeN06OcX6g'
+    'yqMfbyGdADbdE7Bpnc/OB7JT404HKJJU4WvPdvCPD8rENuGSAmgCcmjUMjxm8Qw0YkpDAMYIY5OW'
+    'H35jPc99pkAcK54nSM35dO32jGAdvPHOGB2FZDjPSwILfGFbd4atnWEScK3HZKZg0bU+4OTL3ThX'
+    'mwgBaxXfFw4fHeHFH19jTcHH2tkQ5uVAGMiUtqf9aEwCQjVZxKnCX88Ueb+/ws0xS6miU7MxwLO7'
+    'C3TfF9ZSn7wdPjbC1RsR1iWKlV5rbltqSC2G+WxeAE4bv7QWi+8JxsAv/jiMMcL1mxGXr1dnjHFg'
+    'X4GOggfUM//qn0b49ZFRPFOv5py+7qCwcwJQ6pkIfJmlDkZgsuT4+VvDnHj3FqvzHqO3HH1XEgB6'
+    'm+dUgW6Mxtwcs7zy5k1+8/YoxbJrqHapz7Sl5rKGHHCqtGaF7//2Br87MYrTmRtmrWVz4D8R5weq'
+    'tOWSPFinnL9SAfKznDpVPBHO9FcYGo1pyRpe/Mk1XnlrmA3rahLbIIEDH0a05ZI11f8MICXgvwer'
+    'fHCpkozc4P4gEAqtBuuSjHtGOP2vClDbXt42JsA/z5epREq+RVjVaui/WqXvcmX24DWfQSBkgrn3'
+    'FHMup1UhEwq5jMxZQtVEbtPPoS9cGKgSxTq1kUlxpIDe6ytPLSWcS3xkM42JKtyZB/PuB1ShgXLN'
+    'eW3gJ0QeGo3ZsDYgPatJpbdcVd7vL9cyqlP3LWbH1rSDLAV8H4bHLedvI3Ia38VrVQaHYsKgeRv+'
+    'pp7EGRGqkXK2P+npNLMpAU9dKDNetHiLWD7P8tm0kairU1qBNMz0/b2+8vyauABrLgCnhIHh7MVy'
+    're8Tshov2Xn9/VyJcFr/N8OaXoHAFy5djxiZsFNLCgE+HIm5eC2aVxIXYs0FoBD4cHPM0n81aaNK'
+    'lOjsmf4yQ6MxgW9WLgCon9S99NoQ1kEuk7g4fGy02a4Sf52fO9f0czMjMFl2PL6zlb2fauPPpyY5'
+    '+bfJZFJssrclAQB1EJWqEgRCW665rZNaU85GG5lTaM0Z8i2CU130+c9cZlTdBLI0T5acS/iwJMGL'
+    'QdVNGBFzWkyo6HI/EP4IpurEhCpiThtBXxfx51gwr1hTEV8Efd2EVe+wjSYuiZ8z6FJ1ahNNnRM/'
+    'Z2w0cSmseofNhRM946pyUEwgiK8rGkTtQbeYQFTl4IUTPeOG/eoNHt123FZHDpmg1RO/xaBqa5xY'
+    'CW2V8FPVit9iTNDq2erIocGj245P/dXg7v6zR2p36d9t/guJzsarbNZVHAAAAABJRU5ErkJgglBL'
+    'AwQUAAAACAAAACEAk63mrYABAAAUAgAACQAAAFJFQURNRS5tZG2QwU7CQBCG7zzFJt6LKPHg1Rfw'
+    'EUwMRhOFRD14XInaItiKCkYoxipKAROiRlqw0HfRnely8hWctcpFb7Mz//7f/DPDhH8u/FpUL6PZ'
+    'Au8eDj0ZXqN5D1cuS2lpbS6RSGkMbJctrW/ntjIMC+cQcLay+v1cTCYze7uZ7M5GLruz8hmUaAan'
+    'vXduq8IqS36IrgOB9c4bHzyfmNPYhBew2FaK4xs5GoH3LFt3YBaj2gEW2vBUidwiDNUHsovFaD9i'
+    'VRdvfWgOlMu8xkTYwNL+71LCN9EpTRq3UVex/4YiNxmeSqdEntOAIqhJvQPHbtxRFHsoRz0CKUpa'
+    'Y1F+APobWmeKXR/jjQ5WZ2JzcLpwdCV8LvyOGIdiaMreERhdykB4fLVkyyAANHV8ceMkYlyEhzxN'
+    'owsXDW9hltpoVKmxvJ1b29jMsFQ6/XOlBFHQLsT+dPtoGE6Xxsv+NGq8vRiF5PkZ1KFZ+1cPVo+a'
+    '019wUlFnNaqkpwIGfboLeA7ecQX/AlBLAwQUAAAACAAAACEAVw+P8rsaAADmTgAADQAAAGJhY2tn'
+    'cm91bmQuanO9PNtu5Mh17/oKynaG5IpiX6RuSd2mBhqNZlfJzGgsaewgkiywm0WJKzbZ5kUXdzeQ'
+    'hwSIH+Ig8ENiB8ibY78EAQIENhAE/hnv2v6LnFMXsopkS9q1k1lsi108derUqXOvqm59ov321z/5'
+    '7a9/9rt/+ccvf/yLL3718y/+9le//82/fvnjn3/x019qHXvT7mrr65qbZ/HEzYKxFsZjN9RGSeBd'
+    'EUuLYm0ceySlTwmZxBmhDZobeexlfBOQ1NY+aa18I0+JlmZJMM6+MVwJJtM4yU7GSTDNUkMn91ni'
+    'jrM4sT9PdXO4Mo6jNNNeH7zZ+/j29PLD0fGp5midre2Njnj34fjo9Gj/6C22D1dCkmlpPL6BP44W'
+    '5WFoadMgujoNJiQpWhICXSMyzuRm1necJwmJslM3vSnAOTCggSbfDVOY8NQNEuIdE9d7EI0MwRWJ'
+    'SAIciiNob1taEAXZhySeBDBpeSCc9X6epHHiAJTvBmGekBSfvXwaBmM3I8cEmIRtnLQ48oOr7+Qk'
+    'Jw7HaEOXOLwlRsGpNCRkCgNNUs3Z1SJyp3FQg4Nic0rozOM8E63WJDULHBmyZLaiabHvh0FEBvp5'
+    'vt0h7nne67rb53l/e9yGT29zdJ5vkq53nvt+ewwwI38L2ru9DYD02wCz09mEt72dHrRv9bc3se8m'
+    'QO5s9bsA7/d9xOD3dQtG42wmHo7X8/yuOuq27xHov+H2xHhbo80dHGkbWjb9PozX2+puy3gFfb3N'
+    'ri/w9DzSYXOgo3pB2jBwv78Nn712b9w4cHuEA3d8YEC33YGWfhsn1Ntpeyo8vMXhNwgMv0XIFv30'
+    '9JXFcGXFTR+isebn0ZhKS5rBkhtU/k3KfffODWDVr2H9iJ2CSrhXxKZqZ8MCGjPskKeDmW3btJfl'
+    'ZoPXgMOO4jvDXCxgPRcrrZZ2GsfhyE3YAAPN1VKQ5JDAyGG4PgJ58bQAWKAZYXwFmgrST0C0TW0a'
+    '5qm2T4fXUy0Cmb4liG/kUpVP3Qmo93SaxO74WnNTLbsmGnGTMACV4iyNE2h1M2TyNHQfYKRxDPo1'
+    'zsIHG1Fp2u/+7b8LMQNDkZVSoLVAycBU4IPQQKCSJAlgNabxNJ9qGUxcuwGJZ6MnxE3jyGSY//BP'
+    '/6kFXghoNUm2qEFCxqI2+4DJjUBF0ynHnsXIpiRjKL780S+0UZ4+UBQuIAlDgNMyNA5BqiV5FAEa'
+    'rjWnR0dvX+0dX77ae/3pQUWBtBlSiuK1tTMa6WhSwjgZ6N/s97d626/1BUpiQWwBvNPzuxJwt73X'
+    '237DgAuyCuB+t78lAfde9d4cADCKWlXSQP2ZTJxQmaOCwWQuSx7oX8oxmNQIJqJM7IwCX2jzudpu'
+    '86kOaWdFdF06KsrsK5ScU6DXYFSPbPyDgvpUp1fu+OYqifPI28f5GTM2zZFN/woMga8ZywelPc0n'
+    'aVMG0L/5hv7T2RALDewySLtxCewC1q5IPI08Y0LSFJSUsTLwDeaIXoKVBjdBee04zvfI6IS220cf'
+    'Dt6bDMam/f/85Oi9jZ4xugr8hwIdVeTKGgYe6GmQPRhj/4qNxxZs6ijzAxHNwNLbVyT7ELoZCPzk'
+    'MPJjg84GncooAYVwdKrmQT7RrVuSpDCAY0TubXDloicGJUz2wK9l9gRnb7SMlwNmF+ain3neMs7O'
+    'PftizWyZ8/nZhXnWuZjPdX3YIFSem7mczIZBwIS5SO9nwdX1QZQl8fThu26Yk9Q409FkfZcR+DZI'
+    'M/2CLzzD66N8OIjdrgDafgDsvXd27202YcfRP41jtILcwJko0c/tWnCrkDuDjm3OGAj9wsCHgp+s'
+    'jX8bLurCpIH5yvIk0mZgUv0gJJcRWNgBrK8tN8znBhufaPoavgTrlbnRmFwGnp1C4ECMttU3TQhR'
+    'eC8vSKgpflBwFa24Shadhng1dbNrBRYbKBiIlQuGNLwM3REJKYzSUuIaJfEdrOglZcKAflqijTNh'
+    'wP9acTqY2nFqucn4Gp7wD0MC2kgiBCm61MX6nRsFPkkzwxTMXQxlxYQQ6DS+IZHBtITzeC9J3Afb'
+    'B2TGOHmYZjGiOgYi4wkXNgydPgZRtk1BjY0usHTk7ILJik+ohhqdvmlPXe8E/YXRtfS2bpr253EQ'
+    'GbpuKjRMYg/0eZ/GbwYyTNgIJrfx1JFiOxs8WWRQdTdMCNZkzYlDzzEeiQtgEqAlDBkoh2mzx/l8'
+    'tmCSSuNI/8rBoAGQLQr5XcW1xOj+krvKy3R8TSY8FMF/4BH3gJvA5HUW/CI1GpW+MNQ84rt5iA4W'
+    'XCi4excCC8/W3gVXEAwTFgWMXYiB4TUOo4HVLREfE+qBwcdOE3IbxHkaPkg+G20DhCDkHgNjmDuN'
+    'C0R3JJxEdDwHnzNc7ZdS66rj0Ph8kCU590+sV8N0nQ4DWCh8kVTMrHx3uPgkVHY+fjx8bZgqUyk9'
+    'ZvHklAJZwHGRwIVhj9SqF68rbgHfwZwqrbAYpvlUyMjEAfVWuEyuD9BC/RttlRONeGpTK2WgLM7g'
+    'Pe8QTxucEutomDMOpMg9pj4mGL5a4DsO45Qc3UWn7sjI3NGhZ2mfx/CHiR4VO2jWDl9jzJW6tyAQ'
+    'IwKejIiADD249h4lU/tBTsDZQFhHkdKgkAtPnHhB5MJLwJXazD+vvs8nI5LYQXoIQe8VSdj4psno'
+    'b/JdyFSyTAlTcNhIDKqhHt9FEOmDDtKHUgUxLqBIzrgdYWNewJKyaZeD8+GVsSj5mGFD1sd6DmuO'
+    'BLIaAppOtMaBho/STuWEkjxgvZdEPpVFdEcsn8Xk2SgCICmbNmfSF5ApUJ8QVZYqJadIEgQZmAmF'
+    '3AKMQl0cNhCCuT1IwhHOABClhmJpsfXrLx4IncEQnQWeBURcQISvHY0+ByEEa0OzdYP2KFRRmhIT'
+    'NgPoxq6qhwDjM74xMLEoeJcpfMLwhLaU9QUQGKnYAO9XpaKEmcHs7mgB4AAzJkOnJY0SXywnaXIS'
+    'zIIaIKDMJXfpyB7gxRC/jvqNOyajOL5hmRG5H0NOiVllBmkZuGktDCZBpjeFscikN3HCVF9M/u4a'
+    'gg4DBUN4H4k9csAHguHUlQMXMCvkpjSj8NVmOTPGcON4MkUd0c0RhOc3cgpCayhGt9dmkr9Sae+2'
+    '4YVCUW1avIpF31vTOM1SLoXqPNgsuOCoM0lpQQy0FnJ7Ms4zwipkkDi5CUxwMKOTG5TzXFg4+oCP'
+    '/AEk+nU8gZDqKh2cUagpNIHSMHIuFhIBCUnBdTucjpf2WfsCcxZs5KKwyr6hkLEngQ1kUEZeFw0k'
+    'RLCDqScaN5qHQ+xw64aBV+QyTPK47xDj13gbxq7HGJsnYZ2tdXnIpx5muSWrrBn0XAjQqggqepnT'
+    'QOY9xN0GBq9KDElbaK5jpzECYGktoSmt9uKFttr6PuRJPleNeRhfwYTxD3ymwRXgns7P2us7F2tz'
+    'gEMGznm8Pcey1cYI8v/trZ55nn7CwMxWAMgh0mVj2LBaE8M0YSwqu6uYlvngEeM7iINfztkjSNA8'
+    'DG5gWQHr1nh7B3F3vDmWr7Y2zvP+mGzjm/7WCEtpvd6cteH77XFlSFNljkvH8g4nQLtRLEbVY+YO'
+    'DaWP31IQET/kmFxkMXhwVMbrLJumA52yLaepIKY6/OvUTdM7cN9ioppm5PY1SDHCgNn10u8F2bWh'
+    '2/5o7EV2RDKWzZVAOET5Un2nIkhH9xAzQ2JXd3qccFbqbfKAt5A9Jpi9GmBlvQCFLrVKq1Y6j+I1'
+    'eg8JmMsSz+E2zKXWDzVSYX6Bw0YemzAMmA4R7JYLIin8FB4INzk+wQBPwWHNxuBJUC1hugM9Rvtt'
+    'JcQn4IOTDzGQ+DDQo3hdNOkWirQbDvYwDjihz3bGa8xbbbCYIuAs7AmlwAangZ6r9f0AJ3LeKgRO'
+    'AFyD1wF5Zm4ZJwZErWcPUzDcmG1WJ0vRc0/7OI6QRFfZNWJpm7tg0/FfDZngF/Z3Cnyj2HugCSNt'
+    'h0Ce7joEPyROe8iX+DqPblLn7EIgknzajIHMvDgi1i1mmwu+EGwcWi4CpDARBOH+CdGvORTcZqQL'
+    '1CykhNfFLGYKOubzAWHNOO9RkeUOO9VGD1npqxdsCvY0T68NOqw5XChcGYXxiOr2K3gwGLg1w6UZ'
+    'PGf1SoHg6IJs4hblK6A9I1S4X9F2A0eTReidm13bE0i2WT/7LvCya4t/uSbB1XVmfnuji9LFQN37'
+    'x0Bbz8G327F7PcQow3yiwOx2N8Ui8HYaAgL3C9FSuQirc+umlI9Hvg9un5Bon7YZnZ2uBf+b1ji7'
+    'dxgcMnIf2XgP/Ox6eoWHxLsiznNmUnTL7m0vce+YGWEwltJxHXGarW7RyjAUzfiXfbThP0HysDJ5'
+    'hcppdCWWmU0KmiFkz05jKklMhHRqEFoAq9ckBeSUcUwq0DCEAG67+P1V7vuomrLI0H5cebiu1BSe'
+    '1kRpoujo+rC02VQ3wFxTHCaDWHNYYkXrSPvXbrIfe4SOUozKnYaOlcVBMaPhyE1Jf9PS10ZZ7BoM'
+    'G+9TS+akyiCWUxf1/JllwbXqs5IOlEllJS3jroHWnznnWeilWyzLGnC8POmypu4DhmCDGY/5ivci'
+    'wKQ7NAN9v8gu3JAWwLVrN8WwDyPBW0JzBX1RVBREqI2Et75PI55Zz+r2Ft9qMY9QGYYaf+47ztx1'
+    'n3bY6NbAGdUCmi/L6pk+iaMAiNMtfUIyF9dHv7CDaBzmHiRxxWB5AvEykSsCIvVIb2gVjUNaZSpm'
+    'FUnWgG0Ws1Cd7iXz5JwlUtJu3VqhtJ0OyqVV2KwefuMOTVDFHevlJAXv1WGCbNIMVVpZGpiLMj9f'
+    'NKdYNDlqX6iFDp7s0K2hYnep3DXV9DUlnyh3T9G7FWF1dZNJxx0rYa9aLe2NG4S0egjMQMWKpwQ3'
+    '0zSXOqjbIA0g8BZlZA3iWA981x3EaTBxua6Dy4FbE1LEyYArCRVvRAO6F4bGjH0/BYGHBAlCmWTi'
+    'hvrFQskvWasjutKdgDtn98724zHuTL54sXqHMhNfoSzBWlQhlddl7Mbw1pOlI+ABMoC+FnMOIphu'
+    'IHZicTsfcwRRAhN7l2Amn5EaM7cqJo9CSYeyYRkh6BvwOLzVuruDOfLMBePhVmXNmQoz8RYsK/Mr'
+    'BzPtwJPJ+WMKL/RJqmEBavOCpZ1MuRu2D5dXtdTdxnryh+8KbQH95s8WPLIuSm6/usr4QlP8ssDH'
+    'O9nUFNbWWX0r1SewvAOg2TXNfASYyOkuaQo2k2sRqPvm8GuTu1CGluoUkq+Gxv0iQ3HOAG9BP767'
+    'rKQvRcCLrhMtTwAxcfDt7jBYWytxP5Kyf93CB61PM7lGHMCzVw+4E4ZVnEUZQai1nC18q26cKvyi'
+    '8XrZVWUGC40pQxpZUXQUAd8SvjkVtCIB7PTbIiaQpdJmiealtIsqpZ4VoGomWtogqbIh+mA6LPUw'
+    'y/Uq4yAwE2itz5abCl7EsKfX05eB51Qsx3NNzJreckdg6vULWWrkVLZcS7UixNdzAtaxaUmpzZLW'
+    'lHIDgbk6VgNCmfMVBqnaUHlJRQDVkCFvenvRsNQFSasNy20+SwToeI+ufzGIJARNVJpybZQKIgtO'
+    'DWAVpLGSCi8UUVf2IJZK5BDDgKMofKDufIT748TTPrz/FCIW95akzO0Ve8AWPR7kJpBZJLiPs//6'
+    'PcTFP8gh2EttRUHiEYQGt8S7dDOnDLFaaCylqg6dhDZTjDEP6PGVCOzmc4QrqzLUnmA5B4L2MFRj'
+    'JnUnqyg3Sq5KUsBKfR8sfqW+7yj1fXgvx/OPxOvScCJYLw/IyLG/w4q3ptzEDigWbqwccLYkrMNT'
+    'S3oR9ElBY5bYRWhYDxJZZgPJTJnGCMH4ECdZWp5r4bkP6hq60BPc4sbd1NAFK4qnKC35dChqnLS5'
+    'P2PZ3mBnYRmXVgA+QgZeC9Y6kF3jSQfAc0GnbWOxgcXbJsRxYQZx99TZre0UTs0XL6a7Tqfd3YSH'
+    'bzv9Xm+jZ6L/k08FgY54eUiOxYFTA1bUQs1wH4o8DZqUrRw51wBNSMqjmvKpVV4rl5sc6VwnukMx'
+    'psm3cBOC06QxiGkxGhrq6xIUV5GV4vwc6IbDz7o25QnLtEdafpYRsRSRi0LjPjIjvNhHLE/gQsb3'
+    'nGNVSr4mSBcHAJiHAI47a2sl30WuxPfCqa/BLXmu23xve6iajxpjWLAHL4eLJ5dXHBHgBxXMOrYl'
+    'SscP2+lF8rxYKQM20B6nQZksfOPQ12fl4eM/ow28KHIhWHCXFhy4Y5WWgr2Gfofuu9PdstvwX2eg'
+    'ryEK8NfFdmLrtqMzDZe9RXVqzbrRoxGtykS23g4jipLnptQoMUwWWoLje8nUM+E+ugUEgYdF2YI7'
+    'bpaRyVRoSVVhZmy5FMMLOZ5sBiG5EzWtBToD5rcrdo8vT03sqbXCUydc9CtHK3DrM7XjCFNhp3oA'
+    '6HFJaqry0+hgJrZZBuKcvAUtXj6GrB735iDlZMjSd6IgIp1uGVROu1hlyZnv2Q2YhCrHES3mlujx'
+    'mmvwbrFu0aMvg+IQzEKqylUZjp6Or7gDa45f79JHdR1eNx2fpBGTWlVjoiiq46qdG8pLi96pWA9u'
+    'y9iSaOQWpvq1lgUTLeAMhM8Uh40EQk+dkayDrSyaRZWy097c7m3166WCd4ymonZfbLHLEjBJr9gx'
+    'oambwLxK9OawpjPSikA3GwnFbTPKd12OwTmAkCuYQHEDA2wzvpIEBt5WREgAcSnE+TfLoQAsz35f'
+    'TmKPYAeULIWmJUUrdiFhp41XEXod3z3P+z16Br+7WbkmwM71y1cX+ltdbBl1O03XGJZdTEDM+uPu'
+    'ThIzWVDKuJmun+z4VaMl56OlYWK+rTCM9FvN5Ja3TIYNl0zkGynVdFk9wejsGlhrGFtFDDbAj4Up'
+    '0faUYhSzxIAquXVDo7inI89QtKGpLiAls1gMVkryOpPt3T71JbM6vxdSTzmOxsF0uVSwsOguQb14'
+    '8KcIgmveoCgXaAQWq6qIVIYUoec6zgxB6sj8ePX2aP8vDl4zHSA9elkHZH17Z4wb+/3+trjnsvTC'
+    'DL35stXDt/Llnl5ns4PPI8Sw2SbLbr7olkTN3sfTzy7fHZ682zvd/4zSJGnMNnHpNSLfw882vS2z'
+    'sSN0Thmb0trf8LqCVqAD8Gz5fSLort/M2emMESdB7V82Lt7SUSj++OHT473XB5fHB9/5eHgsGPlc'
+    'YwLNffXO0Vc1IBIph+9PTvfe7x9cHr6//HhyQG96jPobgh3ALIqn3ReL0Otu9IvbVrVlL6etjPL2'
+    '8N3hKcXNzN4WxUpFZNP3EOuot/0IVpmxPi4KUNGmCwp4dkAT9VKphlVXghcFUcQrU61Y+KrFWlur'
+    'FDOqALtOV8XwhDFT4p76qV4ew5THdxVz10ShbEZl465panyKJ8rkGotQ/zOd67Fu6YoOwXe6YMqO'
+    'FWek2eQXl8yY5x2ijm82eaK6TRMW50wMeYF3ElQhYPfnQJhQTbodVJnujo/63HH1NZ4nYv8iT8Sj'
+    'HE/kiRWSlidFksmv2VQlmpdY9Vgf2Q5TJ6GUX6ax4jYaOyGIOVs8AsJ3cXWz2M5Nrx7FyUpHqCRq'
+    'Veclr/0ADILzuhOvEiqndIeP0cMiel+N/R53f4/IjP773/z0y3/+jy/+5ydf/Ojv//DXP/rtr//9'
+    'dz/7my//6x9+/4u/++KnvyxuGuvPdZKafIm1yJVm/4dFqzopiwVPVx8VmITcgr3wGvj4lbWyOciV'
+    'PQ9z6pLzBl+xqTrm5wanakVXKXqsLCPn6xWAqoOq2RcrzLIcuWik8LUc+emo+amoVI6oWcxcC6KX'
+    'Bq08aS0rqI069ywynrRwbLr8RsKTV4J0duwZt1XZU1mFTrOXfOOjURmWVTJqGsloCbGun1UrZsum'
+    'PJ+vsg5FAUzmAXQQ6Yw5U3ITKY1pLiJ1aF1GifZxrorXlXFCKCFwwuNCmhDt4igdMS81BPiuI9fP'
+    'XqI5GHS67XLOzYCmNAUK2TwPUaOl6lA/+FOe2jf4jSunPDSPARFrNL+ytSmXCNjxXJVYVqZ+LMlb'
+    'piHF3VlxPVbYh4qOPaknjUIt33aoSjarR1euGcYRL7fYrufhpVDkj4FW3sJAgCRWQqbhgzBESD1t'
+    'tlkBREXGSiCrHCJPwpc2vXLODiHXLzjiyWkMjkzlADIMU7sjWHE8eFVK8jqVc1+1ipLIcORfVej5'
+    'tCDS3fTkI+nyaSDMDLbHRZBHU8JNn6C36WEaBznJFjtRXi1O3Tq8usMvKFr8RLMzW6iAtLSVOuq1'
+    '2O22Vb/f2mmXrfQS6zY0qFdWAaRAL13nuSEPFh2n6UYPI8CsFMFWORQthCHP7Ws3PbqLPiTxlCTZ'
+    'gw3WNzRuLUBdP6RcMAEP1opdx1sk4+LlS1htfrhfSZXks7+7lKb5vHV2ft9ur5/fd/wLfvCNndWt'
+    'r+9h5baF5gck9AaavoYUSkEGWwZKCztvXD3HALRwoPpt4hcv2L2H1+w+6FwcV2IH+jpWf2GKE3pL'
+    'cTQQL9CUa63xEbRWcSQK0vhSyBqIRJGoLiIl9sxd/+He+l9dDM7Oz1sX8/OWuYREiqFRdTz8hQ9Q'
+    'mk38cZM2TX1pCs2Uo7e1ib/8wRJpf0eGl+NmcXQrCJ2mkW20Mu6YGC1K59q3WhaKSgpZZ8bbWqbt'
+    'ZsZ6R5WcZy8JDm3O54+sLkKATVu+dk8wZ5O0yzNsWFBAU4H3TkT1Bz7bWB7xJc4IwWPWXHJ7/DDH'
+    'ow4OT0IxaqVYuohQ2D6juJUyi29YVCOfu6mY1XJ4XeQXEkUNqBqxFF5Sr8bTX3F6wn+zYKyY4LKA'
+    '6Y+YOCAgzyFXef0nqrX8P05TxMqV3bSGnWB+j4PSimKWuj5ZOHz7GP+JUfm1a3xv8V/t+cohu0Ky'
+    'NB05n9I/Rmk+RZ4QT5yN0WnHhWmY7IcFWKRiF+mcs0tbjCquZakcZz6ngO2oY9AkflAldJMJZmh7'
+    '+KDES/QVy9Hpoy2uZk3jybqkD48dWxhKQ5XRGf0JhnyqRmcQF+Fvb4l5KwcimlA3IT5kv24Ahm4J'
+    '6kY01Z9qoaAiMpR+D0xEdFITDX7Lrw4+B+C2f1huX6jg9R+GkXo842ek9sZjWN235JaExswtvwz0'
+    '0+OPJ6cHry/3j96fHvzl6Qkvcak/n8NWmx8rriykNYM4KIi9w+gdhD7gXwZtuycjqV/VHlY07Jnx'
+    'fannwI+lKzNc+V9QSwMEFAAAAAgAAAAhANL22dEOAgAASgMAAAoAAABwb3B1cC5odG1sfVM9bxMx'
+    'GN6R+A/GM8k1KEId7rKwIwZ25Pje5Ex9Pst20oYJISEqVSpCMEApLKU0S8WASirx0T+Tu2bjL/Da'
+    'zgUmljt/PO/7fNx76a284m6mgRSulIObN1L/JpKpcUafFJ179+kgLYDlg7QExwgvmLHgMjpxo842'
+    'XZ8qVkJGpwJ2dWUcJbxSDhSidkXuiiyHqeDQCZvbQgknmOxYziRkPeo5nXASBsvL18vLo+v3r5rD'
+    's3pxWj9frK4+Noen9bt5mkRIKoXaIQZkRq2bSbAFAPIVBkYoSXS5tagpCYKx77DKZyiRCUW4ZNZm'
+    'VFd6olFfqRl3npuQYA9Mi3CVxhaiHBNreEYFerGJf/a3u1qNKYmeaP8O8oIYFy6umcQFVuZiion1'
+    '/u8G7z2QiNwbYW5iacsft+gTsJnVTAVQXrkNwq/RpL/7BxHrHsIeXjbnJ/XxvDl52lwcrH5+WX7/'
+    '1sKTIG/9jMZjCJINQbYMBkpmdtb8g+bi5epsH3XXn140X+dtK6H0xAVqbaqRkPDIjwElJduToMY+'
+    'o+0tSrRkHIpKIlNGl78O6s/Pfv84un4zb/YXd7dIQh7EatLr972tICRqGk6cq9bu2BQ2AWgjUN/M'
+    'fwkMaXn1oT5/22qLNbF+kzAW538DjjtmBOtIMQU/FFI4H3fIBecm8SOD7rkR2sU5CIPTfRzGK57j'
+    'Is5XEn6dP1BLAwQUAAAACAAAACEAgHxwIYsCAABeBQAABgAAAHVpLmNzc4VUy46bMBT9FZSo0kwF'
+    'kc0zmGWlql1UqlR10aUBG6wBG9mmkxTl33txIENSabqIFMLRuedxbz5OpToFRvwRsiGl0jXTAfxy'
+    'aW3f+aWqz1NPdSMkQcVA63pGoYIraQNOe9Gdye6bqLQyilvvF/3ChPfz687ffQfgZyob78ennW/O'
+    'xrI+GIVvqDSBYVrwoqTVS6PVKGuyRzXOwmNRqU5psmeMJ5xfDoMaxuFQqX6glZ1eRW1bEkVoON2U'
+    '4ONwuhysGqZamKGjZ8I7dioaOhAcAo52opGBgOGGVExaph3aE30zLV41rcVoHPz6rsWTsweRMIJT'
+    'YFkD8JCXwKN7+8pE01pyROhyMJba0XRCsnsZ/053yjLgWJzmMS2rpNjMczJqtdrNAdteR81f7zUn'
+    '6EOxDhRynh+Unape7qJlCT3GqHAlt7RWr84H8qLh5OmmpE9hmPs4Pfpp7B9w+OymH5Sjm7ZEYVIl'
+    'x/IdoijzcQ6fKAeieCFiWit9x8N4mmbZe4KAAKPQx3gl0gwqeLmFezV5bSWAygjO5tSuKM8MVD5A'
+    '7/Ndw6d5mVd05SmVtaonWyYhh3EtAiMIe2kiequCYFBtVCdqbx/mMUr4Q0d4XtetfRyHcURXDTzl'
+    'Oedvl+VhICzUaOf4iVSSbcVHj+IIV9Vo1lVeONM8TXn0TsAYJS5gELJU3gpp1zuHBLzZFY7foso4'
+    'bCrdSplluo1bMsGHJIGL1QJYzosggv4TxkxAddDMr+E+nnCU1KzxFwf+PmJlVuXPt7AgqW0F20PM'
+    'ElRUozaAG5S4XvqihsAy0LJj9aTgj0TYM3FaoVe2KRfOmP4GTA+7sHo63o7frdn8aNnJBu6w15Ne'
+    'xEVZHdPwIaLLX1BLAQIUAxQAAAAIAAAAIQCh7PzdRwMAADEGAAANAAAAAAAAAAAAAACAAQAAAABt'
+    'YW5pZmVzdC5qc29uUEsBAhQDFAAAAAgAAAAhAJolMF5yEQAAmj0AAAwAAAAAAAAAAAAAAIABcgMA'
+    'AGV4dHJhY3Rvci5qc1BLAQIUAxQAAAAIAAAAIQC7fO9bigIAAOUEAAAIAAAAAAAAAAAAAACAAQ4V'
+    'AABwb3B1cC5qc1BLAQIUAxQAAAAAAAAAIQAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAADtQb4XAABp'
+    'Y29ucy9QSwECFAMUAAAACAAAACEA3jCBPUsVAAB0FQAAEQAAAAAAAAAAAAAAgAHiFwAAaWNvbnMv'
+    'aWNvbjEyOC5wbmdQSwECFAMUAAAACAAAACEAB2Rmv3kCAAB0AgAAEAAAAAAAAAAAAAAAgAFcLQAA'
+    'aWNvbnMvaWNvbjE2LnBuZ1BLAQIUAxQAAAAIAAAAIQCuCEIzrCcAAFUoAAARAAAAAAAAAAAAAACA'
+    'AQMwAABpY29ucy9pY29uMjU2LnBuZ1BLAQIUAxQAAAAIAAAAIQBhSSd4LgUAACkFAAAQAAAAAAAA'
+    'AAAAAACAAd5XAABpY29ucy9pY29uMzIucG5nUEsBAhQDFAAAAAgAAAAhAOAt0hKsBwAApwcAABAA'
+    'AAAAAAAAAAAAAIABOl0AAGljb25zL2ljb240OC5wbmdQSwECFAMUAAAACAAAACEAk63mrYABAAAU'
+    'AgAACQAAAAAAAAAAAAAAgAEUZQAAUkVBRE1FLm1kUEsBAhQDFAAAAAgAAAAhAFcPj/K7GgAA5k4A'
+    'AA0AAAAAAAAAAAAAAIABu2YAAGJhY2tncm91bmQuanNQSwECFAMUAAAACAAAACEA0vbZ0Q4CAABK'
+    'AwAACgAAAAAAAAAAAAAAgAGhgQAAcG9wdXAuaHRtbFBLAQIUAxQAAAAIAAAAIQCAfHAhiwIAAF4F'
+    'AAAGAAAAAAAAAAAAAACAAdeDAAB1aS5jc3NQSwUGAAAAAA0ADQD1AgAAhoYAAAAA'
 )
 # END BUNDLED CONNECTOR PACKAGE
 
@@ -4947,16 +5412,30 @@ THEME_PRESETS = {
     "云白": dict(bg="#F7F7F5",sidebar="#FFFFFF",panel="#FFFFFF",panel_2="#F2F2EF",
         border="#E8E8E3",text="#1C1C1C",muted="#6E6E6E",accent="#1D4ED8",accent2="#1E40AF",
         pill="#1D4ED8",pill_hover="#1E40AF",green="#15803D",
-        red="#DC2626",amber="#B45309",cyan="#0369A1",input="#FFFFFF",hover="#EFF1F8",soft="#EAF0FE",light=True),
+        red="#DC2626",amber="#B45309",cyan="#0369A1",input="#FFFFFF",hover="#EFF1F8",soft="#EAF0FE",light=True,
+        tooltip_bg="#FFFFFF",tooltip_text="#1C1C1C",tooltip_border="#1D4ED8"),
     "护眼绿": dict(bg="#E9F5EC",sidebar="#F2FAF4",panel="#FFFFFF",panel_2="#E3F2E7",
         border="#C8E6D2",text="#1C1C1C",muted="#5A6B5E",accent="#0B7A43",accent2="#096A3A",
         pill="#0B7A43",pill_hover="#096A3A",green="#12803C",
-        red="#DC2626",amber="#B45309",cyan="#0E7490",input="#FFFFFF",hover="#DDF0E3",soft="#D9F2E3",light=True),
+        red="#DC2626",amber="#B45309",cyan="#0E7490",input="#FFFFFF",hover="#DDF0E3",soft="#D9F2E3",light=True,
+        tooltip_bg="#FFFFFF",tooltip_text="#123B22",tooltip_border="#0B7A43"),
     "曜石黑": dict(bg="#101114",sidebar="#17181C",panel="#1A1B1F",panel_2="#232429",
         border="#2A2B31",text="#ECECEC",muted="#9AA0A6",accent="#5B8DEF",accent2="#7AA2F7",
         pill="#5B8DEF",pill_hover="#7AA2F7",green="#7BC98F",
-        red="#F0A3A3",amber="#E5B567",cyan="#67B7D6",input="#1E1F24",hover="#24252B",soft="#1E2A44",light=False),
+        red="#F0A3A3",amber="#E5B567",cyan="#67B7D6",input="#1E1F24",hover="#24252B",soft="#1E2A44",light=False,
+        tooltip_bg="#232429",tooltip_text="#F2F2F2",tooltip_border="#5B8DEF"),
 }
+TOAST_POSITIONS = (("下居中（默认）", "bottom_center"), ("右上", "top_right"),
+                   ("左下角", "bottom_left"), ("右下", "bottom_right"))
+
+
+def ui_scale_percent(settings):
+    """UI zoom percentage from settings: 80-130, default 100."""
+    if settings is None:
+        return 100
+    return _bounded_int(settings.value("ui_scale", 100), 100, 80, 130)
+
+
 THEME_MIGRATION = {
     "蓝橙曜石": "曜石黑", "石墨黑": "曜石黑", "紫夜渐变": "曜石黑",
     "清爽白": "云白", "海盐晨光": "云白", "青瓷绿": "护眼绿",
@@ -5095,15 +5574,29 @@ def icon_button(kind,tip,parent=None,size=40):
     return b
 
 
+class CaptionHoverFilter(QObject):
+    """Recolour the close glyph white while its red hover background shows."""
+    def eventFilter(self,obj,event):
+        if event.type() in (QEvent.Type.Enter,QEvent.Type.Leave):
+            if str(obj.property("iconKind") or "")=="close":
+                obj.setIcon(ui_icon("close","#FFFFFF" if event.type()==QEvent.Type.Enter else MUTED))
+            return False
+        return super().eventFilter(obj,event)
+
+
 class ElideLabel(QLabel):
     def __init__(self,text="",parent=None):
         super().__init__(str(text),parent)
         self.setMinimumWidth(0);self.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         self.setTextFormat(Qt.TextFormat.PlainText)
     def paintEvent(self,event):
+        # Single-line paint: a multi-line status/log text must not be drawn as
+        # two vertically-clipped lines inside a one-line rect. Flatten newlines
+        # (the full text stays available via tooltip / status history).
+        _text=self.text().replace("\r\n"," ").replace("\n"," ").replace("\r"," ")
         p=QPainter(self);p.setFont(self.font());p.setPen(self.palette().color(QPalette.ColorRole.WindowText))
         p.drawText(self.contentsRect(),self.alignment(),
-            self.fontMetrics().elidedText(self.text(),Qt.TextElideMode.ElideRight,max(0,self.contentsRect().width())))
+            self.fontMetrics().elidedText(_text,Qt.TextElideMode.ElideRight,max(0,self.contentsRect().width())))
         p.end()
 
 
@@ -5432,27 +5925,35 @@ TOAST_THEME_STYLES = {
 
 
 def toast_badge_pixmap(kind, style):
-    """22px filled-circle badge: info 'i', success check, warning '!'. Colours follow the theme."""
+    """20px filled-circle badge: info 'i', success check, warning '!'. Colours follow the theme.
+
+    Drawn at 3x with devicePixelRatio set, so the badge stays sharp on HiDPI
+    displays instead of being upscaled from a 1x pixmap. The circle is inset
+    1px so antialiasing at its edge is never clipped.
+    """
     if kind == "warning":
         fill, glyph_color = style["warn"], style["warn_glyph"]
     else:
         fill, glyph_color = style["icon"], "#FFFFFF"
-    pm = QPixmap(22, 22); pm.fill(Qt.GlobalColor.transparent)
+    pm = QPixmap(60, 60); pm.setDevicePixelRatio(3.0); pm.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pm); painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setBrush(QColor(fill)); painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawEllipse(0, 0, 22, 22)
-    painter.setPen(QPen(QColor(glyph_color), 2.4, Qt.PenStyle.SolidLine,
+    painter.drawEllipse(1, 1, 18, 18)
+    painter.setPen(QPen(QColor(glyph_color), 2.2, Qt.PenStyle.SolidLine,
                         Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     painter.setBrush(QColor(glyph_color))
     if kind == "success":
-        path = QPainterPath(); path.moveTo(6, 11.5); path.lineTo(10, 15.5); path.lineTo(16.5, 7)
+        # Stroke only: drawPath with a brush would fill the implicitly
+        # closed triangle, which is why the check used to look like a blob.
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        path = QPainterPath(); path.moveTo(5.5, 10.5); path.lineTo(9.1, 14.1); path.lineTo(15.0, 6.4)
         painter.drawPath(path)
     elif kind == "warning":
-        painter.drawLine(QPointF(11, 6), QPointF(11, 13))
-        painter.drawEllipse(QRectF(9.8, 15.6, 2.4, 2.4))
+        painter.drawLine(QPointF(10, 5.2), QPointF(10, 11.6))
+        painter.drawEllipse(QRectF(8.9, 14.0, 2.2, 2.2))
     else:
-        painter.drawLine(QPointF(11, 6.5), QPointF(11, 13))
-        painter.drawEllipse(QRectF(9.8, 15.6, 2.4, 2.4))
+        painter.drawLine(QPointF(10, 8.4), QPointF(10, 14.8))
+        painter.drawEllipse(QRectF(8.9, 5.0, 2.2, 2.2))
     painter.end()
     return pm
 
@@ -5463,25 +5964,28 @@ def toast_style_for(theme_name):
 
 
 class ToastNotice(QFrame):
-    """One non-modal, click-through notice centered below the middle of its parent window."""
+    """One non-modal, click-through notice anchored by the toast-position setting."""
     def __init__(self, parent):
         super().__init__(parent)
         self.setObjectName("ToastNotice")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         layout = QHBoxLayout(self);layout.setContentsMargins(20,13,20,13);layout.setSpacing(10)
-        self.icon = QLabel();self.icon.setFixedSize(22,22);layout.addWidget(self.icon)
+        self.icon = QLabel();self.icon.setFixedSize(20,20);layout.addWidget(self.icon)
         self.message = QLabel();self.message.setObjectName("ToastMessage")
-        self.message.setTextFormat(Qt.TextFormat.PlainText);self.message.setWordWrap(False)
+        self.message.setTextFormat(Qt.TextFormat.PlainText);self.message.setWordWrap(True)
+        self.message.setAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.message,1)
         self.timer = QTimer(self);self.timer.setSingleShot(True);self.timer.timeout.connect(self.hide)
+        self._position = "bottom_center"
         shadow=QGraphicsDropShadowEffect(self);shadow.setBlurRadius(22);shadow.setOffset(0,4);shadow.setColor(QColor(0,0,0,165))
         self.setGraphicsEffect(shadow)
         self.hide()
 
-    def show_message(self, text, duration_ms=3600, kind="info"):
+    def show_message(self, text, duration_ms=3600, kind="info", position=None):
         self.timer.stop()
         kind = kind if kind in ("info", "success", "warning") else "info"
+        self._position = str(position or getattr(self.window(), "toast_position", "bottom_center") or "bottom_center")
         self.last_kind = kind
         style = toast_style_for(getattr(self.window(), "theme_name", "云白"))
         self.icon.setPixmap(toast_badge_pixmap(kind, style))
@@ -5493,22 +5997,38 @@ class ToastNotice(QFrame):
             "QFrame#ToastNotice {background:" + style["bg"] + ";border:1px solid " + style["border"] + ";border-radius:14px;}"
             "QLabel#ToastMessage {color:" + style["text"] + ";font-size:14px;font-weight:650;background:transparent;border:0;}"
             "QLabel {background:transparent;border:0;}")
+        # Palette fallback as well as the stylesheet: the text must stay
+        # visible in every theme even if a stylesheet rule is overridden.
+        _pal=self.message.palette();_pal.setColor(QPalette.ColorRole.WindowText,QColor(style["text"]));self.message.setPalette(_pal)
         parent = self.parentWidget()
         available = max(220, parent.width()-64)
         budget = max(120, min(available, 920) - 80)
-        shown = self.message.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, budget)
+        # Elide line by line: eliding the whole multi-line string at once
+        # and relying on adjustSize() for the height can leave the second
+        # line clipped or blank. Cap at 3 lines; keep the first lines intact.
+        _fm=self.message.fontMetrics()
+        _lines=[_fm.elidedText(_ln,Qt.TextElideMode.ElideRight,budget) if _ln else "" for _ln in str(text).split("\n")]
+        while _lines and not _lines[0]:_lines.pop(0)
+        while _lines and not _lines[-1]:_lines.pop()
+        if not _lines:_lines=[""]
+        if len(_lines)>3:
+            _lines=_lines[:3]
+            _lines[2]=_fm.elidedText(_lines[2]+" …",Qt.TextElideMode.ElideRight,budget)
+        shown="\n".join(_lines)
         self.message.setText(shown)
         self.message.setToolTip(text if shown != text else "")
-        natural = self.message.fontMetrics().horizontalAdvance(shown) + 80
-        self.setFixedWidth(min(available, 920, max(260, natural)))
-        self.adjustSize()
-        self.reposition();self.show();self.raise_()
+        _text_w=max((_fm.horizontalAdvance(_ln) for _ln in _lines),default=0)
+        _width=min(available,920,max(260,_text_w+80))
+        _height=26+len(_lines)*_fm.lineSpacing()+2
+        self.setFixedSize(_width,_height)
+        self.move(*toast_position(parent.width(),parent.height(),_width,_height,self._position))
+        self.show();self.raise_()
         self.timer.start(_bounded_int(duration_ms,3600,3000,4000))
 
     def reposition(self):
         parent=self.parentWidget()
         if parent:
-            self.move(*toast_position(parent.width(),parent.height(),self.width(),self.height()))
+            self.move(*toast_position(parent.width(),parent.height(),self.width(),self.height(),getattr(self,"_position","bottom_center")))
 
 
 def show_hint(owner, message, duration_ms=3600, kind="info"):
@@ -5650,7 +6170,7 @@ class CollectWorker(QObject):
 
 
 class ConnectorCollectWorker(CollectWorker):
-    """Distribute one round across up to 10 connector browsers and auto-recheck ambiguity.
+    """Distribute one round across the connected browsers (no cap) and auto-recheck ambiguity.
 
     A name/post result that cannot be confirmed is retried once.  When another selected
     browser is online the recheck prefers that browser; with only one browser it retries
@@ -5660,7 +6180,7 @@ class ConnectorCollectWorker(CollectWorker):
     def __init__(self,pages,bridge,instance_ids,gap=8,purpose='monitor',gap_range=None):
         super().__init__(pages,gap=gap,purpose=purpose,gap_range=gap_range)
         if isinstance(instance_ids,str):instance_ids=[instance_ids]
-        self.bridge=bridge;self.instance_ids=list(dict.fromkeys(str(x) for x in instance_ids if x))[:10]
+        self.bridge=bridge;self.instance_ids=list(dict.fromkeys(str(x) for x in instance_ids if x))
 
     def _record_good(self,row,record):
         checks=[]
@@ -5670,8 +6190,21 @@ class ConnectorCollectWorker(CollectWorker):
             if row.get('monitor_posts'):checks.append(bool(record.get('posts_ok')))
         return bool(checks and all(checks))
 
+    def _live_online(self):
+        """Online, unblocked connectors right now: the start snapshot plus
+        any browser that came online later. A snapshot id that went offline
+        or was blocked meanwhile drops out."""
+        try:
+            rows=self.bridge.clients()
+        except Exception:
+            return [cid for cid in self.instance_ids if self.bridge.online(cid)]
+        live=[r['instance_id'] for r in rows if r.get('online') and not r.get('blocked')]
+        ordered=[cid for cid in self.instance_ids if cid in live]
+        ordered+=[cid for cid in live if cid not in ordered]
+        return ordered
+
     def _recheck_connector(self,source_cid,record=None):
-        online=[cid for cid in self.instance_ids if self.bridge.online(cid)]
+        online=self._live_online()
         others=[cid for cid in online if cid!=source_cid]
         diag=str((record or {}).get('diagnosis_code') or '')
         # Login/offline: another profile cannot fix this account's login
@@ -5694,6 +6227,7 @@ class ConnectorCollectWorker(CollectWorker):
         if not online:
             self.finished.emit(False,'连接器中断：所有已选择浏览器均已离线');return
         self.instance_ids=online
+        self._spawned_ids=set(self.instance_ids)
         if total < len(self.instance_ids):
             self.finished.emit(False,f'任务数 {total} 少于当前在线连接器 {len(self.instance_ids)} 个，请减少连接器');return
 
@@ -5747,8 +6281,22 @@ class ConnectorCollectWorker(CollectWorker):
             t=threading.Thread(target=lane_worker,args=(cid,initial[cid]),name='POM-connector-'+cid[:8],daemon=True)
             threads.append(t);t.start()
 
+        spawned=set(self.instance_ids);last_scan=time.monotonic()
         done=0;offline=set();first_seen=0;rechecks=[]
         while done<len(threads):
+            # Browsers that came online after the round started join while
+            # there is still queued work. Scan on every loop pass (results
+            # arrive too steadily for the Empty branch alone to trigger it);
+            # a lane with nothing to pull exits on its own, so this can
+            # never stall the round.
+            if (not self._stop.is_set() and remaining_count()>0 and not workq.empty()
+                    and time.monotonic()-last_scan>=0.5):
+                last_scan=time.monotonic()
+                for cid in self._live_online():
+                    if cid in spawned or not self.bridge.online(cid):continue
+                    spawned.add(cid);self._spawned_ids.add(cid)
+                    t=threading.Thread(target=lane_worker,args=(cid,None),name='POM-connector-'+cid[:8],daemon=True)
+                    threads.append(t);t.start()
             try:item=outq.get(timeout=.25)
             except queue.Empty:
                 if not any(t.is_alive() for t in threads):break
@@ -5796,7 +6344,7 @@ class ConnectorCollectWorker(CollectWorker):
 
         aborted=self._stop.is_set() and finalized<total
         if finalized<total and not aborted:
-            active=[cid for cid in self.instance_ids if self.bridge.online(cid)]
+            active=self._live_online()
             if not active:
                 self.finished.emit(False,f'连接器中断：所有已选择浏览器均已离线，当前轮次已停止 · 已处理 {finalized}/{total}');return
             self.finished.emit(False,f'浏览器连接异常，本轮未完成 · 已处理 {finalized}/{total}');return
@@ -5804,172 +6352,276 @@ class ConnectorCollectWorker(CollectWorker):
         extra=f' · {len(offline)} 个浏览器中途离线' if offline else ''
         if rechecks:extra+=f' · 自动复检 {len(rechecks)} 个主页'
         self.finished.emit(not aborted and failure==0 and finalized==total,
-            f"{task}{'已停止' if aborted else '完成'} · 完整成功 {success} / 部分或失败 {failure} / 共 {total} · 使用 {len(self.instance_ids)} 个浏览器{extra}")
+            f"{task}{'已停止' if aborted else '完成'} · 完整成功 {success} / 部分或失败 {failure} / 共 {total} · 使用 {len(getattr(self,'_spawned_ids',self.instance_ids))} 个浏览器{extra}")
+
+
+def connector_notice_colors(theme_name):
+    """Banner background + warning-note foreground for the connector dialog,
+    per theme. The light amber banner is unreadable in the dark theme, so
+    dark themes get a dark amber surface and the preset's light amber."""
+    preset = THEME_PRESETS.get(theme_name) or THEME_PRESETS["云白"]
+    if preset.get("light", True):
+        return "#FDF3E3", preset.get("amber", "#B45309")
+    return "#33291A", preset.get("amber", "#E5B567")
 
 
 class BrowserConnectionsDialog(QDialog):
-    """Zero-configuration connector view. Checkboxes auto-save; no pairing step."""
+    """Zero-configuration connector view (A3-final).
+
+    Fixed size; the list scrolls internally and the window never grows.
+    Every online browser is used automatically with no cap. The checkbox
+    column only selects rows for block/delete actions: the action buttons
+    appear in the middle of the checked row, between the version note and
+    the status column, which never moves.
+    """
+    FILTERS = (("all", "全部"), ("online", "在线"), ("offline", "离线"), ("blocked", "已停用"))
+
     def __init__(self, owner):
-        super().__init__(owner);self.owner=owner;self.bridge=owner.connector
-        self.setWindowTitle('浏览器连接');self.resize(650,390)
-        layout=QVBoxLayout(self);layout.setContentsMargins(22,18,22,18);layout.setSpacing(10)
-        title=QLabel('浏览器连接');title.setObjectName('DialogTitle');layout.addWidget(title)
-        hint=QLabel('1 个在线浏览器自动使用；多个在线浏览器可勾选一个或多个并行巡检，修改后自动保存。')
-        hint.setWordWrap(True);hint.setObjectName('SmallMuted');layout.addWidget(hint)
-        connector_bar=QHBoxLayout();connector_bar.setSpacing(8);connector_bar.addStretch()
-        self.export_connector_button=QPushButton('获取连接器');self.export_connector_button.setObjectName('PrimaryButton');self.export_connector_button.clicked.connect(self.export_connector)
-        self.export_connector_button.setVisible(False);connector_bar.addWidget(self.export_connector_button)
-        layout.addLayout(connector_bar)
-        self.summary=QLabel();self.summary.setTextFormat(Qt.TextFormat.PlainText);self.summary.setObjectName('InfoBox');self.summary.setWordWrap(True);layout.addWidget(self.summary)
-        self.table=QTableWidget(0,3);self.table.setHorizontalHeaderLabels(('使用','浏览器备注','状态'))
-        self.table.verticalHeader().hide();self.table.setShowGrid(False);self.table.setAlternatingRowColors(True)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table.setColumnWidth(0,58);self.table.setColumnWidth(2,92)
-        self.table.horizontalHeader().setSectionResizeMode(1,QHeaderView.ResizeMode.Stretch)
-        self.table.setItemDelegateForColumn(0,CheckDelegate(self.table));layout.addWidget(self.table,1)
-        buttons=QHBoxLayout();buttons.setSpacing(8)
-        all_btn=QPushButton('全选在线');all_btn.clicked.connect(self.select_all_online);buttons.addWidget(all_btn);buttons.addStretch()
-        self.block_button=QPushButton('停用');self.block_button.clicked.connect(self.toggle_block);buttons.addWidget(self.block_button)
-        delete=QPushButton('删除旧记录');delete.clicked.connect(self.delete_record);buttons.addWidget(delete)
-        retry=QPushButton('重新检测');retry.clicked.connect(self.retry);buttons.addWidget(retry);layout.addLayout(buttons)
-        self.rows=[];self._signature=None;self._loading=False
-        self.table.itemChanged.connect(self._item_changed);self.table.itemSelectionChanged.connect(self._selection_changed)
-        self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(900);self.refresh()
+        super().__init__(owner); self.owner = owner; self.bridge = owner.connector
+        self.setWindowTitle('浏览器连接'); self.setFixedSize(560, 450)
+        layout = QVBoxLayout(self); layout.setContentsMargins(16, 14, 16, 14); layout.setSpacing(8)
+        title_row = QHBoxLayout(); title_row.setSpacing(8)
+        title = QLabel('浏览器连接'); title.setObjectName('DialogTitle'); title_row.addWidget(title)
+        title_row.addStretch()
+        self.retry_button = QPushButton('重新检测'); self.retry_button.clicked.connect(self.retry)
+        title_row.addWidget(self.retry_button)
+        layout.addLayout(title_row)
+        self.chips_box = QHBoxLayout(); self.chips_box.setSpacing(0); layout.addLayout(self.chips_box)
+        self.chips = None; self._filter = "all"; self._chip_counts = None
+        self.status_label = QLabel(); self.status_label.setObjectName('SmallMuted')
+        self.status_label.setWordWrap(True); layout.addWidget(self.status_label)
+        self.banner = QWidget()
+        # ID-scoped: a bare `background:` rule would also paint every child
+        # widget (including the PrimaryButton, whose white text then sat on
+        # a light background and vanished).
+        self.banner.setObjectName("ConnectorBanner")
+        self._apply_banner_theme()
+        banner_lay = QHBoxLayout(self.banner)
+        banner_lay.setContentsMargins(12, 6, 12, 6); banner_lay.setSpacing(8)
+        self.banner_label = QLabel(); self.banner_label.setObjectName('SmallMuted')
+        banner_lay.addWidget(self.banner_label, 1)
+        self.export_connector_button = QPushButton('获取连接器')
+        self.export_connector_button.setObjectName('PrimaryButton')
+        self.export_connector_button.clicked.connect(self.export_connector)
+        banner_lay.addWidget(self.export_connector_button)
+        layout.addWidget(self.banner)
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(('', '浏览器备注', '', '', '状态'))
+        self.table.verticalHeader().hide(); self.table.setShowGrid(False); self.table.setAlternatingRowColors(True)
+        # No row selection and no keyboard focus: clicking a row must not
+        # paint a selection/focus frame over the alternating background.
+        # Checkboxes still toggle by mouse; the remark label below is
+        # drag-selectable for copy. Nothing else in a row is clickable.
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setColumnWidth(0, 40); self.table.setColumnWidth(2, 96)
+        self.table.setColumnWidth(3, 148); self.table.setColumnWidth(4, 88)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.setItemDelegateForColumn(0, CheckDelegate(self.table))
+        layout.addWidget(self.table, 1)
+        self.rows = []; self._signature = None; self._loading = False
+        self._checked = set(); self._action_widgets = {}
+        self.table.itemChanged.connect(self._item_changed)
+        self.timer = QTimer(self); self.timer.timeout.connect(self.refresh); self.timer.start(900); self.refresh()
 
-    def selected_row(self):
-        row=self.table.currentRow();return self.rows[row] if 0<=row<len(self.rows) else None
+    def _row_matches(self, row):
+        if self._filter == "online":
+            return bool(row['online']) and not row.get('blocked')
+        if self._filter == "offline":
+            return not row['online'] and not row.get('blocked')
+        if self._filter == "blocked":
+            return bool(row.get('blocked'))
+        return True
 
-    def checked_ids(self):
-        out=[]
-        for r in range(self.table.rowCount()):
-            item=self.table.item(r,0)
-            if item and item.checkState()==Qt.CheckState.Checked:
-                cid=str(item.data(Qt.ItemDataRole.UserRole) or '')
-                if cid:out.append(cid)
-        return out
+    def _rebuild_chips(self, counts):
+        while self.chips_box.count():
+            item = self.chips_box.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        total, online, offline, blocked = counts
+        options = [(f"全部 {total}", "all"), (f"在线 {online}", "online"),
+                   (f"离线 {offline}", "offline"), (f"已停用 {blocked}", "blocked")]
+        self.chips = SegmentedChoice(options, self._filter)
+        self.chips.changed.connect(self._on_filter_changed)
+        self.chips_box.addWidget(self.chips)
 
-    def _selection_changed(self):
-        row=self.selected_row();self.block_button.setText('启用' if row and row.get('blocked') else '停用')
+    def _on_filter_changed(self):
+        if self.chips is not None:
+            self._filter = self.chips.currentData()
+        self._signature = None; self.refresh()
 
-    def _persist_checks(self):
-        rows={r['instance_id']:r for r in self.rows};ids=[cid for cid in self.checked_ids() if cid in rows and rows[cid]['online'] and not rows[cid].get('blocked')]
-        if len(ids)>10:ids=ids[:10]
-        self.owner.set_connector_selection(ids,initialized=True)
-
-    def _item_changed(self,item):
-        if self._loading or item.column()!=0:return
-        ids=self.checked_ids();online=[r for r in self.rows if r['online'] and not r.get('blocked')]
-        if len(ids)>10:
-            self._loading=True;item.setCheckState(Qt.CheckState.Unchecked);self._loading=False;show_hint(self,'最多同时使用 10 个浏览器连接器',kind="warning");return
-        if len(online)>1 and not ids:
-            self._loading=True;item.setCheckState(Qt.CheckState.Checked);self._loading=False;show_hint(self,'多个浏览器在线时至少保留 1 个',kind="warning");return
-        self._persist_checks();self._signature=None;self.owner.refresh_connector_summary()
+    def _item_changed(self, item):
+        if self._loading or item.column() != 0:
+            return
+        cid = str(item.data(Qt.ItemDataRole.UserRole) or '')
+        if not cid:
+            return
+        if item.checkState() == Qt.CheckState.Checked:
+            self._checked.add(cid)
+        else:
+            self._checked.discard(cid)
+        holder = self._action_widgets.get(cid)
+        if holder is not None:
+            for btn in holder.findChildren(QPushButton):
+                btn.setVisible(cid in self._checked)
 
     def refresh(self):
         try:
-            if not self.bridge._running:self.bridge.start()
-        except Exception as exc:self.bridge.error=str(exc)
-        rows=sorted(self.bridge.clients(),key=lambda r:(r.get('blocked',False),not r['online'],r['identity'].get('profile_name',''),r['instance_id']))
-        # Up to 3 connections stay compact. From the 4th connection onward the dialog
-        # grows with the list; 7-10 connections use a wider layout as well.
-        row_count=len(rows)
-        visible_rows=max(3,min(10,row_count))
-        target_w=650 if row_count<=3 else (760 if row_count<=6 else 860)
-        target_h=390 if row_count<=3 else 315 + visible_rows*46
-        screen=self.screen() or QApplication.primaryScreen()
-        if screen is not None:
-            available=screen.availableGeometry()
-            target_w=min(target_w,max(650,int(available.width()*0.88)))
-            target_h=min(target_h,max(390,int(available.height()*0.88)))
-        self.table.setMinimumHeight(150 if row_count<=3 else min(500,42*visible_rows+38))
-        if getattr(self,'_auto_size_rows',None)!=row_count:
-            self.setMinimumSize(650,390)
-            self.resize(target_w,target_h)
-            self._auto_size_rows=row_count
-            QTimer.singleShot(0,lambda w=target_w,h=target_h:self.resize(w,h))
-        saved=set(self.owner.configured_connector_ids(include_offline=True));signature=json.dumps(rows,sort_keys=True)+json.dumps(sorted(saved))+str(self.owner.connector_selection_initialized())
-        if signature==self._signature:return
-        self._signature=signature;current=self.selected_row()['instance_id'] if self.selected_row() else '';self.rows=rows
-        online=[r for r in rows if r['online'] and not r.get('blocked')]
-        if len(online)==1:saved={online[0]['instance_id']}
-        elif len(online)>1 and not self.owner.connector_selection_initialized():saved={r['instance_id'] for r in online[:10]}
-        self._loading=True;self.table.blockSignals(True);self.table.setRowCount(len(rows))
-        for i,row in enumerate(rows):
-            identity=row['identity'];cid=row['instance_id'];marker=QTableWidgetItem('')
-            marker.setFlags(Qt.ItemFlag.ItemIsEnabled|Qt.ItemFlag.ItemIsSelectable|Qt.ItemFlag.ItemIsUserCheckable);marker.setData(Qt.ItemDataRole.UserRole,cid)
-            marker.setCheckState(Qt.CheckState.Checked if cid in saved and row['online'] and not row.get('blocked') else Qt.CheckState.Unchecked);marker.setTextAlignment(Qt.AlignmentFlag.AlignCenter);self.table.setItem(i,0,marker)
-            name=connector_display_name(identity,cid)
-            status='已停用' if row.get('blocked') else ('在线' if row['online'] else '离线')
-            for col,text in ((1,name),(2,status)):
-                cell=QTableWidgetItem(str(text));cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter);cell.setToolTip(html.escape(str(text)));self.table.setItem(i,col,cell)
-            self.table.setRowHeight(i,42)
-            if cid==current:self.table.selectRow(i)
-        self.table.blockSignals(False);self._loading=False
-        outdated_count=self._refresh_connector_bundle_state(rows)
-        if self.bridge.error:self.summary.setText('连接服务异常：'+self.bridge.error)
-        elif not online:self.summary.setText('未检测到在线连接器')
-        elif outdated_count:self.summary.setText(f'{len(online)} 个浏览器在线 · {outdated_count} 个连接器版本较旧')
-        elif len(online)==1:self.summary.setText('1 个浏览器在线 · 已自动使用')
-        else:self.summary.setText(f'{len(online)} 个浏览器在线 · 已勾选 {len([x for x in saved if any(r["instance_id"]==x and r["online"] and not r.get("blocked") for r in rows)])} 个 · 多选时并行分配任务')
-        self._selection_changed()
+            if not self.bridge._running:
+                self.bridge.start()
+        except Exception as exc:
+            self.bridge.error = str(exc)
+        rows = sorted(self.bridge.clients(), key=lambda r: (r.get('blocked', False), not r['online'], r['identity'].get('profile_name', ''), r['instance_id']))
+        self.rows = rows
+        online = [r for r in rows if r['online'] and not r.get('blocked')]
+        offline = [r for r in rows if not r['online'] and not r.get('blocked')]
+        blocked = [r for r in rows if r.get('blocked')]
+        counts = (len(rows), len(online), len(offline), len(blocked))
+        if counts != self._chip_counts:
+            self._chip_counts = counts
+            self._rebuild_chips(counts)
+        signature = json.dumps(rows, sort_keys=True) + self._filter
+        if signature == self._signature:
+            return
+        self._signature = signature
+        self._checked = {cid for cid in self._checked if any(r['instance_id'] == cid for r in rows)}
+        visible = [r for r in rows if self._row_matches(r)]
+        self._loading = True; self.table.blockSignals(True)
+        self.table.setRowCount(len(visible))
+        self._action_widgets = {}
+        for i, row in enumerate(visible):
+            identity = row['identity']; cid = row['instance_id']
+            marker = QTableWidgetItem('')
+            marker.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable)
+            marker.setData(Qt.ItemDataRole.UserRole, cid)
+            marker.setCheckState(Qt.CheckState.Checked if cid in self._checked else Qt.CheckState.Unchecked)
+            marker.setTextAlignment(Qt.AlignmentFlag.AlignCenter); self.table.setItem(i, 0, marker)
+            name = connector_display_name(identity, cid)
+            # A label, not an item: dragging across it selects the text for
+            # copying, and a plain label never draws a selection frame.
+            # Transparent background keeps the alternating row colour.
+            name_label = QLabel(str(name))
+            name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            name_label.setToolTip(html.escape(str(name)))
+            name_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            self.table.setCellWidget(i, 1, name_label)
+            outdated = connector_needs_update(identity or {})
+            note = QTableWidgetItem('版本较旧' if outdated else '')
+            note.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if outdated:
+                note.setForeground(QColor(connector_notice_colors(getattr(self.owner, "theme_name", "云白"))[1]))
+            self.table.setItem(i, 2, note)
+            holder = QWidget(); holder_lay = QHBoxLayout(holder)
+            holder_lay.setContentsMargins(0, 0, 0, 0); holder_lay.setSpacing(6)
+            # The theme's generic QPushButton padding (8px 13px) clipped the
+            # two-character labels inside a fixed 52px button on real
+            # machines. Small inline padding + a 64px floor keeps the text
+            # whole at every zoom level.
+            toggle_btn = QPushButton('启用' if row.get('blocked') else '停用')
+            toggle_btn.setFixedHeight(24); toggle_btn.setMinimumWidth(64)
+            toggle_btn.setStyleSheet("QPushButton{padding:2px 10px;}")
+            toggle_btn.clicked.connect(lambda _=False, _cid=cid: self._toggle_row(_cid))
+            delete_btn = QPushButton('删除'); delete_btn.setFixedHeight(24); delete_btn.setMinimumWidth(64)
+            delete_btn.setStyleSheet("QPushButton{padding:2px 10px;}")
+            delete_btn.clicked.connect(lambda _=False, _cid=cid, _name=name: self._delete_row(_cid, _name))
+            holder_lay.addWidget(toggle_btn); holder_lay.addWidget(delete_btn); holder_lay.addStretch()
+            self.table.setCellWidget(i, 3, holder)
+            # QTableView re-shows the cell widget itself on layout, so the
+            # per-row buttons (not the holder) carry the checked visibility.
+            toggle_btn.setVisible(cid in self._checked)
+            delete_btn.setVisible(cid in self._checked)
+            self._action_widgets[cid] = holder
+            status = '已停用' if row.get('blocked') else ('在线' if row['online'] else '离线')
+            scell = QTableWidgetItem(status); scell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            scell.setToolTip(html.escape(status)); self.table.setItem(i, 4, scell)
+            self.table.setRowHeight(i, 34)
+        self.table.blockSignals(False); self._loading = False
+        if self.bridge.error:
+            self.status_label.setText('连接服务异常：' + self.bridge.error)
+        elif not online:
+            self.status_label.setText('未检测到在线连接器')
+        elif blocked:
+            self.status_label.setText(f'{len(online)} 个在线 · 全部自动使用 · {len(blocked)} 个已停用')
+        else:
+            self.status_label.setText(f'{len(online)} 个在线 · 全部自动使用')
+        self._refresh_connector_bundle_state(rows)
 
     def export_connector(self):
         save_bundled_connector(self)
 
-    def _refresh_connector_bundle_state(self,rows):
-        online=[r for r in rows if r.get('online') and not r.get('blocked')]
-        outdated=[r for r in online if connector_needs_update(r.get('identity') or {})]
+    def _apply_banner_theme(self):
+        bg, _amber = connector_notice_colors(getattr(self.owner, "theme_name", "云白"))
+        self.banner.setStyleSheet(f"QWidget#ConnectorBanner{{background:{bg};border-radius:8px;}}")
+
+    def _refresh_connector_bundle_state(self, rows):
+        self._apply_banner_theme()
+        online = [r for r in rows if r.get('online') and not r.get('blocked')]
+        outdated = [r for r in online if connector_needs_update(r.get('identity') or {})]
         # Keep the browser window clean: when the installed connector is current,
         # there is no download/export action here. Settings always keeps a manual export entry.
         if outdated:
+            self.banner_label.setText(f'{len(outdated)} 个连接器版本较旧')
             self.export_connector_button.setText('更新连接器')
             self.export_connector_button.setToolTip(f'导出内置连接器 v{BUNDLED_CONNECTOR_VERSION}')
-            self.export_connector_button.setVisible(True)
+            self.banner.setVisible(True)
         elif not online:
+            self.banner_label.setText('未检测到在线连接器')
             self.export_connector_button.setText('获取连接器')
             self.export_connector_button.setToolTip(f'导出内置连接器 v{BUNDLED_CONNECTOR_VERSION}')
-            self.export_connector_button.setVisible(True)
+            self.banner.setVisible(True)
         else:
-            self.export_connector_button.setVisible(False)
+            self.banner.setVisible(False)
         return len(outdated)
 
-    def select_all_online(self):
-        self._loading=True
-        try:
-            selected=0
-            for i,row in enumerate(self.rows):
-                use=row['online'] and not row.get('blocked') and selected<10;self.table.item(i,0).setCheckState(Qt.CheckState.Checked if use else Qt.CheckState.Unchecked)
-                if use:selected+=1
-        finally:self._loading=False
-        self._persist_checks();self._signature=None;self.refresh();self.owner.refresh_connector_summary()
-
     def identify(self):
-        row=self.selected_row()
-        if not row:return
-        try:self.bridge.identify(row['instance_id'])
-        except Exception as exc:show_hint(self,str(exc),kind="warning")
+        row = next((r for r in self.rows if r['instance_id'] in self._checked), None)
+        if not row:
+            return
+        try:
+            self.bridge.identify(row['instance_id'])
+        except Exception as exc:
+            show_hint(self, str(exc), kind="warning")
 
     def retry(self):
-        self._signature=None;self.refresh();self.owner.refresh_connector_summary();show_hint(self,'正在自动检测本机浏览器连接器')
+        self._signature = None; self.refresh(); self.owner.refresh_connector_summary()
+        show_hint(self, '正在自动检测本机浏览器连接器')
 
-    def toggle_block(self):
-        row=self.selected_row()
-        if not row:return
-        if row.get('blocked'):self.bridge.allow(row['instance_id']);show_hint(self,'已启用，连接器会自动重新连接',kind="success")
-        else:self.bridge.revoke(row['instance_id']);show_hint(self,'已停用该浏览器连接',kind="success")
-        self._signature=None;self.refresh();self.owner.refresh_connector_summary()
+    def _toggle_row(self, cid):
+        row = next((r for r in self.rows if r['instance_id'] == cid), None)
+        if row is None:
+            return
+        if row.get('blocked'):
+            self.bridge.allow(cid); show_hint(self, '已启用，连接器会自动重新连接', kind="success")
+        else:
+            self.bridge.revoke(cid); show_hint(self, '已停用该浏览器连接', kind="success")
+        self._signature = None; self.refresh(); self.owner.refresh_connector_summary()
 
-    def delete_record(self):
-        row=self.selected_row()
-        if not row:return
-        if row.get('online') and not row.get('blocked'):show_hint(self,'请先停用该连接，再删除旧记录',kind="warning");return
-        try:self.bridge.forget(row['instance_id'])
-        except Exception as exc:show_hint(self,str(exc),kind="warning");return
-        saved=[x for x in self.owner.configured_connector_ids(include_offline=True) if x!=row['instance_id']]
-        self.owner.set_connector_selection(saved,initialized=self.owner.connector_selection_initialized())
-        self._signature=None;self.refresh();show_hint(self,'旧连接记录已删除',kind="success")
-
+    def _delete_row(self, cid, name):
+        row = next((r for r in self.rows if r['instance_id'] == cid), None)
+        if row is None:
+            return
+        if row.get('online') and not row.get('blocked'):
+            show_hint(self, '请先停用该连接，再删除旧记录', kind="warning"); return
+        msg = QMessageBox(self)
+        msg.setWindowTitle('删除连接记录')
+        msg.setText(f'确定要删除「{name}」的连接记录吗？\n重新检测时可能会再次发现这个浏览器。')
+        cancel_btn = msg.addButton('取消', QMessageBox.ButtonRole.RejectRole)
+        # AcceptRole (not DestructiveRole): only Accept/Reject roles close the
+        # dialog on click, so a DestructiveRole button would leave exec() hung.
+        delete_btn = msg.addButton('删除', QMessageBox.ButtonRole.AcceptRole)
+        msg.setDefaultButton(cancel_btn)
+        msg.exec()
+        if msg.clickedButton() is not delete_btn:
+            return
+        try:
+            self.bridge.forget(cid)
+        except Exception as exc:
+            show_hint(self, str(exc), kind="warning"); return
+        self._checked.discard(cid)
+        self._signature = None; self.refresh(); self.owner.refresh_connector_summary()
+        show_hint(self, '旧连接记录已删除', kind="success")
 
 
 class MenuButton(QPushButton):
@@ -6317,7 +6969,8 @@ class RailAvatarButton(QPushButton):
         super().__init__();self.page_id=str(page_id);self._on_copy=on_copy
         self.setFixedSize(size,size);self.setFlat(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip(html.escape(str(name or ""))+"\n点击复制 ID")
+        # No hover tooltip: clicking copies the ID and shows the "已复制 ID"
+        # hint; a hover popup would only repeat what the click already says.
         self.setIcon(QIcon(self._pixmap(name,avatar_path,size,ring_color)));self.setIconSize(QSize(size,size))
         self.clicked.connect(self._copy)
     @staticmethod
@@ -6339,7 +6992,7 @@ class RailAvatarButton(QPushButton):
         return pm
     def _copy(self):
         QApplication.clipboard().setText(self.page_id)
-        QToolTip.showText(self.mapToGlobal(QPoint(self.width()//2,self.height())),"已复制 ID",self)
+        show_hint(self,"已复制 ID",kind="success")
         if self._on_copy:self._on_copy(self.page_id)
 
 
@@ -6364,8 +7017,10 @@ class MetricCard(QFrame):
         else:
             self.badge.hide()
     def set_values(self,value,note=""):
-        self.value.setText(str(value));self.value.setToolTip(str(value))
-        self.note.setText(str(note));self.note.setToolTip(str(note))
+        # No hover tooltips: the numbers are already fully visible on the card;
+        # repeating them on hover adds nothing.
+        self.value.setText(str(value));self.value.setToolTip("")
+        self.note.setText(str(note));self.note.setToolTip("")
 
 
 
@@ -6376,7 +7031,7 @@ class CopyLabel(ElideLabel):
     def mouseReleaseEvent(self,event):
         if event.button()==Qt.MouseButton.LeftButton:
             QApplication.clipboard().setText(self.copy_text)
-            QToolTip.showText(event.globalPosition().toPoint(),"已复制",self)
+            show_hint(self,"已复制",kind="success")
             event.accept()
         else:super().mouseReleaseEvent(event)
 
@@ -6405,24 +7060,31 @@ class PageCard(QFrame):
 
         values=QHBoxLayout();values.setSpacing(8)
         today=row.get("today") or {"delta":None,"partial":True,"note":"暂无记录"}
+        _delta_full = format_delta(today["delta"])
+        _delta_compact = format_delta_compact(today["delta"])
+        _delta_tip = today.get("note", "")
+        if row.get("monitor_growth") and _delta_compact != _delta_full:
+            _delta_tip = "实际今日新增：" + _delta_full + (("\n" + _delta_tip) if _delta_tip else "")
         specs=[
             ("当前粉丝" if row.get("monitor_growth") else "上次粉丝",
              format_compact_count(row.get("last_followers")),"BigNumber",
              "实际粉丝数："+format_count(row.get("last_followers"))+("\n粉丝监控未开启，显示最后一次已保存值" if not row.get("monitor_growth") else "")+("（约值）" if row.get("approx") else "")),
             ("今日新增",("未监控" if not row.get("monitor_growth") else
-              (("≈" if today.get("approx") else "")+format_delta(today["delta"])+"")),
+              (("≈" if today.get("approx") else "")+_delta_compact)),
              "GrowthUp" if row.get("monitor_growth") and (today.get("delta") or 0)>0 else
-             "GrowthDown" if row.get("monitor_growth") and (today.get("delta") or 0)<0 else "GrowthFlat",today.get("note","")),
+             "GrowthDown" if row.get("monitor_growth") and (today.get("delta") or 0)<0 else "GrowthFlat",_delta_tip),
             ("距上次发帖",post.get("elapsed_short",post["elapsed"]),
              "GrowthDown" if post["state"]=="overdue" else "GrowthSoon" if post["state"] in ("soon","unknown","unverified")
              else "GrowthUp" if post["state"]=="ok" else "GrowthFlat",post["tooltip"])
         ]
         if not row.get("monitor_posts"):specs=specs[:2]
+        if not row.get("monitor_growth"):specs=specs[2:]
+        if not specs:specs=[("监控状态","未开启","GrowthFlat","")]
         for i,(label,text,objectname,tip) in enumerate(specs):
             col=QVBoxLayout();col.setSpacing(1)
             heading=ElideLabel(label);heading.setMinimumHeight(17);heading.setObjectName("SmallMuted")
             value=ValueLabel(text,24 if i==0 else 22);value.setObjectName(objectname);value.setToolTip(tip)
-            col.addWidget(heading);col.addWidget(value);values.addLayout(col,12 if i==2 else 11 if i==0 else 9)
+            col.addWidget(heading);col.addWidget(value);values.addLayout(col,9 if i==2 else 10 if i==0 else 12)
         layout.addLayout(values)
         modules=[]
         if row.get("monitor_growth"):modules.append("粉丝监控")
@@ -6448,22 +7110,28 @@ class PageCard(QFrame):
         checked=row.get("last_inspected_at") or row.get("last_collected_at") or ""
         label=ElideLabel("最近检查 "+local_time_label(checked,False));label.setMinimumHeight(22)
         label.setToolTip(local_time_label(checked));label.setObjectName("SmallMuted");footer.addWidget(label,1)
-        state="normal";status="正常"
-        if not row.get("monitor_growth") and not row.get("monitor_posts"): status="未选择模块";state="off"
-        elif row.get("diagnosis_code")=="page_unavailable":status="主页不可用";state="alert"
-        elif row.get("diagnosis_code")=="login":status="需登录验证";state="warning"
-        elif post["state"]=="overdue":status="发帖超时";state="alert"
-        elif row.get("is_growth_alert"):status="增长超标";state="alert"
-        elif post["state"]=="soon":status="即将超时";state="warning"
-        elif row.get("monitor_growth") and row.get("growth_error") and row.get("monitor_posts") and row.get("post_error"):status="读取失败";state="alert"
-        elif post["state"] in ("unknown","unverified"):status="发帖待核实";state="warning"
-        elif row.get("monitor_growth") and row.get("growth_error"):status="粉丝读取失败";state="warning"
-        elif row.get("monitor_posts") and row.get("post_error"):status="发帖读取失败";state="warning"
-        elif not checked:status="待巡检";state="off"
-        badge=QLabel(status);badge.setObjectName("StatusBadge");badge.setProperty("state",state)
-        badge.setMinimumHeight(23);badge.setAlignment(Qt.AlignmentFlag.AlignCenter);footer.addWidget(badge)
+        # Card badges: the post status and the growth status are independent,
+        # so both show when both apply (e.g. overdue + over-threshold), and
+        # the page belongs to both filter categories as well. "主页不可用" stays alone: with no
+        # page data the other states carry no meaning.
+        badges=[]
+        if not row.get("monitor_growth") and not row.get("monitor_posts"):badges=[("未选择模块","off")]
+        elif row.get("diagnosis_code")=="page_unavailable":badges=[("主页不可用","alert")]
+        else:
+            if row.get("diagnosis_code")=="login":badges.append(("需登录验证","warning"))
+            elif post["state"]=="overdue":badges.append(("发帖超时","alert"))
+            elif post["state"]=="soon":badges.append(("即将超时","warning"))
+            elif row.get("monitor_growth") and row.get("growth_error") and row.get("monitor_posts") and row.get("post_error"):badges.append(("读取失败","alert"))
+            elif post["state"] in ("unknown","unverified"):badges.append(("发帖待核实","warning"))
+            elif row.get("monitor_growth") and row.get("growth_error"):badges.append(("粉丝读取失败","warning"))
+            elif row.get("monitor_posts") and row.get("post_error"):badges.append(("发帖读取失败","warning"))
+            elif not checked:badges.append(("待巡检","off"))
+            if row.get("is_growth_alert"):badges.append(("增长超标","alert"))
+        if not badges:badges=[("正常","normal")]
+        for status,state in badges:
+            badge=QLabel(status);badge.setObjectName("StatusBadge");badge.setProperty("state",state)
+            badge.setMinimumHeight(23);badge.setAlignment(Qt.AlignmentFlag.AlignCenter);footer.addWidget(badge)
         layout.addLayout(footer)
-        self.setToolTip("双击卡片编辑监控设置；点击名称或 ID 直接复制。")
 
     def mouseDoubleClickEvent(self,event):
         self.manage_requested.emit(self.row["page_id"]);event.accept()
@@ -6563,6 +7231,74 @@ class BatchAddDialog(QDialog):
 
 
 
+def today_growth_over_threshold(row, threshold, today_delta=None):
+    """Whether today's accumulated growth reached the threshold.
+
+    THE definition of fan-growth over-standard for display classification:
+    today's growth (the card's 今日新增: latest reading minus today's
+    baseline) reaching the threshold counts. A single-interval jump does
+    NOT count on its own: one jump of 50 is not required, and one jump
+    of 50 with only 40 of net growth today does not count either.
+    An unread growth alert also counts (via is_growth_alert in refresh).
+    Abbreviated readings (Facebook shows 1.2\u4e07 / 12K style counts) count
+    here: the numbers on screen are the evidence, and cards already
+    annotate them as approx. The age of the reading does NOT exclude it:
+    today_delta only exists when today_change anchors the reading to
+    today's baseline (baseline_date is today and the latest reading is
+    newer than the baseline), so a same-day reading always describes
+    today's growth, however many hours old it is. A page whose last
+    reading is old still shows its 今日新增 on the card, and the
+    category must match the number on the card. Freshness still gates
+    alert generation (should_alert) and post verification (post_view);
+    this creates no alert row and changes nothing there.
+    """
+    try:
+        threshold = int(threshold)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    if threshold <= 0 or not row.get("monitor_growth"):
+        return False
+    return today_delta is not None and today_delta >= threshold
+
+
+def dashboard_row_flags(row, posts_on):
+    """Return (growth_alert, post_overdue, needs_attention) for one dashboard row.
+
+    Growth, post timeout and needs attention are independent dimensions:
+    a row can belong to several at once, and it then belongs to each
+    category (and each chip count). A pending/unverified post detection
+    ("发帖待核实") belongs to 需处理 and never to 发帖超时, and it does
+    not affect the growth category, which is computed from the actual
+    follower numbers alone. Unavailable pages stay needs-only.
+    Thresholds and detection rules are NOT changed here; the predicates
+    only reuse the existing signals (unread growth alert, or today's
+    accumulated growth at/over the threshold, stored in is_growth_alert
+    by refresh(); post_view() state, stored errors / post_result).
+    - growth_alert: unread growth alert for the page, or today's
+      accumulated growth (今日新增) reaching the existing threshold
+      (see today_growth_over_threshold). A single-interval jump alone
+      does not count. The threshold itself is unchanged.
+    - post_overdue: post_view() state "overdue" (fresh, verified detection only;
+      stale/unverified detections report overdue=False and never land here).
+    - needs_attention: pending review (post_result "pending" while post
+      monitoring is on), uncertain state (unknown/unverified), other
+      records that need a human look, or an unavailable page. It is
+      independent of growth (a page can be both needs and growth), and
+      only stays exclusive with overdue.
+    """
+    if row.get("diagnosis_code") == "page_unavailable":
+        return (False, False, True)
+    growth = bool(row.get("is_growth_alert"))
+    pv = row.get("post_view") or {}
+    overdue = bool(pv.get("state") == "overdue")
+    pending_review = bool(posts_on and row.get("monitor_posts") and row.get("post_result") == "pending")
+    uncertain = pv.get("state") in ("unknown", "unverified")
+    other = (row.get("status") in ("采集失败", "部分成功") or bool(row.get("growth_error"))
+             or bool(posts_on and row.get("post_error")) or bool(row.get("name_error")))
+    needs = bool(pending_review or uncertain or other) and not overdue
+    return (growth, overdue, needs)
+
+
 class DashboardPage(QWidget):
     collect_once=pyqtSignal()
     collect_subset_requested=pyqtSignal(str)
@@ -6584,25 +7320,27 @@ class DashboardPage(QWidget):
         root=QVBoxLayout(self);root.setContentsMargins(20,16,20,10);root.setSpacing(12)
         self.action_bar=QWidget();action_lay=QHBoxLayout(self.action_bar);action_lay.setContentsMargins(0,0,0,0);action_lay.setSpacing(10)
         self.run_badge=QLabel("上次巡检时间：—");self.run_badge.setObjectName("RunBadge");action_lay.addWidget(self.run_badge)
-        self.once_btn=QToolButton();self.once_btn.setText("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
+        self.once_btn=QPushButton("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
         self.once_btn.setIconSize(QSize(16,16));self.once_btn.setObjectName("PrimaryButton");self.once_btn.setFixedSize(140,40)
-        self.once_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.once_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        _once_menu=QMenu(self.once_btn)
-        _once_menu.addAction("巡检全部主页",lambda:self.collect_once.emit())
-        _once_menu.addSeparator()
-        _once_menu.addAction("仅巡检读取失败的主页",lambda:self.collect_subset_requested.emit("failed"))
-        _once_menu.addAction("仅巡检未巡检的主页",lambda:self.collect_subset_requested.emit("uninspected"))
-        self.once_btn.setMenu(_once_menu)
+        self._once_menu=QMenu(self.once_btn)
+        self._once_menu.addAction("仅巡检读取失败的主页",lambda:self.collect_subset_requested.emit("failed"))
+        self._once_menu.addAction("仅巡检未巡检的主页",lambda:self.collect_subset_requested.emit("uninspected"))
+        self.once_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.once_btn.customContextMenuRequested.connect(lambda _pos: self._once_menu.popup(self.once_btn.mapToGlobal(QPoint(0, self.once_btn.height()))))
         self.once_btn.clicked.connect(self.collect_once.emit);action_lay.addWidget(self.once_btn)
         self.auto_btn=QPushButton("启用自动巡检");self.auto_btn.setObjectName("AutoButton");self.auto_btn.setFixedSize(140,40)
         self.auto_btn.clicked.connect(self.toggle_auto.emit);action_lay.addWidget(self.auto_btn)
+        # No separate settings button/panel: hovering the auto-inspection
+        # button shows the current settings as a floating tooltip
+        # (_refresh_auto_tooltip). Editing stays in Settings.
+        self._timing_values=random_inspection_timing(self.settings)
+        self._refresh_auto_tooltip()
         metrics=QHBoxLayout();metrics.setSpacing(12)
         self.metric_pages=MetricCard("专业主页数",ACCENT,"pages")
         self.metric_total=MetricCard("当前粉丝总量",CYAN,"people")
         self.metric_yesterday=MetricCard("昨日新增",AMBER,"history")
         self.metric_today=MetricCard("今日新增数",RED,"bell")
-        self.metric_today.badge_clicked.connect(lambda:self._set_filter_mode("unavailable"))
+        self.metric_today.badge_clicked.connect(lambda:self._set_filter_mode("needs"))
         for metric in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_today):metrics.addWidget(metric,1)
         root.addLayout(metrics)
         toolbar=QHBoxLayout();toolbar.setSpacing(8)
@@ -6613,14 +7351,20 @@ class DashboardPage(QWidget):
         toolbar.addWidget(self.search,0,Qt.AlignmentFlag.AlignTop)
         self._chip_row=ChipRow()
         self._filter_chips={}
-        for name,mode in (("全部","all"),("粉丝监控","growth"),("发帖监控","posts"),("需处理","needs"),("主页不可用","unavailable")):
-            chip=BadgeButton(name) if mode=="needs" else QPushButton(name)
+        for name,mode in (("全部","all"),("粉丝监控","growth"),("发帖监控","posts"),("发帖超时","post_overdue"),("粉丝增长超标","growth_alert"),("需处理","needs")):
+            chip=BadgeButton(name) if mode in ("needs","post_overdue","growth_alert") else QPushButton(name)
             chip.setObjectName("FilterChip");chip.setFixedHeight(30)
-            if mode=="needs":chip.setMinimumWidth(chip.sizeHint().width()+20)
+            if mode in ("needs","post_overdue","growth_alert"):chip.setMinimumWidth(chip.sizeHint().width()+20)
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
             chip.clicked.connect(lambda _=False,m=mode:self._set_filter_mode(m))
             self._chip_row.layout().addWidget(chip);self._filter_chips[mode]=chip
         toolbar.addWidget(self._chip_row,1)
+        self._sort_mode=str(self.settings.value("dashboard/sort","growth"))
+        if self._sort_mode not in ("growth","post","name"):self._sort_mode="growth"
+        self.sort_box=MenuButton((("增长预警优先","growth"),("发帖超时优先","post"),("名称排序","name")),self._sort_mode)
+        self.sort_box.setFixedWidth(140)
+        self.sort_box.changed.connect(self._on_sort_changed)
+        toolbar.addWidget(self.sort_box,0,Qt.AlignmentFlag.AlignTop)
         root.addLayout(toolbar)
         split=QHBoxLayout();split.setSpacing(14)
         self.scroll=QScrollArea();self.scroll.setObjectName("CardScroll");self.scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -6628,18 +7372,9 @@ class DashboardPage(QWidget):
         self.cards=ResponsiveCards(settings=self.settings);self.scroll.setWidget(self.cards)
         self.cards.setAutoFillBackground(False);self.scroll.viewport().setAutoFillBackground(False)
         self.scroll.setMinimumHeight(230);split.addWidget(self.scroll,1)
-        rail=QVBoxLayout();rail.setSpacing(10)
-        timing_card=QFrame();timing_card.setObjectName("RailCard")
-        tl=QVBoxLayout(timing_card);tl.setContentsMargins(14,10,14,10);tl.setSpacing(7)
-        trow=QHBoxLayout();tt=QLabel("巡检设置");tt.setObjectName("PanelTitle");trow.addWidget(tt);trow.addStretch()
-        tl.addLayout(trow)
-        def _kv(label):
-            row=QHBoxLayout();row.addWidget(QLabel(label));row.addStretch()
-            val=QLabel("—");val.setObjectName("SmallMuted");row.addWidget(val);tl.addLayout(row);return val
-        self.rail_interval=_kv("每轮间隔");self.rail_jitter=_kv("浮动范围");self.rail_gap=_kv("主页间隔")
-        rail.addWidget(timing_card)
+        rail=QVBoxLayout();rail.setSpacing(10);rail.setContentsMargins(0,0,0,0)
         alerts_card=QFrame();alerts_card.setObjectName("RailCard")
-        al=QVBoxLayout(alerts_card);al.setContentsMargins(14,10,14,10);al.setSpacing(7)
+        al=QVBoxLayout(alerts_card);al.setContentsMargins(10,10,10,10);al.setSpacing(7)
         arow=QHBoxLayout();at=QLabel("最近预警");at.setObjectName("PanelTitle");arow.addWidget(at);arow.addStretch()
         al.addLayout(arow)
         self.rail_alerts=QVBoxLayout();self.rail_alerts.setSpacing(10);al.addLayout(self.rail_alerts)
@@ -6648,8 +7383,10 @@ class DashboardPage(QWidget):
         ol=QVBoxLayout(overview_card);ol.setContentsMargins(14,10,14,10);ol.setSpacing(7)
         ot=QLabel("概览");ot.setObjectName("PanelTitle");ol.addWidget(ot)
         def _kv2(label):
-            row=QHBoxLayout();row.addWidget(QLabel(label));row.addStretch()
-            val=QLabel("—");val.setObjectName("SmallMuted");row.addWidget(val);ol.addLayout(row);return val
+            # Numbers sit a fixed 3-5 character gap after the title instead of
+            # being pushed to the far right edge, so they are never clipped.
+            row=QHBoxLayout();row.setSpacing(0);row.addWidget(QLabel(label));row.addSpacing(40)
+            val=QLabel("—");val.setObjectName("SmallMuted");row.addWidget(val);row.addStretch();ol.addLayout(row);return val
         self.rail_inspected=_kv2("已巡检主页");self.rail_failed=_kv2("读取失败");self.rail_unavailable=_kv2("主页不可用");self.rail_growth_alerts=_kv2("增长超标提醒")
         rail.addWidget(overview_card)
         rail.addStretch(1)
@@ -6659,8 +7396,11 @@ class DashboardPage(QWidget):
         self.status=ElideLabel("就绪");self.status.setMinimumHeight(20);self.status.setObjectName("FooterText")
         self.next_run=QLabel("自动巡检未开启");self.next_run.setObjectName("FooterText")
         stored=str(self.settings.value("dashboard/filter","all"))
-        if stored in ("overdue","unknown"):stored="needs"
+        if stored=="overdue":stored="post_overdue"
+        elif stored=="unknown":stored="needs"
+        elif stored=="unavailable":stored="needs"
         elif stored=="off":stored="all"
+        if stored not in ("all","growth","posts","needs","post_overdue","growth_alert"):stored="all"
         self._filter_mode=stored
         self.search.blockSignals(True);self.search.setText(str(self.settings.value("dashboard/search","")));self.search.blockSignals(False)
         self.search.textChanged.connect(self._remember_view)
@@ -6671,24 +7411,43 @@ class DashboardPage(QWidget):
 
     def _apply_filter_chips(self):
         posts_on=modules_posts_enabled(self.settings)
-        if not posts_on and getattr(self,"_filter_mode","all")=="posts":self._filter_mode="all"
-        if not getattr(self,"_unavailable_count",0) and getattr(self,"_filter_mode","all")=="unavailable":self._filter_mode="all"
+        growth_on=modules_growth_enabled(self.settings)
+        if not posts_on and getattr(self,"_filter_mode","all") in ("posts","post_overdue"):self._filter_mode="all"
+        if not growth_on and getattr(self,"_filter_mode","all")=="growth_alert":self._filter_mode="all"
         for mode,chip in self._filter_chips.items():
-            visible=(mode!="posts" or posts_on) and (mode!="unavailable" or bool(getattr(self,"_unavailable_count",0)))
+            if mode in ("posts","post_overdue"):visible=posts_on
+            elif mode=="growth_alert":visible=growth_on
+            else:visible=True
             chip.setVisible(visible)
             chip.setProperty("active",mode==self._filter_mode);chip.style().unpolish(chip);chip.style().polish(chip)
 
     def _set_filter_mode(self,mode):
         self._filter_mode=mode;self._apply_filter_chips();self._remember_view();self.refresh()
 
+    def _on_sort_changed(self):
+        self._sort_mode=self.sort_box.currentData();self._remember_view();self.refresh()
+
+    def _refresh_auto_tooltip(self):
+        # Floating tooltip on the auto-inspection button: current settings
+        # only, read live from settings so a change in Settings shows up
+        # on the next refresh without reopening anything.
+        minutes,j0,j1,g0,g1=getattr(self,"_timing_values",None) or random_inspection_timing(self.settings)
+        threshold=_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)
+        start_auto="开启" if is_true(self.settings.value("start_auto",0)) else "关闭"
+        self.auto_btn.setToolTip(
+            f"每轮间隔：{minutes} 分钟\n"
+            f"浮动范围：± {j0}–{j1} 分钟\n"
+            f"主页间隔：{g0}–{g1} 秒\n"
+            f"启动时自动巡检：{start_auto}\n"
+            f"当日增长提醒阈值：{threshold} 粉丝\n"
+            "如需修改巡检参数，请前往设置中修改。")
+
     def set_timing_values(self,minutes,j0,j1,g0,g1):
         self._timing_values=(minutes,j0,j1,g0,g1)
-        if hasattr(self,"rail_interval"):
-            self.rail_interval.setText(f"{minutes} 分钟")
-            self.rail_jitter.setText(f"± {j0}–{j1} 分钟")
-            self.rail_gap.setText(f"{g0}–{g1} 秒")
+        self._refresh_auto_tooltip()
 
     def _remember_view(self,*_):
+        self.settings.setValue("dashboard/sort",getattr(self,"_sort_mode","growth"))
         self.settings.setValue("dashboard/filter",self._filter_mode)
         self.settings.setValue("dashboard/search",self.search.text())
         self.settings.sync()
@@ -6697,13 +7456,13 @@ class DashboardPage(QWidget):
     def set_running(self,auto,active):
         self._auto=auto;self._active=active
         label="暂停中" if active and self.paused else "巡检中" if active else "自动巡检已开启" if auto else "待巡检"
-        self.run_badge.setToolTip(label)
+        self.run_badge.setToolTip("")
         self.once_btn.setText("继续巡检" if active and self.paused else "暂停巡检" if active else "立即巡检")
         self.once_btn.setIcon(ui_icon("pause" if active and not self.paused else "play","#FFFFFF"))
         self.once_btn.setToolTip("暂停在当前主页处理完成后生效；继续不会从头重跑" if active else "巡检所有已选择模块的专业 ID")
         self.auto_btn.setText("暂停自动巡检" if auto else "启用自动巡检")
         self.auto_btn.setProperty("autoEnabled",auto)
-        self.auto_btn.setToolTip("仅停止后续定时轮次；暂停当前轮次请点击左侧巡检按钮")
+        self._refresh_auto_tooltip()
         self.auto_btn.style().unpolish(self.auto_btn);self.auto_btn.style().polish(self.auto_btn)
 
     def refresh(self):
@@ -6717,12 +7476,12 @@ class DashboardPage(QWidget):
             self._last_inspection_stamp=latest_inspection_stamp(self.settings,rows)
         self.run_badge.setText("上次巡检时间："+inspection_stamp_label(self._last_inspection_stamp))
         unread_pages={a["page_id"] for a in self.store.alert_rows() if not a["acknowledged"]}
+        _threshold=_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)
         today_sum=0;covered=0;partial=0;yesterday_sum=0;yesterday_covered=0;yesterday_partial=0
         growth_rows=[r for r in rows if r["monitor_growth"]]
         post_rows=[r for r in rows if r["monitor_posts"]]
         for row in rows:
             row["post_view"]=post_view(row,now,interval)
-            row["is_growth_alert"]=row["monitor_growth"] and row["page_id"] in unread_pages
             if row["monitor_growth"]:
                 row["today"]=self.store.today_change(row["page_id"],now,interval)
                 row["yesterday"]=self.store.yesterday_change(row["page_id"],now)
@@ -6732,6 +7491,16 @@ class DashboardPage(QWidget):
                 if row["yesterday"]["delta"] is not None:
                     yesterday_sum+=row["yesterday"]["delta"];yesterday_covered+=1
                     yesterday_partial+=int(row["yesterday"]["partial"])
+            # Growth category is state-based, not unread-only: an alert row
+            # is created on every over-threshold collection (should_alert
+            # still applies its elapsed/approx guards), and it stops
+            # counting once read. A page whose today's accumulated growth
+            # reached the threshold counts even with no unread alert row
+            # left; a single-interval jump alone does not count
+            # (see today_growth_over_threshold).
+            row["is_growth_alert"]=row["monitor_growth"] and (row["page_id"] in unread_pages or today_growth_over_threshold(row,_threshold,(row.get("today") or {}).get("delta")))
+            _gf,_of,_nf=dashboard_row_flags(row,posts_on)
+            row["cat_growth"]=_gf;row["is_post_overdue"]=_of;row["needs_attention"]=_nf
         total=sum(r["last_followers"] for r in growth_rows if r["last_followers"] is not None)
         sampled=sum(r["last_followers"] is not None for r in growth_rows)
         overdue=sum(r["post_view"]["state"]=="overdue" for r in rows)
@@ -6747,14 +7516,12 @@ class DashboardPage(QWidget):
             ((f"可比较 {covered} 个"+(f" · {partial} 个为部分日" if partial else "")) if covered else "今日暂无可比较记录"))
         self.metric_today.set_badge(unavailable)
         self._unavailable_count=unavailable
-        _needs_count=0
-        for r in rows:
-            if r.get("diagnosis_code")=="page_unavailable":continue
-            if (r["post_view"]["state"]=="overdue" or r["post_view"]["state"] in ("unknown","unverified")
-                or r.get("status") in ("采集失败","部分成功") or r.get("growth_error")
-                or (posts_on and r.get("post_error")) or r.get("name_error") or r.get("is_growth_alert")):_needs_count+=1
-        _needs_chip=self._filter_chips.get("needs")
-        if _needs_chip is not None and hasattr(_needs_chip,"set_badge"):_needs_chip.set_badge(_needs_count)
+        _needs_count=sum(1 for r in rows if r.get("needs_attention"))
+        _growth_count=sum(1 for r in rows if r.get("cat_growth"))
+        _overdue_count=sum(1 for r in rows if r.get("is_post_overdue"))
+        for _mode,_count in (("needs",_needs_count),("growth_alert",_growth_count),("post_overdue",_overdue_count)):
+            _chip=self._filter_chips.get(_mode)
+            if _chip is not None and hasattr(_chip,"set_badge"):_chip.set_badge(_count)
         self._apply_filter_chips()
         needle=self.search.text().strip().casefold();mode=self.filter_mode()
         filtered=[]
@@ -6762,12 +7529,22 @@ class DashboardPage(QWidget):
             if needle and needle not in (display_name(r)+" "+r["page_id"]+" "+r.get("notes","")).casefold():continue
             if mode=="growth" and not r["monitor_growth"]:continue
             if mode=="posts" and not r["monitor_posts"]:continue
-            if mode=="unavailable" and r.get("diagnosis_code")!="page_unavailable":continue
-            if mode=="needs" and (r.get("diagnosis_code")=="page_unavailable" or not (r["post_view"]["state"]=="overdue" or r["post_view"]["state"] in ("unknown","unverified")
-                or r.get("status") in ("采集失败","部分成功") or r.get("growth_error") or (posts_on and r.get("post_error"))
-                or r.get("name_error") or r.get("is_growth_alert"))):continue
+            if mode=="needs" and not r.get("needs_attention"):continue
+            if mode=="post_overdue" and not r.get("is_post_overdue"):continue
+            if mode=="growth_alert" and not r.get("cat_growth"):continue
             filtered.append(r)
-        filtered.sort(key=lambda r:display_name(r).casefold())
+        _sort=getattr(self,"_sort_mode","growth")
+        def _delta_key(r):
+            _d=(r.get("today") or {}).get("delta")
+            return -_d if _d is not None else 10**18
+        if _sort=="name":
+            filtered.sort(key=lambda r:display_name(r).casefold())
+        elif _sort=="growth":
+            filtered.sort(key=lambda r:(0 if r.get("cat_growth") else 1,0 if r.get("is_post_overdue") else 1,_delta_key(r),int(r.get("sort_order") or 0),str(r["page_id"])))
+        elif _sort=="post":
+            filtered.sort(key=lambda r:(0 if r.get("is_post_overdue") else 1,0 if r.get("cat_growth") else 1,float(r.get("last_post_ts") or 0),int(r.get("sort_order") or 0),str(r["page_id"])))
+        else:
+            filtered.sort(key=lambda r:(int(r.get("sort_order") or 0),str(r["page_id"])))
         self.search.setToolTip("匹配 %s 个，共 %s 个主页" % (len(filtered),len(rows)))
         cards=[]
         for r in filtered:
@@ -6779,16 +7556,28 @@ class DashboardPage(QWidget):
             card.delete_requested.connect(self.delete_page.emit);cards.append(card)
         if not cards:
             empty=QFrame();empty.setObjectName("EmptyState");layout=QVBoxLayout(empty);layout.setContentsMargins(20,30,20,30)
-            title=QLabel("尚无匹配主页");title.setObjectName("SectionTitle");layout.addWidget(title)
-            msg=QLabel("在左侧「ID管理」添加 ID，并勾选监控模块。")
-            msg.setWordWrap(True);msg.setObjectName("SmallMuted");layout.addWidget(msg)
-            add=QPushButton("打开 ID管理");add.setObjectName("PrimaryButton");add.clicked.connect(lambda:self.open_manager.emit(""))
-            layout.addWidget(add,0,Qt.AlignmentFlag.AlignLeft);cards=[empty]
+            # "打开 ID管理" is only for the no-pages case in the three
+            # module views (全部 / 粉丝监控 / 发帖监控). A category view
+            # (需处理 / 发帖超时 / 粉丝增长超标) lists pages
+            # that already have IDs, so an empty category means "no records
+            # in this category", not "no IDs": show plain no-record text
+            # with no button. A search with no match is the same in every
+            # view: the pages exist, only the search matched none.
+            if mode in ("needs","post_overdue","growth_alert") or needle:
+                title=QLabel("暂无记录");title.setObjectName("SectionTitle");layout.addWidget(title)
+                msg=QLabel("没有与搜索条件匹配的主页。" if needle else "当前分类下暂无符合条件的主页。")
+                msg.setWordWrap(True);msg.setObjectName("SmallMuted");layout.addWidget(msg)
+            else:
+                title=QLabel("尚无匹配主页");title.setObjectName("SectionTitle");layout.addWidget(title)
+                msg=QLabel("在左侧「ID管理」添加 ID，并勾选监控模块。")
+                msg.setWordWrap(True);msg.setObjectName("SmallMuted");layout.addWidget(msg)
+                add=QPushButton("打开 ID管理");add.setObjectName("PrimaryButton");add.clicked.connect(lambda:self.open_manager.emit(""))
+                layout.addWidget(add,0,Qt.AlignmentFlag.AlignLeft)
+            cards=[empty]
         scroll=self.scroll.verticalScrollBar().value()
         self.cards.set_cards(cards)
         self.scroll.verticalScrollBar().setValue(scroll)
-        if hasattr(self,"rail_interval"):
-            _tv=random_inspection_timing(self.settings);self.set_timing_values(*_tv)
+        _tv=random_inspection_timing(self.settings);self.set_timing_values(*_tv)
         if hasattr(self,"rail_alerts"):
             while self.rail_alerts.count():
                 _item=self.rail_alerts.takeAt(0)
@@ -6805,10 +7594,11 @@ class DashboardPage(QWidget):
                     if _pid not in _by_page:
                         _by_page[_pid]={"entry":_e,"kinds":set()};_order.append(_pid)
                     _by_page[_pid]["kinds"].add(str(_e.get("kind") or ""))
-                _shown=_order[:8];_extra=len(_order)-len(_shown)
-                _n=len(_shown)
-                _size=max(18,min(40,(184-(_n-1)*4)//_n)) if _n else 40
-                _arow=QHBoxLayout();_arow.setSpacing(6);_arow.setContentsMargins(0,0,0,0)
+                # Fixed: 4 large avatars, never shrunk; a 5th slot shows the
+                # remainder count ("+N") instead of more avatars.
+                _shown=_order[:4];_extra=len(_order)-len(_shown)
+                _size=34
+                _arow=QHBoxLayout();_arow.setSpacing(5);_arow.setContentsMargins(0,0,0,0)
                 for _pid in _shown:
                     _info=_by_page[_pid];_entry=_info["entry"]
                     _kinds=_info["kinds"]
@@ -6821,8 +7611,10 @@ class DashboardPage(QWidget):
                     _arow.addWidget(_more)
                 _arow.addStretch(1)
                 _awrap=QWidget();_awrap.setLayout(_arow);self.rail_alerts.addWidget(_awrap)
-                _gc=sum(1 for _e in entries if str(_e.get("kind"))=="growth")
-                _pc=sum(1 for _e in entries if str(_e.get("kind"))=="post")
+                # Summary counts match the avatars: distinct pages per kind,
+                # not raw alert entries (one page may hold several entries).
+                _gc=sum(1 for _info in _by_page.values() if "growth" in _info["kinds"])
+                _pc=sum(1 for _info in _by_page.values() if "post" in _info["kinds"])
                 _parts=[]
                 if _pc:_parts.append("发帖超时 %d 个" % _pc)
                 if _gc:_parts.append("粉丝增长超标 %d 个" % _gc)
@@ -6839,6 +7631,7 @@ class DashboardPage(QWidget):
 
 class AlertsPage(QWidget):
     ack_requested=pyqtSignal()
+    clear_history_requested=pyqtSignal()
     read_changed=pyqtSignal()
     def __init__(self,store,settings=None):
         super().__init__();self.store=store;self.settings=settings;self.setObjectName("AlertsPage");self.mode="current";self._highlight_key=None
@@ -6849,8 +7642,9 @@ class AlertsPage(QWidget):
         self.history_btn=QPushButton("历史记录");self.history_btn.setObjectName("NoticeHistoryButton");self.history_btn.clicked.connect(self.toggle_history);head.addWidget(self.history_btn)
         self.filter=MenuButton((("全部类型","all"),("粉丝增长","growth"),("发帖超时","post")),"all")
         self.filter.setFixedWidth(126);self.filter.changed.connect(lambda:self.refresh());head.addWidget(self.filter)
-        self.ack_btn=QPushButton("全部标为已读");self.ack_btn.setObjectName("SecondaryButton");self.ack_btn.clicked.connect(self.ack_requested.emit);head.addWidget(self.ack_btn);root.addLayout(head)
-        note=QLabel("默认只显示未读通知；点击任意一条即视为已读并移入历史记录。历史数据长期保留，不会因已读而删除。")
+        self.ack_btn=QPushButton("全部标为已读");self.ack_btn.setObjectName("SecondaryButton");self.ack_btn.clicked.connect(self.ack_requested.emit);head.addWidget(self.ack_btn)
+        self.clear_btn=QPushButton("清空已读");self.clear_btn.setObjectName("SecondaryButton");self.clear_btn.clicked.connect(self.clear_history_requested.emit);head.addWidget(self.clear_btn);root.addLayout(head)
+        note=QLabel("默认只显示未读通知；点击任意一条即视为已读并移入历史记录。历史记录可在历史模式中清空已读。")
         note.setObjectName("SmallMuted");note.setWordWrap(True);root.addWidget(note)
         self.table=QTableWidget(0,7);self.table.setObjectName("AlertsTable");self.table.setHorizontalHeaderLabels(("头像","类型","专业名称","专业 ID","通知内容","记录时间","状态"))
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -6870,7 +7664,7 @@ class AlertsPage(QWidget):
         self.mode="current";self._highlight_key=None
         self.history_btn.setText("历史记录");self.history_btn.setProperty("active",False)
         self.history_btn.style().unpolish(self.history_btn);self.history_btn.style().polish(self.history_btn)
-        self.ack_btn.setVisible(True);self.refresh()
+        self.ack_btn.setVisible(True);self.clear_btn.setVisible(False);self.refresh()
 
     def toggle_history(self):
         if self.mode=="history":
@@ -6878,7 +7672,7 @@ class AlertsPage(QWidget):
         self.mode="history";self._highlight_key=None
         self.history_btn.setText("返回当前");self.history_btn.setProperty("active",True)
         self.history_btn.style().unpolish(self.history_btn);self.history_btn.style().polish(self.history_btn)
-        self.ack_btn.setVisible(False);self.refresh()
+        self.ack_btn.setVisible(False);self.clear_btn.setVisible(True);self.refresh()
 
     def _visible_rows(self):
         rows=self.store.combined_alerts(limit=5000)
@@ -6918,7 +7712,7 @@ class AlertsPage(QWidget):
                     self.summary.setText(f"当前未读 {g+p} 条 · 粉丝增长 {g} · 发帖超时 {p}")
             else:
                 self.summary.setText("")
-        else:self.summary.setText(f"历史记录 {len(rows)} 条 · 已读通知永久保留")
+        else:self.summary.setText(f"历史记录 {len(rows)} 条")
         _empty=len(rows)==0
         self.table.setVisible(not _empty);self.empty_view.setVisible(_empty)
         if _empty:self.empty_label.setText("暂无历史记录" if self.mode=="history" else "当前没有未读通知")
@@ -6941,7 +7735,7 @@ class AlertsPage(QWidget):
         except (TypeError,ValueError):self._highlight_key=(str(entry.get("kind") or ""),0)
         self.mode="current";self.history_btn.setText("历史记录");self.history_btn.setProperty("active",False)
         self.history_btn.style().unpolish(self.history_btn);self.history_btn.style().polish(self.history_btn)
-        self.ack_btn.setVisible(True)
+        self.ack_btn.setVisible(True);self.clear_btn.setVisible(False)
         # A previous type filter must not hide the notification opened from the popup.
         self.filter.setCurrentData("all",emit=False)
         self.refresh()
@@ -7002,7 +7796,7 @@ class PageManagementPage(QWidget):
 
         actions=QHBoxLayout();actions.setSpacing(8)
         self.add_btn=QPushButton("添加 ID");self.add_btn.setObjectName("PrimaryButton");self.add_btn.clicked.connect(self._request_add)
-        self.batch_btn=QPushButton("批量设置");self.batch_btn.clicked.connect(self.batch_settings)
+        self.batch_btn=QPushButton("批量设置");self.batch_btn.setObjectName("BatchActionButton");self.batch_btn.clicked.connect(self.batch_settings)
         self.delete_btn=QPushButton("批量删除");self.delete_btn.setObjectName("DangerButton");self.delete_btn.clicked.connect(self.delete_selected)
         for btn in (self.add_btn,self.batch_btn,self.delete_btn):
             btn.setFixedHeight(38);actions.addWidget(btn)
@@ -7042,10 +7836,10 @@ class PageManagementPage(QWidget):
         self.table.itemChanged.connect(self._item_changed)
         self.table.cellClicked.connect(self._clicked)
         self.table.cellDoubleClicked.connect(self._double_clicked)
-        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        self.table.viewport().installEventFilter(self)
         root.addWidget(self.table,1)
-        hint=QLabel("点击“专业名称”表头可按名称升序 / 降序切换排序。名称和头像会在正常巡检时自动更新；未获取资料不会伪造。右键表格可仅巡检选中的主页。")
+        hint=QLabel("点击“专业名称”表头可按名称升序 / 降序切换排序。名称和头像会在正常巡检时自动更新；未获取资料不会伪造。")
         hint.setObjectName("SmallMuted");hint.setWordWrap(True);root.addWidget(hint)
         self.filter.setCurrentData(str(self.settings.value("manager/filter","all")),emit=False)
         self.search.blockSignals(True);self.search.setText(str(self.settings.value("manager/search","")));self.search.blockSignals(False)
@@ -7060,6 +7854,12 @@ class PageManagementPage(QWidget):
         self.search.textChanged.connect(self._remember)
         self.table.horizontalHeader().sectionResized.connect(self._remember)
         self.table.horizontalHeader().sortIndicatorChanged.connect(self._remember)
+
+    def eventFilter(self,obj,event):
+        if obj is self.table.viewport():
+            if event.type()==QEvent.Type.ContextMenu:return True
+            if event.type() in (QEvent.Type.MouseButtonPress,QEvent.Type.MouseButtonRelease) and event.button()==Qt.MouseButton.RightButton:return True
+        return super().eventFilter(obj,event)
 
     def _remember(self,*_):
         if self._loading:return
@@ -7130,20 +7930,13 @@ class PageManagementPage(QWidget):
         if col==3:
             text=self.table.item(row,col).text()
             QApplication.clipboard().setText(text)
-            QToolTip.showText(self.table.mapToGlobal(QPoint(20,20)),"已复制 ID："+text,self.table)
+            show_hint(self,"已复制 ID："+text,kind="success")
 
     def _double_clicked(self,row,col):
         if col==2:
             if self._busy:
                 self._busy_notice();return
             pid=self.table.item(row,0).data(Qt.ItemDataRole.UserRole);self.edit_id(pid)
-
-    def _show_context_menu(self,pos):
-        ids=self.ids()
-        if not ids:return
-        menu=QMenu(self)
-        menu.addAction(f"仅巡检选中主页（{len(ids)} 个）",lambda:self.inspect_requested.emit(ids))
-        menu.exec(self.table.mapToGlobal(pos))
 
     def edit_id(self,pid):
         if self._busy:
@@ -7170,20 +7963,30 @@ class PageManagementPage(QWidget):
             self._busy_notice();return
         ids=self.ids()
         if not ids:show_hint(self,"请选择一个或多个专业 ID。",kind="warning");return
-        dlg=QDialog(self);dlg.setWindowTitle(f"批量设置 {len(ids)} 个专业 ID");dlg.resize(470,310)
-        root=QVBoxLayout(dlg);form=QFormLayout()
+        dlg=QDialog(self);dlg.setWindowTitle(f"批量设置 {len(ids)} 个专业 ID");dlg.resize(440,316)
+        root=QVBoxLayout(dlg);root.setContentsMargins(24,20,24,18);root.setSpacing(10)
+        _title=QLabel("批量设置");_title.setObjectName("DialogTitle");root.addWidget(_title)
+        _sub=QLabel(f"已选 {len(ids)} 个专业 ID · 不改的项保持原设置");_sub.setObjectName("SmallMuted");root.addWidget(_sub)
+        _line=QFrame();_line.setFrameShape(QFrame.Shape.HLine);_line.setObjectName("HeaderDivider");root.addWidget(_line)
         selects={}
         for name,key in (("粉丝监控","monitor_growth"),("发帖监控","monitor_posts")):
             combo=MenuButton((("保持原设置",None),("开启",True),("关闭",False)),None)
-            form.addRow(name,combo);selects[key]=combo
+            combo.setFixedWidth(190)
+            _row=QHBoxLayout();_row.addWidget(QLabel(name));_row.addStretch();_row.addWidget(combo)
+            root.addLayout(_row);selects[key]=combo
         if not modules_posts_enabled(self.settings):
             selects["monitor_posts"].setEnabled(False)
-        limit_flag=QCheckBox("修改发帖超时标准");hours=QSpinBox();hours.setRange(1,8760);hours.setValue(24);hours.setSuffix(" 小时")
+        _line2=QFrame();_line2.setFrameShape(QFrame.Shape.HLine);_line2.setObjectName("HeaderDivider");root.addWidget(_line2)
+        limit_flag=QCheckBox("修改发帖超时标准");limit_flag.setChecked(True)
+        hours=QSpinBox();hours.setRange(1,8760);hours.setValue(24);hours.setSuffix(" 小时");hours.setFixedWidth(130)
         if not modules_posts_enabled(self.settings):
             limit_flag.setEnabled(False);hours.setEnabled(False)
-        form.addRow(limit_flag,hours);root.addLayout(form)
+        _lim=QHBoxLayout();_lim.addWidget(limit_flag);_lim.addStretch();_lim.addWidget(hours);root.addLayout(_lim)
+        _note=QLabel("发帖超时标准默认已勾选，不想改时取消勾选即可。");_note.setObjectName("SmallMuted");root.addWidget(_note)
+        root.addStretch()
         row=QHBoxLayout();row.addStretch();cancel=QPushButton("取消");save=QPushButton("保存")
         cancel.clicked.connect(dlg.reject);save.clicked.connect(dlg.accept);save.setObjectName("PrimaryButton")
+        cancel.setFixedWidth(86);save.setFixedWidth(86)
         row.addWidget(cancel);row.addWidget(save);root.addLayout(row)
         if dlg.exec()!=QDialog.DialogCode.Accepted:return
         fields={key:combo.currentData() for key,combo in selects.items() if combo.currentData() is not None}
@@ -7291,15 +8094,14 @@ class PageManagementPage(QWidget):
 
 
 class SettingsPage(QWidget):
-    test_toast_requested=pyqtSignal()
     login_requested=pyqtSignal()
     save_requested=pyqtSignal(bool)
     export_requested=pyqtSignal()
     backup_requested=pyqtSignal()
     data_dir_requested=pyqtSignal()
-    cleanup_requested=pyqtSignal()
-    uninstall_requested=pyqtSignal()
     theme_requested=pyqtSignal(str)
+    ui_scale_requested=pyqtSignal(int)
+    toast_position_requested=pyqtSignal(str)
 
     def __init__(self,store:Store,settings:QSettings):
         super().__init__();self.store=store;self.settings=settings
@@ -7333,27 +8135,32 @@ class SettingsPage(QWidget):
         for key,card in getattr(self,"theme_cards",{}).items():
             card.setSelected(key==name)
 
+    def set_ui_scale_label(self,scale):
+        if hasattr(self,"zoom_label"):self.zoom_label.setText(f"{int(scale)}%")
+
+    def _on_toast_position_changed(self):
+        # Save first (synchronous emit), then show the real toast so it
+        # appears at the position just selected.
+        self.toast_position_requested.emit(self.toast_position_choice.currentData())
+        show_hint(self,"提示会显示在这里",kind="success")
+
     @staticmethod
-    def section(title,description=""):
+    def card():
         card=QFrame();card.setObjectName("SettingsCard")
         layout=QVBoxLayout(card);layout.setContentsMargins(20,18,20,18);layout.setSpacing(13)
-        heading=QLabel(title);heading.setObjectName("SettingsTitle");layout.addWidget(heading)
-        if description:
-            sub=QLabel(description);sub.setObjectName("SmallMuted");sub.setWordWrap(True);layout.addWidget(sub)
         return card,layout
 
     def build_ui(self):
         root=QVBoxLayout(self);root.setContentsMargins(30,24,30,20);root.setSpacing(16)
         tabs=QTabWidget();tabs.setObjectName("SettingsTabs");root.addWidget(tabs,1)
+        self.settings_tabs=tabs
         def make_tab(label):
             scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
             body=QWidget();layout=QVBoxLayout(body);layout.setContentsMargins(8,10,12,8);layout.setSpacing(14)
             scroll.setWidget(body);tabs.addTab(scroll,label);return layout
-        account_layout=make_tab("浏览器与巡检")
-        data_layout=make_tab("数据与迁移")
 
-        modules,modl=self.section("00  监控模块",
-            "至少保留一个。关闭后，看板、卡片、通知里不再显示该模块的内容；已保存的设置和历史提醒保留，重新开启即恢复。")
+        modules_layout=make_tab("监控模块")
+        modules,modl=self.card()
         def _module_row(name,desc):
             row=QHBoxLayout();row.setSpacing(12)
             texts=QVBoxLayout();texts.setSpacing(1)
@@ -7365,10 +8172,10 @@ class SettingsPage(QWidget):
             modl.addLayout(row);return sw,st
         self.module_growth_switch,self.module_growth_status=_module_row("粉丝增长监控","粉丝数、每日新增、增长提醒")
         self.module_posts_switch,self.module_posts_status=_module_row("发帖时间监控","距上次发帖、超时提醒、发帖标准")
-        _mod_note=QLabel("新添加的主页默认按这里勾选；每个主页也可以在 ID 管理里单独改。")
-        _mod_note.setObjectName("SmallMuted");_mod_note.setWordWrap(True);modl.addWidget(_mod_note)
-        account_layout.addWidget(modules)
-        themes,thel=self.section("01  外观主题","只保留差异明显的三个，全部扁平、无炫光。点卡片即可切换。")
+        modules_layout.addWidget(modules);modules_layout.addStretch()
+
+        themes_layout=make_tab("外观")
+        themes,thel=self.card()
         theme_row=QHBoxLayout();theme_row.setSpacing(12)
         self.theme_cards={}
         _theme_descs={"云白":"暖白底色，深蓝点缀","护眼绿":"淡绿底色，深绿点缀（微信绿系）","曜石黑":"深灰底色，柔和浅蓝"}
@@ -7396,8 +8203,26 @@ class SettingsPage(QWidget):
             card.clicked.connect(lambda _=False,n=_name:self.theme_requested.emit(n))
             theme_row.addWidget(card,1);self.theme_cards[_name]=card
         thel.addLayout(theme_row)
-        account_layout.addWidget(themes)
-        browser,bl=self.section("02  Chrome 浏览器连接器","")
+        _zoom_title=QLabel("界面缩放");_zoom_title.setObjectName("SettingsTitle");thel.addWidget(_zoom_title)
+        _zoom_row=QHBoxLayout();_zoom_row.setSpacing(8)
+        self.zoom_out_btn=QPushButton("−");self.zoom_out_btn.setFixedSize(38,36)
+        self.zoom_label=QLabel("100%");self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter);self.zoom_label.setFixedWidth(64)
+        self.zoom_in_btn=QPushButton("+");self.zoom_in_btn.setFixedSize(38,36)
+        self.zoom_out_btn.clicked.connect(lambda:self.ui_scale_requested.emit(ui_scale_percent(self.settings)-10))
+        self.zoom_in_btn.clicked.connect(lambda:self.ui_scale_requested.emit(ui_scale_percent(self.settings)+10))
+        _zoom_row.addWidget(self.zoom_out_btn);_zoom_row.addWidget(self.zoom_label);_zoom_row.addWidget(self.zoom_in_btn)
+        _zoom_note=QLabel("80% – 130%，每次 10%，立即生效");_zoom_note.setObjectName("SmallMuted");_zoom_row.addWidget(_zoom_note)
+        _zoom_row.addStretch();thel.addLayout(_zoom_row)
+        _toast_title=QLabel("消息提示位置");_toast_title.setObjectName("SettingsTitle");thel.addWidget(_toast_title)
+        _toast_note=QLabel("点选立即弹出一条真实提示");_toast_note.setObjectName("SmallMuted");thel.addWidget(_toast_note)
+        self.toast_position_choice=SegmentedChoice(TOAST_POSITIONS,"bottom_center")
+        self.toast_position_choice.changed.connect(self._on_toast_position_changed)
+        thel.addWidget(self.toast_position_choice)
+        themes_layout.addWidget(themes);themes_layout.addStretch()
+
+        merged_layout=make_tab("连接与更新")
+        browser,bl=self.card()
+        _conn_title=QLabel("浏览器连接器");_conn_title.setObjectName("SettingsTitle");bl.addWidget(_conn_title)
         row=QHBoxLayout();row.setSpacing(10)
         self.login_button=QPushButton("浏览器连接");self.login_button.setObjectName("PrimaryButton")
         self.login_button.clicked.connect(self.login_requested.emit);row.addWidget(self.login_button)
@@ -7407,16 +8232,24 @@ class SettingsPage(QWidget):
         row.addStretch();bl.addLayout(row)
         self.connector_summary=QLabel("等待浏览器连接");self.connector_summary.setWordWrap(True)
         self.connector_summary.setTextFormat(Qt.TextFormat.PlainText);bl.addWidget(self.connector_summary)
-        account_layout.addWidget(browser)
+        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");bl.addWidget(_div)
+        _upd_title=QLabel("版本更新");_upd_title.setObjectName("SettingsTitle");bl.addWidget(_upd_title)
+        _ver_label=QLabel(f"当前版本：v{APP_VERSION}");_ver_label.setTextFormat(Qt.TextFormat.PlainText);_ver_label.setObjectName("SmallMuted");bl.addWidget(_ver_label)
+        self.auto_update=QCheckBox("启动后自动检查新版本，并在发现新版时提示")
+        bl.addWidget(self.auto_update)
+        self.auto_install=QCheckBox("下载完成后自动安装更新")
+        self.auto_install.setChecked(True)
+        bl.addWidget(self.auto_install)
+        merged_layout.addWidget(browser);merged_layout.addStretch()
 
-        collect,cl=self.section("03  \u5de1\u68c0\u4e0e\u542f\u52a8",
-            "\u6bcf\u8f6e\u4ee5\u57fa\u51c6\u95f4\u9694\u4e3a\u4e2d\u5fc3\u968f\u673a\u63d0\u524d\u6216\u5ef6\u540e\uff1b\u4e24\u4e2a\u4e3b\u9875\u4e4b\u95f4\u4e5f\u968f\u673a\u7b49\u5f85\u3002\u4e3b\u754c\u9762\u53ef\u76f4\u63a5\u4fee\u6539\u5e76\u81ea\u52a8\u4fdd\u5b58\u3002")
+        collect_layout=make_tab("巡检与提醒")
+        collect,cl=self.card()
         form=QGridLayout();form.setHorizontalSpacing(18);form.setVerticalSpacing(13)
-        self.interval=DirectNumberSpinBox();self.interval.setRange(5,1440);self.interval.setToolTip("单位：分钟")
-        self.jitter_min=DirectNumberSpinBox();self.jitter_min.setRange(0,1439);self.jitter_min.setToolTip("单位：分钟")
-        self.jitter_max=DirectNumberSpinBox();self.jitter_max.setRange(0,1439);self.jitter_max.setToolTip("单位：分钟")
-        self.gap_min=DirectNumberSpinBox();self.gap_min.setRange(0,120);self.gap_min.setToolTip("单位：秒")
-        self.gap_max=DirectNumberSpinBox();self.gap_max.setRange(0,120);self.gap_max.setToolTip("单位：秒")
+        self.interval=DirectNumberSpinBox();self.interval.setRange(5,1440)
+        self.jitter_min=DirectNumberSpinBox();self.jitter_min.setRange(0,1439)
+        self.jitter_max=DirectNumberSpinBox();self.jitter_max.setRange(0,1439)
+        self.gap_min=DirectNumberSpinBox();self.gap_min.setRange(0,120)
+        self.gap_max=DirectNumberSpinBox();self.gap_max.setRange(0,120)
         form.addWidget(QLabel("每轮间隔（分钟）"),0,0);form.addWidget(self.interval,0,1)
         float_label=QLabel("浮动范围（分钟）");form.addWidget(float_label,0,2)
         float_box=QWidget();float_layout=QHBoxLayout(float_box);float_layout.setContentsMargins(0,0,0,0);float_layout.setSpacing(6)
@@ -7425,32 +8258,26 @@ class SettingsPage(QWidget):
         gap_box=QWidget();gap_layout=QHBoxLayout(gap_box);gap_layout.setContentsMargins(0,0,0,0);gap_layout.setSpacing(6)
         gap_layout.addWidget(self.gap_min);gap_layout.addWidget(QLabel("–"));gap_layout.addWidget(self.gap_max);gap_layout.addStretch();form.addWidget(gap_box,1,1,1,3)
         for widget in (self.interval,self.jitter_min,self.jitter_max,self.gap_min,self.gap_max):widget.setFixedWidth(86)
-        self.start_auto=QCheckBox("\u542f\u52a8\u8f6f\u4ef6\u65f6\u81ea\u52a8\u5de1\u68c0\uff08\u9ed8\u8ba4\u5173\u95ed\uff09")
-        self.start_auto.setToolTip("\u53ea\u6709\u5728\u6b64\u660e\u786e\u5f00\u542f\uff0c\u4e0b\u6b21\u542f\u52a8\u624d\u81ea\u52a8\u5de1\u68c0\u3002\u4e3b\u9875\u7684\u6309\u94ae\u4ec5\u63a7\u5236\u672c\u6b21\u8fd0\u884c\u3002")
-        self.silent_to_tray=QCheckBox("\u9759\u9ed8\u6536\u8d77\u5230\u6258\u76d8\uff08\u5173\u95ed\u6b64\u9879\u4f1a\u663e\u793a\u63d0\u793a\uff09")
-        self.silent_to_tray.setToolTip("\u5f00\u542f\uff1a\u5173\u95ed\u7a97\u53e3\u4e0d\u63d0\u793a\u3002\u5173\u95ed\uff1a\u6536\u8d77\u65f6\u63d0\u793a\u4ecd\u5728\u540e\u53f0\u8fd0\u884c\u3002\u4e24\u79cd\u60c5\u51b5\u90fd\u4fdd\u6301\u6258\u76d8\u5de1\u68c0\uff0c\u5b8c\u5168\u9000\u51fa\u8bf7\u7528\u6258\u76d8\u83dc\u5355\u3002")
+        self.start_auto=QCheckBox("启动时自动巡检")
+        self.start_auto.setToolTip("只有在此明确开启，下次启动才自动巡检。主界面的按钮仅控制本次运行。")
+        self.silent_to_tray=QCheckBox("静默收起到托盘")
+        self.silent_to_tray.setToolTip("开启：关闭窗口不提示。关闭：收起时提示仍在后台运行。两种情况都保持托盘巡检，完全退出请用托盘菜单。")
         form.addWidget(self.start_auto,2,0,1,4);form.addWidget(self.silent_to_tray,3,0,1,4)
-        tip=QLabel("默认：120分钟±(15–25)分钟；主页间隔每次随机6–9秒。将浮动两项设为0可使用固定轮次间隔。多浏览器时只在用户选择的在线连接器之间并行分配任务。")
-        tip.setObjectName("SmallMuted");tip.setWordWrap(True);form.addWidget(tip,4,0,1,4)
-        form.setColumnStretch(1,1);form.setColumnStretch(3,1);cl.addLayout(form);account_layout.addWidget(collect)
+        form.setColumnStretch(1,1);form.setColumnStretch(3,1);cl.addLayout(form)
+        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");cl.addWidget(_div)
+        _gt=QLabel("增长提醒");_gt.setObjectName("SettingsTitle");cl.addWidget(_gt)
+        self.alert_enabled=QCheckBox("开启桌面增长提醒")
+        cl.addWidget(self.alert_enabled)
+        _tr=QHBoxLayout();_tr.setSpacing(8)
+        _tr.addWidget(QLabel("当日增长阈值"))
+        self.threshold=DirectNumberSpinBox();self.threshold.setRange(1,100_000_000);self.threshold.setSingleStep(100)
+        self.threshold.setFixedWidth(110)
+        _tr.addWidget(self.threshold);_tr.addStretch()
+        cl.addLayout(_tr)
+        collect_layout.addWidget(collect);collect_layout.addStretch()
 
-        alert,al=self.section("04  增长提醒",
-            "增长和发帖异常使用 Windows 系统通知（不点不消失，留在通知中心，头像来自本地缓存）；删除、更新安装、失败等重要事项仍需确认。普通成功提示显示为短暂气泡。")
-        ar=QGridLayout();ar.setVerticalSpacing(12);ar.setHorizontalSpacing(12)
-        self.alert_enabled=QCheckBox("开启桌面增长提醒");self.sound=QCheckBox("触发提醒时播放系统提示音")
-        ar.addWidget(self.alert_enabled,0,0,1,2);ar.addWidget(self.sound,0,2,1,2)
-        self.test_toast_btn=QPushButton("发送测试系统通知");self.test_toast_btn.clicked.connect(self.test_toast_requested.emit)
-        ar.addWidget(QLabel("系统通知测试"),2,0);ar.addWidget(self.test_toast_btn,2,1)
-        self.test_toast_status=QLabel("在真实 Windows 上点一次，确认头像显示正常。");self.test_toast_status.setObjectName("SmallMuted");self.test_toast_status.setWordWrap(True);ar.addWidget(self.test_toast_status,2,2,1,2)
-        ar.addWidget(QLabel("单次增长阈值"),1,0)
-        self.threshold=DirectNumberSpinBox();self.threshold.setRange(1,100_000_000);self.threshold.setSingleStep(100);self.threshold.setToolTip("粉丝数")
-        ar.addWidget(self.threshold,1,1)
-        ar.addWidget(QLabel("同一主页冷却时间"),1,2)
-        self.cooldown=DirectNumberSpinBox();self.cooldown.setRange(5,1440);self.cooldown.setToolTip("单位：分钟");ar.addWidget(self.cooldown,1,3)
-        al.addLayout(ar);account_layout.addWidget(alert);account_layout.addStretch()
-
-        data,dl=self.section("数据管理",
-            "保存专业 ID、当前状态、今日计算基准和通知；不保存历史快照。目录迁移会同时迁移设置、头像与默认浏览器资料。")
+        data_layout=make_tab("数据管理")
+        data,dl=self.card()
         self.data_path_label=QLabel(str(DATA_DIR));self.data_path_label.setTextFormat(Qt.TextFormat.PlainText);self.data_path_label.setObjectName("PathLabel");self.data_path_label.setWordWrap(True);dl.addWidget(self.data_path_label)
         buttons=QHBoxLayout()
         self.choose_data_dir=QPushButton("更改保存目录并迁移数据");self.choose_data_dir.setObjectName("PrimaryButton")
@@ -7458,43 +8285,15 @@ class SettingsPage(QWidget):
         folder=QPushButton("打开数据目录");folder.setObjectName("SecondaryButton")
         folder.clicked.connect(lambda:QDesktopServices.openUrl(QUrl.fromLocalFile(str(DATA_DIR))));buttons.addWidget(folder)
         backup=QPushButton("备份数据库");backup.setObjectName("SecondaryButton");backup.clicked.connect(self.backup_requested.emit)
-        buttons.addWidget(backup);buttons.addStretch();dl.addLayout(buttons);data_layout.addWidget(data)
+        buttons.addWidget(backup);buttons.addStretch();dl.addLayout(buttons)
+        data_layout.addWidget(data);data_layout.addStretch()
 
-        updates,ul=self.section("版本更新与保存",
-            "仅检查正式稳定版本；所有设置保存在当前数据目录的 settings.ini。更新下载完成后仍需用户确认才会执行。")
-        self.auto_update=QCheckBox("启动后自动检查新版本，并在发现新版时提示")
-        ul.addWidget(self.auto_update)
-        self.auto_install=QCheckBox("下载完成后自动安装更新（仅校验 SHA-256，不验证发布者签名）")
-        self.auto_install.setChecked(True)
-        ul.addWidget(self.auto_install)
-        self.settings_path_label=QLabel(self.settings.fileName());self.settings_path_label.setTextFormat(Qt.TextFormat.PlainText);self.settings_path_label.setObjectName("PathLabel");self.settings_path_label.setWordWrap(True)
-        ul.addWidget(self.settings_path_label);data_layout.addWidget(updates)
-
-        maintenance,ml=self.section("智能维护",
-            "只清理可重新生成的更新缓存、残留临时文件和过大的运行日志；不会删除专业 ID、通知、头像、设置或浏览器连接记录。")
-        maintenance_row=QHBoxLayout();maintenance_row.setSpacing(10)
-        clean_btn=QPushButton("智能清理缓存");clean_btn.setObjectName("PrimaryButton")
-        clean_btn.clicked.connect(self.cleanup_requested.emit);maintenance_row.addWidget(clean_btn)
-        self.cleanup_status=QLabel("扫描后会先显示可清理内容和预计释放空间，再由你确认。")
-        self.cleanup_status.setObjectName("SmallMuted");self.cleanup_status.setWordWrap(True)
-        maintenance_row.addWidget(self.cleanup_status,1);ml.addLayout(maintenance_row);data_layout.addWidget(maintenance)
-        uninstall_sec,uil=self.section("卸载软件",
-            "关闭程序后在后台删除程序文件、系统注册与桌面快捷方式，最后弹出一次完成确认。监控数据默认保留。")
-        uninstall_row=QHBoxLayout();uninstall_row.setSpacing(10)
-        self.uninstall_btn=QPushButton("卸载软件…");self.uninstall_btn.setObjectName("DangerButton")
-        self.uninstall_btn.clicked.connect(self.uninstall_requested.emit);uninstall_row.addWidget(self.uninstall_btn)
-        self.uninstall_note=QLabel("仅 Windows 安装版可用。")
-        self.uninstall_note.setObjectName("SmallMuted");self.uninstall_note.setWordWrap(True)
-        uninstall_row.addWidget(self.uninstall_note,1);uil.addLayout(uninstall_row);data_layout.addWidget(uninstall_sec)
-        if os.name!="nt" or not getattr(sys,"frozen",False):
-            self.uninstall_btn.setEnabled(False)
-            self.uninstall_note.setText("仅 Windows 安装版可用（当前为源码运行）。")
-        data_layout.addStretch()
         self.save_note=QLabel("所有设置修改后自动保存，下次启动继续使用");self.save_note.setObjectName("SmallMuted")
         root.addWidget(self.save_note)
 
+
     def refresh_data_path(self):
-        self.data_path_label.setText(str(DATA_DIR));self.settings_path_label.setText(self.settings.fileName())
+        self.data_path_label.setText(str(DATA_DIR))
 
     def open_monitor_directory(self):
         self.login_requested.emit()
@@ -7502,12 +8301,11 @@ class SettingsPage(QWidget):
     def load_settings(self):
         minutes,j0,j1,g0,g1=random_inspection_timing(self.settings)
         pairs=((self.interval,minutes),(self.jitter_min,j0),(self.jitter_max,j1),(self.gap_min,g0),(self.gap_max,g1),
-               (self.threshold,_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)),
-               (self.cooldown,_bounded_int(self.settings.value("alert_cooldown_minutes",30),30,5,1440)))
+               (self.threshold,_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)))
         for widget,value in pairs:
             widget.blockSignals(True);widget.setValue(value);widget.blockSignals(False)
         for widget,key,default in ((self.start_auto,"start_auto",False),(self.silent_to_tray,"silent_to_tray",True),
-                (self.alert_enabled,"alert_enabled",True),(self.sound,"alert_sound",True),
+                (self.alert_enabled,"alert_enabled",True),
                 (self.auto_update,"auto_check_updates",True),
                 (self.auto_install,"update/auto_install",True)):
             widget.blockSignals(True);widget.setChecked(is_true(self.settings.value(key,default),default));widget.blockSignals(False)
@@ -7515,6 +8313,9 @@ class SettingsPage(QWidget):
             widget.blockSignals(True);widget.setChecked(is_true(self.settings.value(key,default),default));widget.blockSignals(False)
         self._refresh_module_statuses()
         self.set_selected_theme(migrate_theme_name(self.settings.value("ui_theme","云白")))
+        _pos=str(self.settings.value("toast_position","bottom_center"))
+        if _pos in [k for _,k in TOAST_POSITIONS]:self.toast_position_choice.setCurrentData(_pos,emit=False)
+        self.set_ui_scale_label(ui_scale_percent(self.settings))
 
     def save_settings(self):
         timing=save_random_timing(self.settings,(self.interval.value(),self.jitter_min.value(),self.jitter_max.value(),self.gap_min.value(),self.gap_max.value()))
@@ -7523,8 +8324,8 @@ class SettingsPage(QWidget):
         values={
             "start_auto":int(self.start_auto.isChecked()),
             "min_to_tray":1,"silent_to_tray":int(self.silent_to_tray.isChecked()),"alert_enabled":int(self.alert_enabled.isChecked()),
-            "alert_sound":int(self.sound.isChecked()),"alert_threshold":self.threshold.value(),
-            "alert_cooldown_minutes":self.cooldown.value(),"auto_check_updates":int(self.auto_update.isChecked()),
+            "alert_threshold":self.threshold.value(),
+            "auto_check_updates":int(self.auto_update.isChecked()),
             "update/auto_install":int(self.auto_install.isChecked()),
             MODULE_GROWTH_KEY:int(self.module_growth_switch.isChecked()),MODULE_POSTS_KEY:int(self.module_posts_switch.isChecked()),
         }
@@ -7674,10 +8475,16 @@ class FirstRunDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
+    # Cross-thread jump request: the Windows toast callback runs on a WinRT
+    # background thread, so it must not touch widgets directly. Emitting this
+    # signal from any thread queues the jump onto the GUI thread.
+    open_alert_requested = pyqtSignal(object)
+
     def __init__(self):
         super().__init__();self.setWindowFlags(Qt.WindowType.FramelessWindowHint|Qt.WindowType.Window)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground,True)
         self._ui_restoring=True
+        self.open_alert_requested.connect(self.open_alert_notification)
         legacy=QSettings("GrowthRadar","FBGrowthRadar")
         directory=read_settings_location(DATA_DIR,str(legacy.value("data_directory","") or ""))
         self._set_paths(directory)
@@ -7715,7 +8522,7 @@ class MainWindow(QMainWindow):
         app_icon=make_app_icon()
         QApplication.instance().setWindowIcon(app_icon)
         self.setWindowIcon(app_icon);self.setWindowTitle(APP_TITLE+" · "+APP_VERSION)
-        self.resize(1536,1024);self.setMinimumSize(860,640)
+        self.resize(1536,1024);self.setMinimumSize(1200,800)
         self.tray=QSystemTrayIcon(make_app_icon(),self);self.tray.setToolTip(APP_TITLE)
         self.tray_menu=QMenu(self)
         self.tray_menu.addAction("打开监控看板",self.show_dashboard)
@@ -7785,7 +8592,7 @@ class MainWindow(QMainWindow):
         for index,kind,text in ((0,"home","监控看板"),(2,"bell","通知"),(3,"pages","ID管理")):
             row=QHBoxLayout();row.setContentsMargins(0,0,0,0);row.setSpacing(0)
             btn=QPushButton(text);btn.setObjectName("SideNav");btn.setProperty("iconKind",kind)
-            btn.setIcon(ui_icon(kind,MUTED));btn.setIconSize(QSize(18,18));btn.setFixedHeight(34)
+            btn.setIcon(ui_icon(kind,MUTED));btn.setIconSize(QSize(22,22));btn.setFixedHeight(40)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _=False,i=index:self.switch_page(i))
             row.addWidget(btn,1)
@@ -7797,7 +8604,7 @@ class MainWindow(QMainWindow):
             side.addSpacing(1)
         nav_label2=QLabel("系统");nav_label2.setObjectName("NavLabel");side.addWidget(nav_label2)
         btn=QPushButton("设置");btn.setObjectName("SideNav");btn.setProperty("iconKind","settings")
-        btn.setIcon(ui_icon("settings",MUTED));btn.setIconSize(QSize(18,18));btn.setFixedHeight(34)
+        btn.setIcon(ui_icon("settings",MUTED));btn.setIconSize(QSize(22,22));btn.setFixedHeight(40)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.clicked.connect(lambda:self.switch_page(4));side.addWidget(btn);self.nav_buttons[4]=btn
         self.page_nav_buttons=dict(self.nav_buttons)
@@ -7837,9 +8644,10 @@ class MainWindow(QMainWindow):
         self.page_sub.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         bar.addLayout(titles,1)
         bar.addStretch()
-        minimum=icon_button("min","最小化",self,34);minimum.clicked.connect(self.showMinimized);bar.addWidget(minimum)
-        self.max_btn=icon_button("max","最大化 / 还原",self,34);self.max_btn.clicked.connect(self.toggle_maximized);bar.addWidget(self.max_btn)
-        close=icon_button("close","关闭",self,34);close.setObjectName("CloseWindowButton");close.clicked.connect(self.close);bar.addWidget(close)
+        self._caption_hover=CaptionHoverFilter(self)
+        minimum=icon_button("min","",self,34);minimum.setAccessibleName("最小化");minimum.clicked.connect(self.showMinimized);bar.addWidget(minimum)
+        self.max_btn=icon_button("max","",self,34);self.max_btn.setAccessibleName("最大化");self.max_btn.clicked.connect(self.toggle_maximized);bar.addWidget(self.max_btn)
+        close=icon_button("close","",self,34);close.setObjectName("CloseWindowButton");close.setAccessibleName("关闭");close.installEventFilter(self._caption_hover);close.clicked.connect(self.close);bar.addWidget(close)
         center_layout.addWidget(self.topbar)
         self.stack=QStackedWidget();self.stack.setObjectName("MainStack")
         self.dashboard=DashboardPage(self.store,self.settings)
@@ -7849,13 +8657,12 @@ class MainWindow(QMainWindow):
         self.settings_page=SettingsPage(self.store,self.settings)
         for page in (self.dashboard,reserved_slot,self.alerts,self.page_manager,self.settings_page):self.stack.addWidget(page)
         if hasattr(self.dashboard,"rail_widget"):
-            _rail_scroll=QScrollArea();_rail_scroll.setObjectName("SidebarRailScroll");_rail_scroll.setFrameShape(QFrame.Shape.NoFrame)
-            _rail_scroll.setWidgetResizable(True);_rail_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            _rail_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            _rail_scroll.viewport().setStyleSheet("background:transparent;border:0;")
+            # Fixed in the sidebar: no scroll area of its own, so the recent
+            # alerts / overview cards never scroll away with the main content
+            # and never grow their own scrollbar.
             self.dashboard.rail_widget.setStyleSheet("background:transparent;")
-            _rail_scroll.setWidget(self.dashboard.rail_widget);_rail_scroll.setMinimumHeight(120)
-            side.insertWidget(side.indexOf(self.connector_card),_rail_scroll)
+            self.dashboard.rail_widget.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed)
+            side.insertWidget(side.indexOf(self.connector_card),self.dashboard.rail_widget)
             side.insertSpacing(side.indexOf(self.connector_card),12)
         center_layout.addWidget(self.stack,1)
         if hasattr(self.dashboard,"action_bar"):
@@ -7873,7 +8680,6 @@ class MainWindow(QMainWindow):
     def wire_signals(self):
         d=self.dashboard;d.collect_once.connect(self.dashboard_run_button);d.toggle_auto.connect(self.toggle_auto)
         d.view_alerts.connect(lambda:self.switch_page(2));d.open_manager.connect(self.open_manager)
-        self.settings_page.test_toast_requested.connect(self._send_test_toast)
         d.delete_page.connect(lambda pid:self.delete_ids([pid]))
         d.open_page.connect(self.open_page);d.open_settings_requested.connect(lambda:self.switch_page(4))
         d.collect_subset_requested.connect(self.start_subset_collection)
@@ -7883,12 +8689,14 @@ class MainWindow(QMainWindow):
         m.config_changed.connect(self.refresh_dashboard)
         m.inspect_requested.connect(self.inspect_pages)
         m.open_settings_requested.connect(lambda:self.switch_page(4))
-        self.alerts.ack_requested.connect(self.ack_alerts);self.alerts.read_changed.connect(self.refresh_dashboard)
+        self.alerts.ack_requested.connect(self.ack_alerts);self.alerts.clear_history_requested.connect(self.clear_read_history);self.alerts.read_changed.connect(self.refresh_dashboard)
         settings=self.settings_page;settings.login_requested.connect(self.open_login_browser)
         settings.save_requested.connect(self.save_settings)
         settings.theme_requested.connect(self.apply_theme)
+        settings.ui_scale_requested.connect(self.set_ui_scale)
+        settings.toast_position_requested.connect(self.set_toast_position)
         settings.export_requested.connect(self.export_csv);settings.backup_requested.connect(self.backup_db)
-        settings.data_dir_requested.connect(self.move_data_directory);settings.cleanup_requested.connect(self.smart_cleanup_cache);settings.uninstall_requested.connect(self.request_uninstall)
+        settings.data_dir_requested.connect(self.move_data_directory)
 
     def switch_page(self,index):
         if index not in (0,2,3,4):index=0
@@ -7961,6 +8769,19 @@ class MainWindow(QMainWindow):
         elif index==3:self.page_manager.refresh()
 
     def open_alert_notification(self,entry):
+        # The Windows toast callback runs on a WinRT background thread, never
+        # the Qt GUI thread. Touching widgets from there deadlocks the app,
+        # so re-dispatch onto the GUI thread and return immediately.
+        try:
+            _app = QApplication.instance()
+        except Exception:
+            _app = None
+        if _app is not None and QThread.currentThread() is not _app.thread():
+            # Queued signal delivery: a bare QTimer.singleShot created on
+            # the worker thread would never fire (no event loop there), and
+            # PyQt6 singleShot has no (msec, receiver, callable) overload.
+            self.open_alert_requested.emit(entry)
+            return
         log_window_event("open_alert_notification","visible=%s minimized=%s"%(
             self.isVisible(),self.isMinimized()))
         if not self.isVisible() or self.isMinimized():
@@ -8075,7 +8896,7 @@ class MainWindow(QMainWindow):
         if not cids:
             self.dashboard.status.setText("浏览器连接未就绪，请打开已安装连接器的 Chrome")
             if self.auto_enabled:self.stop_auto()
-            else:self.show_toast("请先确认左侧浏览器连接状态",kind="warning")
+            else:self.show_toast("未检测到在线浏览器连接器，请先打开已安装连接器的 Chrome",kind="warning")
             return
         if len(pages)<len(cids):
             # Small rounds (single-page recheck) simply use fewer
@@ -8101,7 +8922,7 @@ class MainWindow(QMainWindow):
 
     def on_collect_result(self,data):
         options={key:self.settings.value(key,default) for key,default in
-                 (("interval_minutes",DEFAULT_INTERVAL_MINUTES),("alert_threshold",500),("alert_enabled",1),("alert_cooldown_minutes",30))}
+                 (("interval_minutes",DEFAULT_INTERVAL_MINUTES),("alert_threshold",500),("alert_enabled",1))}
         try:out=self.store.apply_collection(data,options,self.current_purpose)
         except Exception as exc:
             import traceback;log_exception(traceback.format_exc())
@@ -8143,7 +8964,7 @@ class MainWindow(QMainWindow):
         # decision): the alert itself stays in the notification list and
         # the sidebar badge, so a failed toast never loses a warning.
         _ok,_detail=send_system_toast(entries,lambda:self.open_alert_notification(entries[0] if entries else {}),
-                                      silent=not is_true(self.settings.value("alert_sound","1"),True))
+                                      silent=False)
         self._last_toast_result=(_ok,_detail)
         if not _ok:
             log_exception("系统通知未发出："+str(_detail))
@@ -8220,27 +9041,16 @@ class MainWindow(QMainWindow):
         return is_true(self.settings.value('connector/selection_initialized',0),False)
 
     def configured_connector_ids(self,include_offline=False):
-        rows=self.connector.clients();by_id={r['instance_id']:r for r in rows if not r.get('blocked')}
-        online=[r['instance_id'] for r in rows if r['online'] and not r.get('blocked')][:10]
-        raw=str(self.settings.value('connector/selected_ids','') or '');ids=[]
-        if raw:
-            try:
-                value=json.loads(raw);ids=[str(x) for x in value if str(x) in by_id][:10] if isinstance(value,list) else []
-            except (ValueError,TypeError):ids=[]
-        if not ids:
-            legacy=str(self.settings.value('connector/selected_id','') or '')
-            if legacy in by_id:ids=[legacy]
-        # A single online connector is always zero-configuration: use it automatically.
-        # Only when multiple connectors are online do we respect/ask for a saved selection.
-        if len(online)==1:
-            ids=[online[0]]
-        elif len(online)>1 and not self.connector_selection_initialized():
-            ids=online[:10]
-        if include_offline:return list(dict.fromkeys(ids))[:10]
-        return [cid for cid in ids if cid in online][:10]
+        # Zero-configuration, no cap: every connected browser is used
+        # automatically. Saved selections from the old checkbox UI are kept
+        # on disk but no longer consulted.
+        rows = self.connector.clients()
+        if include_offline:
+            return [r['instance_id'] for r in rows if not r.get('blocked')]
+        return [r['instance_id'] for r in rows if r['online'] and not r.get('blocked')]
 
     def set_connector_selection(self,ids,initialized=True):
-        ids=list(dict.fromkeys(str(x) for x in ids if x))[:10]
+        ids=list(dict.fromkeys(str(x) for x in ids if x))
         self.settings.setValue('connector/selected_ids',json.dumps(ids,ensure_ascii=False));self.settings.setValue('connector/selection_initialized',1 if initialized else 0)
         self.settings.remove('connector/selected_id');self.settings.remove('connector/selection_mode');self.settings.sync();self.refresh_connector_summary()
 
@@ -8307,16 +9117,24 @@ class MainWindow(QMainWindow):
                 try:self.connector.start()
                 except Exception as exc:self.connector.error=str(exc)
         rows=self.connector.clients();online=[r for r in rows if r['online'] and not r.get('blocked')]
-        configured=self.configured_connector_ids(include_offline=True);active=self.configured_connector_ids(include_offline=False)
+        active=self.configured_connector_ids(include_offline=False)
         outdated=[r for r in online if connector_needs_update(r.get('identity') or {})]
+        offline=[r for r in rows if not r['online'] and not r.get('blocked')]
+        # Usability, not tidiness, decides the state: any online browser can
+        # run inspections right away. Outdated versions and offline browsers
+        # are details in the long text, never a 'pending' state while the
+        # software is usable.
         if self.connector.error:text='浏览器连接服务异常：'+self.connector.error;state='error'
         elif not online:text='未检测到在线浏览器连接器';state='error'
-        elif outdated:text=f'{len(outdated)} 个浏览器连接器版本较旧，可在设置中获取 v{BUNDLED_CONNECTOR_VERSION}';state='warn'
-        elif len(online)==1:
-            name=connector_display_name(online[0]['identity'],online[0]['instance_id']);text='已自动连接：'+name;state='ok'
-        elif configured and len(active)==len(configured):text=f'已连接 {len(active)} 个浏览器，任务将并行分配';state='ok'
-        elif configured:text=f'已配置 {len(configured)} 个浏览器，其中 {len(active)} 个在线';state='warn'
-        else:text=f'检测到 {len(online)} 个浏览器，请选择使用范围';state='warn'
+        else:
+            state='ok'
+            if len(online)==1:
+                name=connector_display_name(online[0]['identity'],online[0]['instance_id']);text='已自动连接：'+name
+            else:text=f'已连接 {len(active)} 个浏览器，任务将并行分配'
+            extras=[]
+            if outdated:extras.append(f'{len(outdated)} 个连接器版本较旧，可在设置中获取 v{BUNDLED_CONNECTOR_VERSION}')
+            if offline:extras.append(f'{len(offline)} 个浏览器离线')
+            if extras:text+=' · '+' · '.join(extras)
         try:self.settings_page.connector_summary.setText(text)
         except Exception:pass
         if hasattr(self,"connector_card"):self.connector_card.setToolTip(html.escape(text)+'\n点击查看浏览器连接')
@@ -8324,7 +9142,6 @@ class MainWindow(QMainWindow):
             if state=='ok' and len(online)==1:
                 _nm=connector_display_name(online[0]['identity'],online[0]['instance_id']);_short='已连接：'+_nm
             elif state=='ok':_short=f'已连接 {len(active)} 个浏览器'
-            elif state=='warn':_short='浏览器连接待确认'
             else:_short='未检测到浏览器'
             self.connector_title.setText(_short)
         if hasattr(self,'connector_dot'):
@@ -8400,32 +9217,21 @@ class MainWindow(QMainWindow):
         self.store.acknowledge_notifications();self.alerts.refresh();self.refresh_dashboard()
         self.show_toast("通知已标记为已读",kind="success")
 
+    def clear_read_history(self):
+        answer=QMessageBox.question(self,"清空已读记录","确定要清空全部已读通知吗？此操作不可恢复。",QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)
+        if answer!=QMessageBox.StandardButton.Yes:return
+        self.store.clear_acknowledged_alerts();self.alerts.refresh();self.refresh_dashboard()
+        self.show_toast("已清空已读历史记录",kind="success")
+
     def show_toast(self, text, duration_ms=3600, kind="info"):
         self.dashboard.status.setText(str(text))
         if not self.isVisible() or self.isMinimized():
             return
         if self._toast is None:
             self._toast=ToastNotice(self)
-        self._toast.show_message(str(text),duration_ms,kind)
+        self._toast.show_message(str(text),duration_ms,kind,position=str(self.settings.value("toast_position","bottom_center")))
 
 
-    def _send_test_toast(self):
-        pages=self.store.list_pages()
-        if pages:
-            page=dict(pages[0])
-            entry={"kind":"growth","page_id":str(page.get("page_id") or ""),
-                   "name":display_name(page),"page_name":display_name(page),
-                   "avatar_path":str(page.get("avatar_path") or ""),
-                   "message":"","growth":850,"window_seconds":3600,"threshold":500}
-        else:
-            entry={"kind":"growth","page_id":"","name":"测试主页",
-                   "message":"测试通知：系统通知已接通。"}
-        ok,detail=send_system_toast([entry],lambda:self.open_alert_notification(entry),silent=False)
-        check_file=toast_avatar_dir()/"toast_check.json"
-        status=f"已发送（头像：{detail}）。若未看到横幅，请检查 Windows 设置 → 系统 → 通知与勿扰模式；记录见 {check_file}" if ok else f"未发出：{detail}。记录见 {check_file}"
-        try:self.settings_page.test_toast_status.setText(status)
-        except Exception:pass
-        show_hint(self,status)
 
     def _create_resize_handles(self):
         specs={
@@ -8481,7 +9287,6 @@ class MainWindow(QMainWindow):
     def resizeEvent(self,event):
         super().resizeEvent(event)
         if hasattr(self,"_ui_save_timer") and not self._ui_restoring:self._ui_save_timer.start(250)
-        if hasattr(self,"brand_caption"):self.brand_caption.setVisible(self.width()>=1460)
         if getattr(self,"_toast",None) is not None:
             self._toast.reposition()
         if hasattr(self,"size_grip"):
@@ -8493,7 +9298,13 @@ class MainWindow(QMainWindow):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
         radius=0 if self.isMaximized() else 20
         rect=QRectF(0.5,0.5,self.width()-1,self.height()-1)
-        p.setBrush(QColor(BG));p.setPen(QPen(QColor(BORDER),1))
+        p.setBrush(QColor(BG))
+        # Outer edge: a faint 20%-opacity line (black on light themes, white
+        # on the dark theme) so the window edge stays visible against other
+        # windows, instead of the near-invisible theme border colour.
+        _preset=THEME_PRESETS.get(migrate_theme_name(getattr(self,"theme_name","云白")),THEME_PRESETS["云白"])
+        _edge=QColor(255,255,255,51) if not _preset.get("light",True) else QColor(0,0,0,51)
+        p.setPen(QPen(_edge,1))
         if radius:p.drawRoundedRect(rect,radius,radius)
         else:p.drawRect(rect)
         p.end()
@@ -8514,7 +9325,6 @@ class MainWindow(QMainWindow):
     def changeEvent(self,event):
         super().changeEvent(event)
         if event.type()==QEvent.Type.WindowStateChange and hasattr(self,"max_btn"):
-            self.max_btn.setToolTip("还原" if self.isMaximized() else "最大化")
             QTimer.singleShot(0,self._layout_resize_handles)
             self._update_window_shape()
 
@@ -8536,27 +9346,6 @@ class MainWindow(QMainWindow):
         self.dashboard.status.setText("正在检查 GitHub 正式发布版本…")
         self._start_update_task("check")
 
-    def request_uninstall(self):
-        if os.name!="nt" or not getattr(sys,"frozen",False):
-            show_hint(self,"卸载仅在 Windows 安装版中可用。",kind="warning");return
-        if self._tasks_busy():return
-        if self._update_thread is not None:
-            show_hint(self,"请等待版本检查或下载结束后再卸载。",kind="warning");return
-        info=uninstall_target_info()
-        if info is None:
-            show_hint(self,"找不到已登记的安装目录，无法卸载。",kind="warning");return
-        target,mode,data_dir=info
-        ok,delete_data=confirm_uninstall(self,target,mode,data_dir)
-        if not ok:return
-        script=build_uninstall_script(target,mode,data_dir,delete_data,True,[os.getpid()])
-        try:
-            start_background_uninstall(script)
-        except Exception as exc:
-            QMessageBox.warning(self,"卸载失败",str(exc));return
-        self._closing=True;self.auto_enabled=False
-        try:self.auto_timer.stop()
-        except Exception:pass
-        QApplication.instance().quit()
 
     def move_data_directory(self):
         if self._tasks_busy():return
@@ -8601,57 +9390,6 @@ class MainWindow(QMainWindow):
             self.refresh_all();QMessageBox.information(self,"迁移完成",str(moved["target"])+"\n\n"+note)
         if self.auto_enabled:self.next_run_at=time.time()+30;self.auto_timer.start(30000)
 
-    def smart_cleanup_cache(self):
-        if self._tasks_busy():
-            self.show_toast("正在巡检，请等待本轮结束后再清理缓存",kind="warning");return
-        if self._update_thread is not None:
-            self.show_toast("版本检查或下载进行中，暂不能清理更新缓存",kind="warning");return
-        candidates=[];updates=DATA_DIR/"updates"
-        if updates.exists():candidates.append(("更新下载与解压缓存",updates))
-        for root in (DATA_DIR,AVATAR_DIR):
-            if not root.exists():continue
-            for p in root.rglob("*"):
-                if p.is_file() and p.name.lower().endswith((".part",".tmp",".connector.tmp")):
-                    candidates.append(("残留临时文件",p))
-        log=DATA_DIR/"error.log";log_trim=log.is_file() and log.stat().st_size>2*1024*1024
-        total=0;seen=set();items=[]
-        for label,path in candidates:
-            try:
-                rp=path.resolve()
-                if rp in seen:continue
-                seen.add(rp)
-                size=sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.is_dir() else path.stat().st_size
-                total+=size;items.append((label,path,size))
-            except OSError:pass
-        if log_trim:
-            try:total+=max(0,log.stat().st_size-512*1024)
-            except OSError:pass
-        if total<=0:
-            self.show_toast("缓存状态良好，没有发现需要清理的垃圾文件");return
-        labels=[]
-        if any(x[0]=="更新下载与解压缓存" for x in items):labels.append("旧更新下载/解压缓存")
-        if any(x[0]=="残留临时文件" for x in items):labels.append("中断留下的临时文件")
-        if log_trim:labels.append("过大的运行日志（保留最近约 512KB）")
-        answer=QMessageBox.question(self,"确认智能清理",
-            f"检测到约 {total/1048576:.1f} MB 可安全清理内容：\n"+"、".join(labels)+
-            "\n\n不会删除专业 ID、通知、头像、设置、数据库或浏览器连接记录。\n\n现在清理吗？",
-            QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)
-        if answer!=QMessageBox.StandardButton.Yes:return
-        released=0
-        for _label,path,size in sorted(items,key=lambda x:len(str(x[1])),reverse=True):
-            try:
-                if path.is_dir():shutil.rmtree(path)
-                else:path.unlink(missing_ok=True)
-                released+=size
-            except OSError:pass
-        if log_trim:
-            try:
-                data=log.read_bytes();keep=data[-512*1024:];log.write_bytes(keep);released+=len(data)-len(keep)
-            except OSError:pass
-        ensure_private_directory(DATA_DIR/"updates")
-        if hasattr(self.settings_page,"cleanup_status"):
-            self.settings_page.cleanup_status.setText(f"上次清理释放约 {released/1048576:.1f} MB；核心数据未改动。")
-        self.show_toast(f"智能清理完成 · 释放约 {released/1048576:.1f} MB",kind="success")
 
     def open_page(self,pid):
         QDesktopServices.openUrl(QUrl(f"https://www.facebook.com/{pid}"))
@@ -8740,11 +9478,30 @@ class MainWindow(QMainWindow):
             _sw.setStyleSheet(f"background:{_sw_colors.get(_n,'#FFFFFF')};border:{'2px' if _sel else '1px'} solid {ACCENT if _sel else '#C9C9C4'};border-radius:10px;")
         if hasattr(self,"theme_name_label"):self.theme_name_label.setText(name)
 
+    def set_ui_scale(self,scale):
+        scale=_bounded_int(scale,100,80,130)
+        self.settings.setValue("ui_scale",scale);self.settings.sync()
+        self._apply_ui_font();self.apply_style();self.update()
+        try:self.settings_page.set_ui_scale_label(scale)
+        except Exception:pass
+
+    def _apply_ui_font(self):
+        app=QApplication.instance()
+        if app is None:return
+        font=QFont(app.font());font.setPixelSize(max(8,round(13*ui_scale_percent(self.settings)/100)));app.setFont(font)
+
+    def set_toast_position(self,position):
+        position=str(position or "bottom_center")
+        if position not in [k for _,k in TOAST_POSITIONS]:position="bottom_center"
+        self.settings.setValue("toast_position",position);self.settings.sync()
+        self.toast_position=position
+
     def apply_theme(self,theme_name=None,refresh=True):
         global BG,SIDEBAR,PANEL,PANEL_2,BORDER,TEXT,MUTED,ACCENT,ACCENT2,PILL,PILL_HOVER,GREEN,RED,AMBER,CYAN
         name=migrate_theme_name(str(theme_name or "云白"))
         if name not in THEME_PRESETS:name="云白"
         self.theme_name=name;p=THEME_PRESETS[name]
+        self.toast_position=str(self.settings.value("toast_position","bottom_center"))
         for key,target in (("bg","BG"),("sidebar","SIDEBAR"),("panel","PANEL"),("panel_2","PANEL_2"),
                 ("border","BORDER"),("text","TEXT"),("muted","MUTED"),("accent","ACCENT"),
                 ("accent2","ACCENT2"),("pill","PILL"),("pill_hover","PILL_HOVER"),
@@ -8757,7 +9514,7 @@ class MainWindow(QMainWindow):
             (QPalette.ColorRole.AlternateBase,PANEL_2),(QPalette.ColorRole.WindowText,TEXT),
             (QPalette.ColorRole.Text,TEXT),(QPalette.ColorRole.Button,PANEL_2),(QPalette.ColorRole.ButtonText,TEXT),
             (QPalette.ColorRole.Highlight,ACCENT),(QPalette.ColorRole.HighlightedText,"#FFFFFF"),
-            (QPalette.ColorRole.ToolTipBase,PANEL_2),(QPalette.ColorRole.ToolTipText,TEXT),
+            (QPalette.ColorRole.ToolTipBase,p.get("tooltip_bg",PANEL_2)),(QPalette.ColorRole.ToolTipText,p.get("tooltip_text",TEXT)),
             (QPalette.ColorRole.PlaceholderText,MUTED)):
             palette.setColor(role,QColor(color))
         app.setPalette(palette)
@@ -8765,7 +9522,7 @@ class MainWindow(QMainWindow):
             families=set(QFontDatabase.families())
             family=next((f for f in ("Microsoft YaHei UI","Microsoft YaHei","Noto Sans CJK SC","WenQuanYi Zen Hei","PingFang SC","DejaVu Sans") if f in families),"Sans Serif")
         except Exception:family="Sans Serif"
-        font=QFont(family);font.setPixelSize(13);app.setFont(font)
+        font=QFont(family);font.setPixelSize(max(8,round(13*ui_scale_percent(self.settings)/100)));app.setFont(font)
         self.apply_style()
         if hasattr(self,"brand_mark"):self.brand_mark.update()
         self._refresh_theme_swatches(name)
@@ -8793,7 +9550,7 @@ class MainWindow(QMainWindow):
         danger_border="#F2C4C4" if light else "#5A2E2E"
         table_selection="#EAF0FE" if light else "#1E2A44"
         disabled_text="#A3A3A3" if light else "#667C95"
-        self.setStyleSheet(f"""
+        _sheet=f"""
             QMainWindow, QWidget#Root {{ background:transparent; color:{TEXT}; }}
             QWidget {{ color:{TEXT}; font-size:13px; }}
             QLabel {{ background:transparent; border:0; }}
@@ -8806,7 +9563,7 @@ class MainWindow(QMainWindow):
             QLabel#BrandSub {{ font-size:12px;color:{MUTED}; }}
             QLabel#NavLabel {{ color:{MUTED};font-size:12px;font-weight:700;padding:8px 10px 4px; }}
             QPushButton#SideNav {{ background:transparent;border:0;border-radius:10px;
-                padding:0 10px;font-size:14px;font-weight:600;text-align:left;color:{TEXT}; }}
+                padding:0 10px;font-size:16px;font-weight:700;text-align:left;color:{TEXT}; }}
             QPushButton#SideNav:hover {{ background:{hover}; }}
             QPushButton#SideNav[active='true'] {{ background:{soft};color:{ACCENT};font-weight:700; }}
             QFrame#ConnCard {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:14px; }}
@@ -8828,7 +9585,7 @@ class MainWindow(QMainWindow):
             QProgressBar {{ border:1px solid {BORDER};border-radius:6px;background:{PANEL_2};height:18px;text-align:center; }}
             QProgressBar::chunk {{ background:{ACCENT};border-radius:5px; }}
             QPushButton#CloseWindowButton {{ background:transparent;border:0;border-radius:8px;padding:0; }}
-            QPushButton#CloseWindowButton:hover {{ background:#913447; }}
+            QPushButton#CloseWindowButton:hover {{ background:#E81123; }}
             QLabel#NotificationBadge {{ background:{RED};color:#FFFFFF;border-radius:8px;font-size:9px;font-weight:800; }}
             QLabel#PageTitle {{ font-size:24px;font-weight:800;color:{TEXT}; }}
             QLabel#DialogTitle {{ font-size:23px;font-weight:800; }}
@@ -8869,12 +9626,10 @@ class MainWindow(QMainWindow):
             QPushButton:disabled {{ color:{disabled_text};border-color:{BORDER};background:{PANEL}; }}
             QPushButton#PrimaryButton {{ background:{ACCENT};border:1px solid {ACCENT};color:#FFFFFF; }}
             QPushButton#PrimaryButton:hover {{ background:{accent2};border-color:{accent2}; }}
-            QToolButton#PrimaryButton {{ background:{ACCENT};border:1px solid {ACCENT};border-radius:10px;padding:8px 13px;color:#FFFFFF;font-weight:650; }}
-            QToolButton#PrimaryButton:hover {{ background:{accent2};border-color:{accent2}; }}
-            QToolButton#PrimaryButton:disabled {{ color:{disabled_text};border-color:{BORDER};background:{PANEL}; }}
             QPushButton#AutoButton {{ background:{PANEL_2};border:1px solid {BORDER}; }}
             QPushButton#AutoButton[autoEnabled='true'] {{ background:{soft};border-color:{ACCENT}; }}
-            QPushButton#DangerButton {{ background:{danger_bg};color:{RED};border:1px solid {danger_border}; }}
+            QPushButton#DangerButton {{ background:{danger_bg};color:{RED};border:1px solid {danger_border};font-size:14px;font-weight:700; }}
+            QPushButton#BatchActionButton {{ font-size:14px;font-weight:700; }}
             QPushButton#LinkButton {{ background:transparent;border:0;color:{ACCENT};padding:4px 8px;font-size:12px;font-weight:600; }}
             QPushButton#FilterChip {{ background:{PANEL};border:1px solid {BORDER};border-radius:15px;padding:0 13px;font-size:13px;font-weight:600; }}
             QPushButton#FilterChip:hover {{ border-color:{ACCENT}; }}
@@ -8936,9 +9691,10 @@ class MainWindow(QMainWindow):
             QLabel#MonitorAlertEvent[kind='post'] {{ color:{AMBER};background:{soft};border-color:{AMBER}; }}
             QLabel#MonitorAlertMessage {{ color:{TEXT};font-size:12px; }}
             QPushButton#AlertCloseButton {{ background:transparent;border:0;font-size:21px;padding:0;color:{MUTED}; }}
-            QToolTip {{ background:{PANEL_2};color:{TEXT};border:1px solid {BORDER};padding:6px; }}
+            QToolTip {{ background:{p["tooltip_bg"]};color:{p["tooltip_text"]};border:1px solid {p["tooltip_border"]};padding:6px 8px;font-size:13px; }}
             QSizeGrip {{ background:transparent; }}
-        """)
+        """
+        self.setStyleSheet(_scaled_stylesheet(_sheet,ui_scale_percent(self.settings)))
 
 
     def restore_ui_state(self):
@@ -8964,14 +9720,14 @@ class MainWindow(QMainWindow):
                     _ok=True;break
             if not _ok:
                 area=screen.availableGeometry()
-                self.resize(min(max(860,frame.width()),area.width()),min(max(640,frame.height()),area.height()))
+                self.resize(min(max(1200,frame.width()),area.width()),min(max(800,frame.height()),area.height()))
                 self.move(area.topLeft()+QPoint(25,25))
         if is_true(self.settings.value("ui/maximized",False)):self._start_maximized=True
         else:self._start_maximized=False
         log_window_event("restore","start_maximized=%s"%self._start_maximized)
-        try:index=int(self.settings.value("ui/page",0))
-        except (ValueError,TypeError):index=0
-        self.switch_page(index);self._ui_restoring=False
+        # 1.6.2: 启动始终打开监控看板，不恢复上次停留的页面；安装后第一屏
+        # 必须是看板，而不是设置。
+        self.switch_page(0);self._ui_restoring=False
         try:offset=int(self.settings.value("dashboard/scroll",0))
         except (ValueError,TypeError):offset=0
         QTimer.singleShot(0,lambda:self.dashboard.scroll.verticalScrollBar().setValue(offset))
