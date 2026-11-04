@@ -3,7 +3,7 @@ function extractPageDom(pageId, wantPosts) {
 "use strict";
   const pid = String(pageId);
   const clean = s => String(s || "").replace(/\s+/g, " ").trim();
-  const normName = s => clean(s).replace(/\s*[|\u00b7]\s*Facebook.*$/i, "").replace(/^\(\d+\)\s*/, "");
+  const normName = s => clean(s).replace(/\s*[|\u00b7]\s*Facebook.*$/i, "").replace(/^[\(（]\d+\+?[\)）]\s*/, "");
   const validName = s => {s=normName(s);return s && s!==pid && s.length<180 &&
     !/^(facebook|log in|login|sign up|home|menu|notifications|see all|posts|photos|videos|about)$/i.test(s) &&
     !/^(?:page|\u4e3b\u9875|\u516c\u5171\u4e3b\u9875)\s*[:#]?\s*\d+$/i.test(s) &&
@@ -48,6 +48,7 @@ function extractPageDom(pageId, wantPosts) {
   const _self_link_candidates = (
             (els, pageId) => {
               const out = [];
+              const ariaRows = [];
               const id = String(pageId || '');
               const cur = new URL(location.href);
               const curPath = cur.pathname.replace(/\/+$/, '');
@@ -65,6 +66,11 @@ function extractPageDom(pageId, wantPosts) {
                 const profileId = id && u.searchParams.get('id') === id;
                 const samePath = curPath && path === curPath;
                 if (!(idHit || profileId || samePath)) continue;
+                const ariaRaw = (el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+                const aria = ariaRaw.replace(/'s\s+profile\s+(picture|photo)$/i, '').replace(/profile\s+(picture|photo)$/i, '')
+                  .replace(/(?:\u7684\u5934\u50cf|\u7684\u5927\u5934\u8d34|\u7684\u4e2a\u4eba\u5934\u50cf|\u5934\u50cf)$/, '').trim();
+                if (aria && aria !== text && aria.length > 1 && aria.length <= 180 &&
+                    !/(?:profile\s+(?:picture|photo)|\u5934\u50cf|\u5927\u5934\u8d34)$/i.test(aria)) ariaRows.push(aria);
                 out.push({
                   text,
                   top:r.top,
@@ -241,4 +247,55 @@ function extractPageDom(pageId, wantPosts) {
   return {page_id:pid, observed_url:location.href, name_candidates:candidates.slice(0,100),
     follower_text, avatar_candidates:avatars, post_candidates:posts, evidence_version:1};
 }
-if(typeof module!=="undefined")module.exports={extractPageDom};
+/* Hover one permalink and read the exact timestamp Facebook shows in its
+   hover card (e.g. "2026年11月3日周二13:48"). Labels alone only give
+   hour/day precision. Synthetic events only: if the page ignores them,
+   no tooltip appears and the caller sees []. Runs in the page, like
+   extractPageDom, via chrome.scripting.executeScript. */
+async function hoverPostTooltip(url) {
+"use strict";
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const clean = s => String(s || "").replace(/\s+/g, " ").trim();
+  let target = null;
+  try {
+    const want = new URL(url, location.href).href;
+    for (const a of document.querySelectorAll('a[href]')) {
+      try { if (new URL(a.href, location.href).href === want) { target = a; break; } } catch (e) {}
+    }
+  } catch (e) {}
+  if (!target) return [];
+  const inner = target.querySelector('time, abbr, span') || target;
+  let rect = null;
+  try { rect = inner.getBoundingClientRect(); } catch (e) {}
+  const x = rect ? rect.left + rect.width / 2 : 0;
+  const y = rect ? rect.top + rect.height / 2 : 0;
+  const fire = (el, type) => {
+    const Ctor = type.indexOf('pointer') === 0 && typeof PointerEvent !== 'undefined' ? PointerEvent : MouseEvent;
+    el.dispatchEvent(new Ctor(type, {bubbles: true, cancelable: true, view: window, clientX: x, clientY: y}));
+  };
+  const read = () => {
+    const out = [];
+    for (const el of document.querySelectorAll('[role="tooltip"], [data-testid*="tooltip"]')) {
+      const t = clean(el.innerText || el.textContent);
+      if (t && t.length < 200) out.push(t);
+    }
+    return out;
+  };
+  const seen = new Set(read());
+  for (const el of [inner, target]) {
+    for (const type of ['pointerover', 'mouseover', 'mouseenter', 'mousemove']) {
+      try { fire(el, type); } catch (e) {}
+    }
+    try { if (el.focus) el.focus(); } catch (e) {}
+  }
+  await sleep(900);
+  for (const t of read()) seen.add(t);
+  for (const el of [inner, target]) {
+    for (const type of ['pointerout', 'mouseout', 'mouseleave']) {
+      try { fire(el, type); } catch (e) {}
+    }
+    try { if (el.blur) el.blur(); } catch (e) {}
+  }
+  return [...seen];
+}
+if(typeof module!=="undefined")module.exports={extractPageDom, hoverPostTooltip};

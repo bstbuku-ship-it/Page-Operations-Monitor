@@ -1,4 +1,4 @@
-/* POM Connector 1.4.0 -- automatic local bridge, no codes, no remote code and no cookies. */
+/* 专业监控工具连接器 1.4.7 -- automatic local bridge, no codes, no remote code and no cookies. */
 "use strict";
 importScripts('extractor.js');
 const DEFAULT_PORT = 17831;
@@ -18,9 +18,23 @@ const tr = {
 async function state(extra) {
   await chrome.storage.local.set({status:{...extra,at:Date.now()}});
 }
-async function badge(text,color='#5B5FEF') {
-  await chrome.action.setBadgeText({text});
-  await chrome.action.setBadgeBackgroundColor({color});
+// Toolbar state: a single full-bleed icon (logo centered) plus Chrome's native
+// badge, same approach as the earlier connector that displayed correctly.
+//   离 offline: not connected / paused / connection error (popup text keeps the reason)
+//   闲 idle:    connected and waiting for an inspection to start
+//   执 busy:    a collect task is running
+const TOOLBAR_BADGE = {
+  offline: {text:'\u79bb', color:'#66758D'},
+  idle:    {text:'\u95f2', color:'#20A58F'},
+  busy:    {text:'\u6267', color:'#5B5FEF'}
+};
+async function setToolbarState(state) {
+  try {
+    const b = TOOLBAR_BADGE[state] || TOOLBAR_BADGE.offline;
+    await chrome.action.setBadgeText({text:b.text});
+    await chrome.action.setBadgeBackgroundColor({color:b.color});
+    if (chrome.action.setBadgeTextColor) await chrome.action.setBadgeTextColor({color:'#FFFFFF'});
+  } catch (_) {}
 }
 function send(message) {
   if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify(message));
@@ -103,8 +117,15 @@ async function load(task,url) {
   check(task);await chrome.tabs.update(task.tabId,{url});await waitForTab(task);
 }
 function usableName(rows) {
-  return (rows||[]).some(r => r.text && !/^(?:facebook|log in|login|sign up|[0-9]+|(?:page|profile|\u4e3b\u9875)\s*[0-9]+)/i.test(r.text.trim()) &&
-    !/(?:followers?|following|likes?|\u7c89\u4e1d|\u5173\u6ce8|\u767b\u5f55|\u6ce8\u518c)/i.test(r.text));
+  // A notification-count title such as "(20+) Facebook" is not a name:
+  // strip the count prefix and a trailing brand suffix before judging.
+  const clean = t => String(t || '').replace(/^\s*[\(\uFF08]\d+\+?[\)\uFF09]\s*/, '')
+    .replace(/\s*[|\-\u2013\u2014\u00b7]\s*Facebook\s*$/i, '').trim();
+  return (rows||[]).some(r => {
+    const text = clean(r.text);
+    return text && !/^(?:facebook|log in|login|sign up|[0-9]+|(?:page|profile|\u4e3b\u9875)\s*[0-9]+)/i.test(text) &&
+      !/(?:followers?|following|likes?|\u7c89\u4e1d|\u5173\u6ce8|\u767b\u5f55|\u6ce8\u518c)/i.test(text);
+  });
 }
 function allowedImage(url) {
   try {
@@ -139,6 +160,26 @@ async function avatarData(candidates,task) {
   return '';
 }
 
+async function hoverPostTooltips(task, urls) {
+  // Best effort: a page that ignores synthetic hover events yields no
+  // tooltip text, and collection continues exactly as before.
+  const found = [];
+  let checked = 0;
+  for (const url of urls) {
+    check(task);
+    checked++;
+    try {
+      const entries = await chrome.scripting.executeScript({target:{tabId:task.tabId}, func:hoverPostTooltip, args:[url]});
+      for (const text of (entries?.[0]?.result || [])) {
+        if (typeof text === 'string' && text.trim()) {
+          found.push({raw:text.trim().slice(0, 180), authored:true, url, source:'主页贴文悬停提示'});
+        }
+      }
+    } catch (_) {}
+  }
+  return {checked, found};
+}
+
 async function collect(message) {
   if(!pairedReady)return;
   if(currentTask) {
@@ -151,7 +192,7 @@ async function collect(message) {
   currentTask=task;
   let payload={page_id:task.page_id};
   try {
-    await state({text:'\u5de1\u68c0 '+task.page_id,connected:true});await badge('...');
+    await state({text:'\u5de1\u68c0 '+task.page_id,connected:true});await setToolbarState('busy');
     // Fail instead of opening a new visible browser window without the user's consent.
     const windows=await chrome.windows.getAll({windowTypes:['normal']});
     const normal=windows.find(w=>w.focused&&!w.incognito)||windows.find(w=>!w.incognito);
@@ -164,6 +205,11 @@ async function collect(message) {
     payload={...payload,...await extract(task,!!task.posts)};
     if(payload.error)throw new Error(payload.error);
     if(task.growth && !payload.follower_text){await sleep(1000);payload={...payload,...await extract(task,!!task.posts)};}
+    // The title is readable before the SPA renders the page identity, so a
+    // first extraction can return only a generic title. One re-extract
+    // after a short wait lets the h1/profile name arrive (same pattern as
+    // the follower-text retry above); check() enforces the deadline.
+    if(!usableName(payload.name_candidates)){await sleep(1000);payload={...payload,...await extract(task,!!task.posts)};}
     if(task.posts) {
       const postCandidates=[...(payload.post_candidates||[])];
       for(let i=0;i<2;i++) {
@@ -171,7 +217,15 @@ async function collect(message) {
         await sleep(750);const p=await extract(task,true);
         postCandidates.push(...(p.post_candidates||[]));
       }
-      payload.post_candidates=postCandidates.slice(0,160);
+      // Exact timestamps live one hover away ("2026年11月3日周二13:48");
+      // labels alone only give hour/day precision. Hover the newest
+      // authored permalinks; hover results go first so the 160 cap
+      // cannot drop them.
+      const hoverUrls=[...new Set(postCandidates.filter(c=>c && c.authored && c.url).map(c=>c.url))].slice(0,3);
+      const hover=await hoverPostTooltips(task,hoverUrls);
+      payload.hover_checked=hover.checked;
+      payload.hover_found=hover.found.length;
+      payload.post_candidates=[...hover.found, ...postCandidates].slice(0,160);
     }
     payload.avatar_data=await avatarData(payload.avatar_candidates,task);
     if(!usableName(payload.name_candidates)) {
@@ -192,7 +246,7 @@ async function collect(message) {
     await closeOwnTab(task.tabId,task.job_id);
     if(!task.cancelled && task.generation===generation && pairedReady)send({type:'result',job_id:task.job_id,payload});
     if(currentTask===task)currentTask=null;
-    if(pairedReady){await badge('ON','#20A58F');await state({text:tr.connected,connected:true});}
+    if(pairedReady){await setToolbarState('idle');await state({text:tr.connected,connected:true});}
   }
 }
 
@@ -216,7 +270,7 @@ async function connect() {
   let cfg;
   try {cfg=await config();} catch(err) {connecting=false;throw err;}
   if(gen!==generation)return;
-  if(!cfg.enabled){connecting=false;return;}
+  if(!cfg.enabled){connecting=false;await setToolbarState('offline');return;}
   const ports=candidatePorts(cfg),port=ports[portCursor%ports.length];
   let ws;
   try {ws=new WebSocket('ws://127.0.0.1:'+port+'/connector/v1');}
@@ -251,7 +305,7 @@ async function connect() {
           if(Date.now()-lastRx>65000){ws.close();return;}
           send({type:'ping'});
         },20000);
-        await badge('ON','#20A58F');await state({text:tr.connected,connected:true,port,auto:true});
+        await setToolbarState('idle');await state({text:tr.connected,connected:true,port,auto:true});
       } else if(msg.type==='error') {
         const messages={
           BLOCKED:'\u8be5\u6d4f\u89c8\u5668\u5df2\u5728\u8f6f\u4ef6\u4e2d\u505c\u7528\uff0c\u8bf7\u5141\u8bb8\u540e\u6062\u590d\u8fde\u63a5',
@@ -271,7 +325,7 @@ async function connect() {
           await modifyConfig(c=>({...c,enabled:false}));
         }
         await state({text:messages[msg.code]||('\u8fde\u63a5\u6682\u672a\u6210\u529f\uff1a'+String(msg.message||'')),connected:false,error:true});
-        await badge('!','#D84962');ws.close();
+        await setToolbarState('offline');ws.close();
       } else if(!pairedReady) {
         ws.close();
       } else if(msg.type==='ping')send({type:'pong'});
@@ -279,9 +333,9 @@ async function connect() {
       else if(msg.type==='collect')collect(msg);
       else if(msg.type==='cancel') {if(currentTask?.job_id===msg.job_id)await abortCurrent();}
       else if(msg.type==='identify') {
-        await badge('ID','#5B5FEF');
+        await setToolbarState('idle');
         await state({text:'这是当前选中的浏览器连接器',connected:true,port,auto:true});
-        setTimeout(async()=>{if(pairedReady){await badge('ON','#20A58F');await state({text:tr.connected,connected:true,port,auto:true});}},5000);
+        setTimeout(async()=>{if(pairedReady){await setToolbarState('idle');await state({text:tr.connected,connected:true,port,auto:true});}},5000);
       } else if(msg.type==='revoked') {
         await modifyConfig(c=>({...c,enabled:false}));
         await state({text:'\u8f6f\u4ef6\u5df2\u505c\u7528\u6b64\u8fde\u63a5',connected:false,error:true});ws.close();
@@ -297,7 +351,7 @@ async function connect() {
     pairedReady=false;connecting=false;clearInterval(pingTimer);socket=null;
     await abortCurrent();
     if(gen!==generation)return;
-    await badge('OFF','#66758D');
+    await setToolbarState('offline');
     const st=(await chrome.storage.local.get('status')).status;
     if(!st?.error)await state({text:tr.offline,connected:false,auto:true});
     const latest=await config();
@@ -315,7 +369,7 @@ async function disconnect(disable=true) {
   generation++;pairedReady=false;connecting=false;clearTimeout(reconnectTimer);clearInterval(pingTimer);
   await abortCurrent();
   if(socket)socket.close();socket=null;
-  await badge('OFF','#66758D');await state({text:tr.disconnected,connected:false});
+  await setToolbarState('offline');await state({text:tr.disconnected,connected:false});
 }
 chrome.runtime.onMessage.addListener((msg,sender,reply)=> {
   if(sender.id!==chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')))return false;
@@ -367,6 +421,6 @@ async function init() {
 async function initialize() {
   await chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
   await chrome.alarms.create('pom-reconnect',{periodInMinutes:0.5});
-  await recoverOwnedTabs();await config();await connect();
+  await recoverOwnedTabs();await config();await setToolbarState('offline');await connect();
 }
 init().catch(reportError);
