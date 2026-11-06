@@ -41,8 +41,14 @@ import base64
 import shlex
 
 APP_TITLE = "专业监控工具"
-APP_VERSION = "1.7.1"
-APP_BUILD = "professional-portable-deployer-ui-v171-20261105-rev52"
+APP_VERSION = "1.7.2"
+APP_BUILD = "professional-portable-deployer-ui-v172-20261106-rev62"
+
+# Update log, bundled in the code in Whitaker's wording and grouping:
+# version header "vX.Y.Z (date)", groups 优化/新增/修复 (first release
+# uses 首个版本), connector line on its own after the groups.
+UPDATE_LOG_SHOWN_KEY = "update_log/shown_for"
+CHANGELOG = [{'version': '1.7.2', 'date': '2026-11-06', 'groups': [{'title': '新增', 'items': ['第一次打开会弹新手引导，带你走一遍装连接器、加主页、设自动巡检时间、跑巡检、看提醒；老用户也会弹一次，确认过就不再弹。', '自动巡检间隔设到 180 分钟以下时，设置里会出现提示，提醒你太短容易被 Facebook 临时限制。', '巡检跑起来之后，右键点「立即巡检」可以取消当前这一轮。']}, {'title': '优化', 'items': ['设置 → 巡检与提醒里的「巡检设置」改名「自动巡检设置」。']}, {'title': '修复', 'items': ['昨天超标、今天没超标的主页，不再一直留在「粉丝增长超标」里。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.1', 'date': '2026-11-06', 'groups': [{'title': '优化', 'items': ['主页小卡片改版：数值显示为「昨日新增 / 今日新增 / 距上次发帖」三列，当前粉丝单独一行（仅开启粉丝监控时显示）。', '昨日新增以红色、今日新增以绿色显示，无数据时为灰色；数值达 10000 以上以 W 为单位显示。', '点击「仅巡检本主页」后立即排入队列，无需等待上一轮结束；多个浏览器并行执行。', '发帖状态区分为「未见贴文」「读取不到」「待获取」三种。', '设置页重新整理：说明文字移至控件下方，「巡检与提醒」拆分为三节，粉丝增长提醒与发帖超时提醒可分别开关。', '精简设置项，移除「启动自动巡检」「静默收起到托盘」「备份数据库」。', '托盘右键菜单精简为「打开软件」「完全退出」。']}, {'title': '新增', 'items': ['筛选胶囊支持右键直接巡检该类主页。', '关闭窗口时可选择继续后台运行、等待本轮结束后退出或立即退出。']}, {'title': '修复', 'items': ['主页名称本轮未读取到时，不再判定为异常。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.0', 'date': '2026-11-04', 'groups': [{'title': '新增', 'items': ['浏览器连接器升级至 1.4.7（需手动更新），工具栏图标以角标显示离线 / 空闲 / 执行中状态。', '粉丝增长达标时播放烟花提示。', '自动复检：对仍无法确认的主页最多复检 5 遍，并优先更换浏览器重试。', '新增界面缩放（80%–130%）与消息提示位置设置。', '新增诊断日志窗口。']}, {'title': '优化', 'items': ['优化预警分类规则：粉丝增长超标、发帖超时、需处理三个维度独立统计。', '排序精简为三项，默认「增长预警优先」。', '卡片数值达 1000 以上以 k 为单位显示，悬停可查看精确值。', '设置页改为 5 个横向标签页。', '巡检间隔默认值调整为 240 分钟。', '通知历史支持清空已读记录。', '统一各类提示的显示样式。', '重写浏览器连接窗口，支持筛选、停用、删除与重新检测。', '并行巡检自动识别新上线的浏览器，不再限制数量。']}], 'connector': ''}, {'version': '1.6.2', 'date': '', 'groups': [{'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.1', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['Windows 版改用标准安装程序，提供简体中文安装向导，可自选安装路径。', '新增绿色便携版，解压即用，数据保存在软件文件夹内。']}, {'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.0', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['新增三套主题：云白（默认）、护眼绿、曜石黑。', '新增监控模块开关，首次运行时可选择启用的模块。', '支持静默升级：后台下载并校验新版本，空闲时自动安装并重启，可在「设置 → 更新」中关闭。', '提示气泡按类型区分图标：成功、警告、普通提示。', '主页卡片支持通过三点菜单删除。', '左侧栏新增预警头像行。', '接入 Windows 系统通知。']}, {'title': '优化', 'items': ['界面改为圆角风格，并新增左侧边栏。', '提示气泡按主题配色，宽度随内容自适应。', '主页不可用时直接给出判断。', 'ID 管理列表按专业名称排序。', '精简通知文案，不再显示 ID。']}, {'title': '修复', 'items': ['修复提示气泡偶尔被裁掉最后一个字的问题。']}], 'connector': '浏览器连接器保持 1.4.1，无需重新安装。'}, {'version': '1.5.0', 'date': '', 'groups': [{'title': '优化', 'items': ['软件名称统一为「专业监控工具」。', '「设置中心」更名为「设置」，移除「恢复默认巡检参数」「打开运行日志」「重置窗口布局」。', '专业 ID 管理入口统一为「FB专业ID管理」。', '更新提示改为「升级 / 以后再说」，下载并校验完成后再次确认安装。']}, {'title': '新增', 'items': ['设置新增「智能清理缓存」，扫描后经确认再清理，不影响 ID、通知、头像、设置、数据库及浏览器连接记录。']}], 'connector': ''}, {'version': '1.4.0', 'date': '2026-10-15', 'groups': [{'title': '新增', 'items': ['首页新增「昨日新增」指标。', '点击「查看通知」可直达通知界面并高亮对应预警。']}, {'title': '优化', 'items': ['通知界面默认仅显示未读及今日通知，较早的已读记录移至「历史记录」。', '预警弹窗头像与主页卡片保持一致。', '首页巡检参数布局更紧凑。', '数字输入框改为点击即选中、输入即保存。', '顶部图标按主题分层配色，有未读通知时显示红色。', '浏览器按钮增加状态灯：绿色可用、黄色部分连接、红色无连接。', '浏览器连接窗口简化；多个连接器可并行巡检，最多 10 个。', '浏览器连接器改为紧凑弹窗，可直接填写浏览器备注。']}], 'connector': ''}, {'version': '1.3.0', 'date': '2026-10-14', 'groups': [{'title': '新增', 'items': ['浏览器连接器改为同机自动发现、自动连接，无需手动输入配对码。', '检测到多个 Chrome 配置时可选择巡检所用浏览器，并记住上次选择。', '专业 ID 的粉丝监控与发帖监控可独立启用，支持批量管理。', '首页显示上次巡检时间，支持随机巡检间隔与随机主页间隔。', '关闭窗口后可留在系统托盘运行，再次启动时自动唤回已有窗口。', '最近预警增加主页头像。', '支持通过 GitHub Releases 检查并更新软件。']}], 'connector': ''}, {'version': '1.0.0', 'date': '2026-10-12', 'groups': [{'title': '首个版本', 'items': ['支持批量导入主页 ID，可直接粘贴谷歌表格内容并自动清洗。', '登录监控账号后，逐页采集粉丝数、主页名称与头像。', '首页展示当前粉丝与今日新增。', '支持粉丝增长桌面提醒。', '支持发帖时间监控与超时判断。', '提供专业 ID 管理：添加、编辑、批量设置、批量删除、导出清单。', '支持立即巡检与自动巡检。', '支持系统托盘、数据导出、数据目录迁移与数据库备份。', '支持检查新版本。']}], 'connector': ''}]
 DEFAULT_INTERVAL_MINUTES = 240
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -2000,10 +2006,14 @@ class Store:
                     out[str(r["page_id"])]=dict(r)
         return out
 
-    def unread_alert_page_ids(self):
-        """Page ids with unread alerts, without the 500-row display cap."""
+    def unread_alert_page_ids(self, since_ts=None):
+        """Page ids with unread alerts, without the 500-row display cap.
+        since_ts restricts to alerts created at/after that timestamp
+        (pass the local midnight to count only today's alerts)."""
         with self.lock,self._connect() as c:
-            return {str(r[0]) for r in c.execute("SELECT DISTINCT page_id FROM alerts WHERE acknowledged=0")}
+            if since_ts is None:
+                return {str(r[0]) for r in c.execute("SELECT DISTINCT page_id FROM alerts WHERE acknowledged=0")}
+            return {str(r[0]) for r in c.execute("SELECT DISTINCT page_id FROM alerts WHERE acknowledged=0 AND alerted_ts>=?", (float(since_ts),))}
 
     def follower_states(self):
         """All follower_state rows in one query (dashboard refresh path)."""
@@ -5705,7 +5715,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import (
     QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QImage, QLinearGradient, QPainter, QPalette,
-    QPainterPath, QPen, QPixmap,
+    QPainterPath, QPen, QPixmap, QRegion,
 )
 from PyQt6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QLayout, QLayoutItem,
@@ -8086,7 +8096,15 @@ class ResponsiveCards(QWidget):
 
 class BatchAddDialog(QDialog):
     def __init__(self,parent=None,initial="",growth_enabled=True,posts_enabled=True):
-        super().__init__(parent);self.setWindowTitle("添加专业 ID");self.resize(620,600)
+        super().__init__(parent)
+        # Fixed card, not a movable window: no title bar to drag, no
+        # close (X) and no minimise. The only way out is the bottom
+        # 取消 / 确认导入 buttons. Applies in the tour and in normal use.
+        self.setObjectName("BatchAddDialog")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("QDialog#BatchAddDialog{background:%s;border:1px solid %s;border-radius:16px;}" % (PANEL, BORDER))
+        self.setWindowTitle("添加专业 ID");self.setFixedSize(620,600)
         root=QVBoxLayout(self);root.setContentsMargins(22,20,22,20);root.setSpacing(12)
         title=QLabel("批量添加专业 ID");title.setObjectName("DialogTitle");root.addWidget(title)
         note=QLabel("支持逐行 ID、表格粘贴和带数字 ID 的主页链接。重复 ID 会跳过；已有主页的模块、名称和备注不会被覆盖。")
@@ -8139,7 +8157,8 @@ def today_growth_over_threshold(row, threshold, today_delta=None):
     baseline) reaching the threshold counts. A single-interval jump does
     NOT count on its own: one jump of 50 is not required, and one jump
     of 50 with only 40 of net growth today does not count either.
-    An unread growth alert also counts (via is_growth_alert in refresh).
+    An unread growth alert from today also counts (via is_growth_alert
+    in refresh); an unread alert from a previous day does not.
     Abbreviated readings (Facebook shows 1.2\u4e07 / 12K style counts) count
     here: the numbers on screen are the evidence, and cards already
     annotate them as approx. The age of the reading does NOT exclude it:
@@ -8174,8 +8193,8 @@ def dashboard_row_flags(row, posts_on):
     only reuse the existing signals (unread growth alert, or today's
     accumulated growth at/over the threshold, stored in is_growth_alert
     by refresh(); post_view() state, stored errors / post_result).
-    - growth_alert: unread growth alert for the page, or today's
-      accumulated growth (今日新增) reaching the existing threshold
+    - growth_alert: unread growth alert from today for the page, or
+      today's accumulated growth (今日新增) reaching the existing threshold
       (see today_growth_over_threshold). A single-interval jump alone
       does not count. The threshold itself is unchanged.
     - post_overdue: post_view() state "overdue" (fresh, verified detection only;
@@ -8199,9 +8218,641 @@ def dashboard_row_flags(row, posts_on):
     return (growth, overdue, needs)
 
 
+TOUR_DONE_KEY = "tour/done_1_7_2"
+
+
+class TourWelcomeCard(QWidget):
+    """The tour's first screen, as a fixed card inside the main window
+    (not a separate window): no close button, no minimise, cannot be
+    dragged -- the user only chooses 跳过 or 开始新手引导."""
+    skip_requested = pyqtSignal()
+    start_requested = pyqtSignal()
+
+    def __init__(self, parent, main):
+        super().__init__(parent)
+        self.setObjectName("TourWelcomeCard")
+        self.setFixedWidth(520)
+        # A plain QWidget only paints its stylesheet background when
+        # WA_StyledBackground is set; without it the card stays transparent.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # Scope the card style to the card itself only (#id selector):
+        # an unscoped background/border would leak onto every child
+        # label and button and turn each of them into a white pill.
+        self.setStyleSheet("#TourWelcomeCard{background:#FFFFFF;border:1px solid #E8E8E3;border-radius:16px;}")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(26, 24, 26, 24)
+        root.setSpacing(12)
+        icon = main.windowIcon()
+        if not icon.isNull():
+            lab = QLabel()
+            lab.setPixmap(icon.pixmap(46, 46))
+            root.addWidget(lab)
+        title = QLabel("你是第一次使用吗？")
+        title.setObjectName("DialogTitle")
+        root.addWidget(title)
+        body = QLabel("第一次用的话，我带你走一遍：先装浏览器连接器、加主页，设好自动巡检时间，再跑一轮巡检，最后看一眼提醒。几分钟就学会，不用看说明书。")
+        body.setWordWrap(True)
+        root.addWidget(body)
+        root.addStretch()
+        actions = QHBoxLayout()
+        actions.addStretch()
+        skip = QPushButton("跳过")
+        skip.clicked.connect(self.skip_requested.emit)
+        actions.addWidget(skip)
+        start = QPushButton("开始新手引导")
+        start.setObjectName("PrimaryButton")
+        start.clicked.connect(self.start_requested.emit)
+        actions.addWidget(start)
+        root.addLayout(actions)
+        self.hide()
+
+
+
+class TourRingOverlay(QWidget):
+    """Amber ring only, drawn over a dialog step's target. Fully
+    click-through (WA_TransparentForMouseEvents) and never dims: the
+    dialog stays bright and fully usable, the ring just points at the
+    control the step is about."""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._target = QRect()
+        self.hide()
+
+    def show_target(self, rect):
+        self._target = QRect(rect)
+        self.setGeometry(self.parentWidget().rect())
+        self.show()
+        self.raise_()
+        self.update()
+
+    def paintEvent(self, event):
+        if not self._target.isValid():
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(QPen(QColor(245, 158, 11, 64), 7))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(self._target.adjusted(-3, -3, 3, 3), 10, 10)
+        p.setPen(QPen(QColor("#F59E0B"), 3))
+        p.drawRoundedRect(self._target, 10, 10)
+
+
+class TourOverlay(QWidget):
+    """Spotlight overlay for the onboarding tour.
+
+    A child of the main window (or of the dialog a step opens), so it only
+    ever covers the app itself -- never the whole screen. It dims everything
+    except the highlighted target, which stays fully clickable: the overlay
+    mask cuts a hole at the target, so the user can click the highlighted
+    control to actually use it, then advance with 下一步. Clicks on the
+    dimmed area are swallowed; the bubble stays clickable.
+    """
+    next_requested = pyqtSignal()
+    prev_requested = pyqtSignal()
+    skip_requested = pyqtSignal()
+    done_requested = pyqtSignal()
+
+    def __init__(self, main):
+        super().__init__(main)
+        self._main = main
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._targets = []
+        self._target = QRect()
+        self._has_target = False
+        self._is_last = False
+        self._dialog = None
+        self._ring = None
+        self._welcome = TourWelcomeCard(self, main)
+        self._bubble = QWidget(self)
+        self._bubble.setStyleSheet("background:#FFFFFF;border:1px solid #E8E8E3;border-radius:12px;")
+        bl = QVBoxLayout(self._bubble)
+        bl.setContentsMargins(16, 14, 16, 14)
+        bl.setSpacing(6)
+        self._step_lab = QLabel()
+        self._step_lab.setStyleSheet("color:#1D4ED8;font-size:11.5px;font-weight:bold;border:none;")
+        bl.addWidget(self._step_lab)
+        self._title_lab = QLabel()
+        self._title_lab.setStyleSheet("font-size:15.5px;font-weight:bold;border:none;")
+        bl.addWidget(self._title_lab)
+        self._body_lab = QLabel()
+        self._body_lab.setWordWrap(True)
+        self._body_lab.setStyleSheet("font-size:13px;color:#3A3A3A;border:none;")
+        bl.addWidget(self._body_lab)
+        btns = QHBoxLayout()
+        btns.setSpacing(8)
+        self._skip_btn = QPushButton("跳过引导")
+        self._skip_btn.setStyleSheet("color:#6E6E6E;border:none;font-size:12.5px;")
+        self._skip_btn.clicked.connect(self.skip_requested.emit)
+        btns.addWidget(self._skip_btn)
+        btns.addStretch()
+        self._prev_btn = QPushButton("上一步")
+        self._prev_btn.clicked.connect(self.prev_requested.emit)
+        btns.addWidget(self._prev_btn)
+        self._next_btn = QPushButton("下一步")
+        self._next_btn.setStyleSheet("background:#1D4ED8;color:#FFFFFF;border:none;border-radius:8px;padding:8px 16px;font-size:13px;")
+        self._next_btn.clicked.connect(self._on_next_clicked)
+        btns.addWidget(self._next_btn)
+        bl.addLayout(btns)
+        self._bubble.setFixedWidth(320)
+        self._bubble.hide()
+        self.hide()
+
+    def _on_next_clicked(self):
+        if self._is_last:
+            self.done_requested.emit()
+        else:
+            self.next_requested.emit()
+
+    def _window_control_rects(self):
+        # Only the three window buttons (minimise / maximise / close) in
+        # overlay coordinates. Everything else in the top bar -- page
+        # title, 立即巡检, 启用自动巡检 -- is dimmed and blocked like
+        # the rest of the window.
+        if not hasattr(self, "_win_ctl_btns"):
+            self._win_ctl_btns = []
+            for name in ("最小化", "最大化", "关闭"):
+                for b in self._main.findChildren(QPushButton):
+                    if b.accessibleName() == name:
+                        self._win_ctl_btns.append(b)
+                        break
+        rects = []
+        for b in self._win_ctl_btns:
+            try:
+                if b.isVisible():
+                    rects.append(QRect(b.mapTo(self._main, QPoint(0, 0)), b.rect().size()))
+            except Exception:
+                pass
+        return rects
+
+    def show_welcome(self):
+        """Dim the main window and show the fixed welcome card, centred."""
+        self._set_overlay_parent(self._main)
+        self._dialog = None
+        self._has_target = False
+        self._target = QRect()
+        if self._ring is not None:
+            self._ring.hide()
+        self._bubble.hide()
+        self._welcome.adjustSize()
+        w, h = self._welcome.width(), self._welcome.height()
+        self._welcome.move((self.width() - w) // 2, (self.height() - h) // 2)
+        self._update_mask()
+        self._welcome.show()
+        self._welcome.raise_()
+        self.show()
+        self.raise_()
+        self.update()
+
+    def hide_welcome(self):
+        self._welcome.hide()
+
+    def _parent_for(self, targets):
+        # The top-level window holding the first target; the overlay lives
+        # there so it can cover a dialog step too.
+        for w in targets:
+            if w is not None:
+                top = w.window()
+                if top is not None:
+                    return top
+        return self._main
+
+    def _set_overlay_parent(self, parent):
+        old = self.parentWidget()
+        if old is not None and old is not parent:
+            try:
+                old.removeEventFilter(self)
+            except Exception:
+                pass
+        if self.parentWidget() is not parent:
+            self.setParent(parent)
+        try:
+            parent.installEventFilter(self)
+        except Exception:
+            pass
+        self.setGeometry(parent.rect())
+
+    def _position_dialog_right(self):
+        # Shift the dialog right so its left edge clears the bubble that
+        # sits on the left (margin 16 + bubble 320 + gap 24 = 360). The
+        # dialog is a top-level window, so move it in screen coordinates.
+        dlg = self._dialog
+        main = self._main
+        dw, dh = dlg.width(), dlg.height()
+        W, H = main.width(), main.height()
+        left_needed = 16 + 320 + 24
+        cx = (W - dw) // 2
+        cy = (H - dh) // 2
+        left = max(cx, left_needed)
+        left = max(16, min(left, max(16, W - dw - 16)))
+        top = max(16, min(cy, max(16, H - dh - 16)))
+        dlg.move(main.mapToGlobal(QPoint(left, top)))
+
+    def _dialog_target_rect(self):
+        # Union of the target widgets, in the dialog's coordinates.
+        rect = None
+        if self._dialog is None:
+            return None
+        for w in self._targets:
+            if w is None:
+                continue
+            try:
+                r = QRect(w.mapTo(self._dialog, QPoint(0, 0)), w.rect().size())
+            except Exception:
+                continue
+            rect = r if rect is None else rect.united(r)
+        return rect
+
+    def _target_rect(self):
+        # Union of the target widgets, in overlay (== parent) coordinates.
+        rect = None
+        parent = self.parentWidget()
+        if parent is None:
+            return None
+        for w in self._targets:
+            if w is None:
+                continue
+            try:
+                r = QRect(w.mapTo(parent, QPoint(0, 0)), w.rect().size())
+            except Exception:
+                continue
+            rect = r if rect is None else rect.united(r)
+        return rect
+
+    def show_step(self, targets, step_no, total, title, text, has_prev, is_last):
+        if isinstance(targets, QWidget):
+            targets = [targets]
+        self._targets = [w for w in (targets or []) if w is not None]
+        # Dialog step: the target lives in a dialog, not in the main
+        # window. Dim + block the main window only; the dialog stays
+        # bright and fully clickable, with just a ring on the target.
+        top = self._parent_for(self._targets)
+        self._dialog = top if (top is not None and top is not self._main) else None
+        self._set_overlay_parent(self._main)
+        if self._dialog is not None:
+            self._has_target = False
+            self._target = QRect()
+            self._position_dialog_right()
+            if self._ring is None or self._ring.parentWidget() is not self._dialog:
+                self._ring = TourRingOverlay(self._dialog)
+            drect = self._dialog_target_rect()
+            if drect is not None:
+                self._ring.show_target(drect)
+        else:
+            if self._ring is not None:
+                self._ring.hide()
+            self._has_target = bool(self._targets)
+            self._target = self._target_rect() or QRect()
+        self._is_last = bool(is_last)
+        self._step_lab.setText("第 %d 步 / 共 %d 步" % (step_no, total))
+        self._title_lab.setText(title)
+        self._body_lab.setText(text)
+        self._prev_btn.setVisible(bool(has_prev))
+        self._next_btn.setText("完成" if is_last else "下一步")
+        self._skip_btn.setVisible(not is_last)
+        # Size the bubble from the wrapped body text: a word-wrapped label
+        # reports a wrong sizeHint before it is laid out, so measure the
+        # text explicitly and give the label that minimum height.
+        fm = self._body_lab.fontMetrics()
+        avail = 320 - 32
+        need = fm.boundingRect(0, 0, avail, 100000, Qt.TextFlag.TextWordWrap, text).height()
+        self._body_lab.setMinimumHeight(need)
+        self._bubble.adjustSize()
+        self._place_bubble()
+        self._update_mask()
+        self._bubble.show()
+        self.show()
+        self.raise_()
+        self.update()
+
+    def _place_bubble_dialog(self):
+        # Bubble on the left, clear of the dialog (the dialog was shifted
+        # right so its left edge is at least 360). Align with the target's
+        # height so it sits next to what the step is about.
+        bw = 320
+        bh = self._bubble.height()
+        W, H = self.width(), self.height()
+        t = None
+        for w in self._targets:
+            if w is None:
+                continue
+            try:
+                r = QRect(w.mapTo(self._main, QPoint(0, 0)), w.rect().size())
+            except Exception:
+                continue
+            t = r if t is None else t.united(r)
+        y = t.top() if t is not None else (H - bh) // 2
+        y = max(0, min(int(y), max(0, H - bh)))
+        self._bubble.move(16, int(y))
+        self._bubble.resize(bw, int(bh))
+
+    def _update_mask(self):
+        # Dialog mode: the target lives in the dialog, so the main-window
+        # dim has no hole -- it blocks the whole main window, and the
+        # bubble stays clickable. Main-window mode: click-through hole at
+        # the target (inset keeps the amber ring itself inside the mask,
+        # so it stays painted and visible). In every mode the main
+        # window's own title bar is cut out, so minimise / maximise /
+        # close keep working.
+        region = QRegion(self.rect())
+        for cr in self._window_control_rects():
+            region = region.subtracted(QRegion(cr))
+        if self._dialog is None and self._has_target and self._target.isValid():
+            region = region.subtracted(QRegion(self._target.adjusted(2, 2, -2, -2)))
+        region = region.united(QRegion(self._bubble.geometry()))
+        if self._welcome.isVisible():
+            region = region.united(QRegion(self._welcome.geometry()))
+        self.setMask(region)
+
+    def _place_bubble(self):
+        # Dialog step: the bubble lives in the main window, outside the
+        # dialog (the dialog would cover it), next to the target's height.
+        if self._dialog is not None:
+            self._place_bubble_dialog()
+            return
+        # Pick the placement whose (clamped) rect overlaps the highlighted
+        # target least, so the bubble never sits on top of the control the
+        # user needs to click. Right/left/below/above first, then the
+        # corners, then centred.
+        bw = 320
+        bh = self._bubble.height()
+        W, H = self.width(), self.height()
+        if self._has_target:
+            t = self._target
+            cands = [
+                (t.right() + 16, t.top()),
+                (t.left() - bw - 16, t.top()),
+                (t.left(), t.bottom() + 16),
+                (t.left(), t.top() - bh - 16),
+                (max(0, min(t.left(), W - bw)), max(0, H - bh - 12)),
+                (max(0, min(t.left(), W - bw)), 0),
+                ((W - bw) // 2, (H - bh) // 2),
+            ]
+        else:
+            cands = [((W - bw) // 2, (H - bh) // 2)]
+        best = None
+        best_score = None
+        for x, y in cands:
+            x = max(0, min(int(x), max(0, W - bw)))
+            y = max(0, min(int(y), max(0, H - bh)))
+            r = QRect(x, y, bw, int(bh))
+            overlap = 0
+            if self._has_target:
+                inter = r.intersected(self._target)
+                if inter.isValid():
+                    overlap = inter.width() * inter.height()
+            if best_score is None or overlap < best_score:
+                best_score = overlap
+                best = r
+        self._bubble.move(best.topLeft())
+        self._bubble.resize(bw, int(bh))
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        ctl = self._window_control_rects()
+        if self._dialog is not None:
+            # Plain full dim, except the three window buttons stay bright:
+            # the ring lives in the dialog, not here.
+            path = QPainterPath()
+            path.setFillRule(Qt.FillRule.OddEvenFill)
+            path.addRect(QRectF(self.rect()))
+            for cr in ctl:
+                path.addRect(QRectF(cr))
+            p.fillPath(path, QColor(15, 15, 15, 140))
+            return
+        path = QPainterPath()
+        path.setFillRule(Qt.FillRule.OddEvenFill)
+        path.addRect(QRectF(self.rect()))
+        for cr in ctl:
+            path.addRect(QRectF(cr))
+        if self._has_target:
+            path.addRoundedRect(QRectF(self._target), 10, 10)
+        p.fillPath(path, QColor(15, 15, 15, 140))
+        if self._has_target:
+            p.setPen(QPen(QColor(245, 158, 11, 64), 7))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(self._target.adjusted(-3, -3, 3, 3), 10, 10)
+            p.setPen(QPen(QColor("#F59E0B"), 3))
+            p.drawRoundedRect(self._target, 10, 10)
+
+    def mousePressEvent(self, event):
+        # Swallow clicks on the dimmed area. Clicks on the target never
+        # reach us (the mask cuts a hole there); the bubble handles itself.
+        event.accept()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.isVisible():
+            if self._welcome.isVisible():
+                w, h = self._welcome.width(), self._welcome.height()
+                self._welcome.move((self.width() - w) // 2, (self.height() - h) // 2)
+            if self._dialog is not None:
+                drect = self._dialog_target_rect()
+                if drect is not None and self._ring is not None:
+                    self._ring.show_target(drect)
+            else:
+                self._target = self._target_rect() or QRect()
+            self._place_bubble()
+            self._update_mask()
+            self.update()
+
+    def eventFilter(self, watched, event):
+        if watched is self.parentWidget() and event.type() == QEvent.Type.Resize:
+            self.setGeometry(self.parentWidget().rect())
+            if self.isVisible():
+                self._target = self._target_rect() or QRect()
+                self._place_bubble()
+                self._update_mask()
+                self.update()
+        return super().eventFilter(watched, event)
+
+
+
+class OnboardingTour(QObject):
+    """Seven-step guided tour. Each step prepares its context (page/tab/
+    dialog) and returns the target widget(s); the overlay highlights them
+    and leaves them clickable, so the user can use the control and then
+    advance with 下一步."""
+    def __init__(self, main):
+        super().__init__(main)
+        self._main = main
+        self._overlay = TourOverlay(main)
+        self._overlay.next_requested.connect(self.next_step)
+        self._overlay.prev_requested.connect(self.prev_step)
+        self._overlay.skip_requested.connect(self.stop)
+        self._overlay.done_requested.connect(self.stop)
+        self._overlay._welcome.skip_requested.connect(self._on_welcome_skip)
+        self._overlay._welcome.start_requested.connect(self._on_welcome_start)
+        self._idx = -1
+        self._dlg = None
+        self._tour_closing_dialog = False
+        self._steps = [
+            {"key": "connector", "title": "先装浏览器连接器",
+             "text": "点「获取连接器」，按提示在 Chrome 里加载好，软件才能读到主页。软件里导出的插件和发布包里附带是一样的，装一个地方的就行，不用两边都装。",
+             "prepare": self._prep_connector},
+            {"key": "idman", "title": "去 ID 管理加主页",
+             "text": "点左边这个「ID管理」，准备加要监控的主页。",
+             "prepare": self._prep_idman},
+            {"key": "paste", "title": "粘贴主页 ID",
+             "text": "把主页 ID 粘贴到这个框里，一行一个，点「确认导入」。一次可以粘贴很多个。",
+             "prepare": self._prep_paste},
+            {"key": "modules", "title": "选要监测什么",
+             "text": "只看粉丝增长，还是连发帖时间一起盯？点一个，点「确定」。以后随时能在设置里改。",
+             "prepare": self._prep_modules},
+            {"key": "time", "title": "设自动巡检隔多久跑一轮",
+             "text": "在这里改「每轮间隔」，建议 180 分钟以上。太短容易被 Facebook 临时限制，被限制的那个浏览器读不到主页。这个时间你自己改，改完自动保存。",
+             "prepare": self._prep_time},
+            {"key": "patrol", "title": "选一种巡检方式",
+             "text": "想现在就跑一轮，点「立即巡检」；想以后按时间自动跑，点「启用自动巡检」。选一个就行，不用两个都点，两个都点会跑两轮。",
+             "prepare": self._prep_patrol},
+            {"key": "alerts", "title": "看提醒",
+             "text": "有超标或超时，这里会提醒你：点「通知」看全部历史，左侧「最近预警」和卡片上的徽章也能看到。引导完了，开始用吧。",
+             "prepare": self._prep_alerts},
+        ]
+
+    def show_welcome(self):
+        self._overlay.show_welcome()
+
+    def _mark_tour_done(self):
+        try:
+            self._main.settings.setValue(TOUR_DONE_KEY, 1)
+            self._main.settings.sync()
+        except Exception:
+            pass
+
+    def _on_welcome_skip(self):
+        self._overlay.hide_welcome()
+        self._overlay.hide()
+        self._mark_tour_done()
+
+    def _on_welcome_start(self):
+        self._overlay.hide_welcome()
+        self._mark_tour_done()
+        self.start()
+
+    def start(self):
+        self._idx = 0
+        self._show_current()
+
+    def stop(self):
+        self._close_step_dialog()
+        self._overlay.hide_welcome()
+        self._overlay.hide()
+        if self._overlay._ring is not None:
+            self._overlay._ring.hide()
+        self._idx = -1
+
+    def next_step(self):
+        self._close_step_dialog()
+        self._idx += 1
+        if self._idx >= len(self._steps):
+            self.stop()
+            return
+        self._show_current()
+
+    def prev_step(self):
+        self._close_step_dialog()
+        self._idx = max(0, self._idx - 1)
+        self._show_current()
+
+    def _close_step_dialog(self):
+        if self._dlg is not None:
+            # Guard: closing it here fires its finished signal; the tour
+            # itself is moving, so the handler must not advance again.
+            self._tour_closing_dialog = True
+            try:
+                self._dlg.close()
+            except Exception:
+                pass
+            self._tour_closing_dialog = False
+            self._dlg = None
+
+    def _on_step_dialog_finished(self, result):
+        # The user dismissed the step's dialog (confirm / cancel / X).
+        # That counts as finishing the step: move on by itself.
+        if self._tour_closing_dialog:
+            return
+        if self._idx < 0 or self._idx >= len(self._steps):
+            return
+        if self._dlg is None:
+            return
+        self._dlg = None
+        self.next_step()
+
+    def _show_current(self):
+        step = self._steps[self._idx]
+        try:
+            targets = step["prepare"]()
+        except Exception:
+            targets = None
+        QApplication.processEvents()
+        self._overlay.show_step(targets, self._idx + 1, len(self._steps),
+                                step["title"], step["text"],
+                                self._idx > 0, self._idx == len(self._steps) - 1)
+
+    def _prep_connector(self):
+        m = self._main
+        m.switch_page(4)
+        m.settings_page.settings_tabs.setCurrentIndex(2)
+        QApplication.processEvents()
+        return m.settings_page.connector_package_button
+
+    def _prep_idman(self):
+        m = self._main
+        m.switch_page(0)
+        QApplication.processEvents()
+        return m.page_nav_buttons.get(3)
+
+    def _prep_paste(self):
+        m = self._main
+        dlg = BatchAddDialog(m, growth_enabled=modules_growth_enabled(m.settings),
+                             posts_enabled=modules_posts_enabled(m.settings))
+        self._dlg = dlg
+        dlg.finished.connect(self._on_step_dialog_finished)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        QApplication.processEvents()
+        return dlg.edit
+
+    def _prep_modules(self):
+        m = self._main
+        dlg = FirstRunDialog(m)
+        self._dlg = dlg
+        dlg.finished.connect(self._on_step_dialog_finished)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        QApplication.processEvents()
+        return [dlg.opt_growth, dlg.opt_both]
+
+    def _prep_time(self):
+        m = self._main
+        m.switch_page(4)
+        m.settings_page.settings_tabs.setCurrentIndex(3)
+        QApplication.processEvents()
+        return m.settings_page.interval
+
+    def _prep_patrol(self):
+        m = self._main
+        m.switch_page(0)
+        QApplication.processEvents()
+        return [m.dashboard.once_btn, m.dashboard.auto_btn]
+
+    def _prep_alerts(self):
+        m = self._main
+        m.switch_page(0)
+        QApplication.processEvents()
+        return m.page_nav_buttons.get(2)
+
+
+
 class DashboardPage(QWidget):
     collect_once=pyqtSignal()
     collect_subset_requested=pyqtSignal(str)
+    cancel_patrol_requested=pyqtSignal()
     inspect_page=pyqtSignal(str)
     inspect_requested=pyqtSignal(list)
     sync_page=pyqtSignal(str)
@@ -8231,6 +8882,9 @@ class DashboardPage(QWidget):
         self._once_menu=QMenu(self.once_btn)
         self._once_menu.addAction("仅巡检失败主页",lambda:self.collect_subset_requested.emit("failed"))
         self._once_menu.addAction("仅巡检未巡检主页",lambda:self.collect_subset_requested.emit("uninspected"))
+        self._once_menu.addSeparator()
+        self._once_cancel_action=self._once_menu.addAction("取消当前巡检",lambda:self.cancel_patrol_requested.emit())
+        self._once_cancel_action.setVisible(False)
         self.once_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.once_btn.customContextMenuRequested.connect(lambda _pos: self._once_menu.popup(self.once_btn.mapToGlobal(QPoint(0, self.once_btn.height()))))
         self.once_btn.clicked.connect(self.collect_once.emit);action_lay.addWidget(self.once_btn)
@@ -8429,12 +9083,14 @@ class DashboardPage(QWidget):
         if active:
             # The overlay paints the button face (icon + text + progress);
             # keep the button itself blank so nothing is drawn twice.
+            if getattr(self,"_once_cancel_action",None) is not None:self._once_cancel_action.setVisible(True)
             self.once_btn.setText("");self.once_btn.setIcon(QIcon())
             self.once_btn.setFixedWidth(PROGRESS_BUTTON_WIDTHS.get(self._prog_style,140))
             self._sync_once_overlay()
             self._once_overlay.set_state(self._prog_style,self._frac(),self._prog_current,self._prog_total,self.paused)
             self._once_overlay.show();self._once_overlay.raise_()
         else:
+            if getattr(self,"_once_cancel_action",None) is not None:self._once_cancel_action.setVisible(False)
             self._once_overlay.hide();self.once_btn.setFixedWidth(140)
             self.once_btn.setText("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
             self._prog_current=0;self._prog_total=0
@@ -8470,7 +9126,8 @@ class DashboardPage(QWidget):
         if not self._active or not hasattr(self,"_last_inspection_stamp"):
             self._last_inspection_stamp=latest_inspection_stamp(self.settings,rows)
         self.run_badge.setText("上次巡检时间："+inspection_stamp_label(self._last_inspection_stamp))
-        unread_pages=self.store.unread_alert_page_ids()
+        _day_start=datetime.fromtimestamp(now).astimezone().replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
+        unread_pages=self.store.unread_alert_page_ids(_day_start)
         _threshold=_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)
         today_sum=0;covered=0;partial=0;yesterday_sum=0;yesterday_covered=0;yesterday_partial=0
         growth_rows=[r for r in rows if r["monitor_growth"]]
@@ -8491,10 +9148,13 @@ class DashboardPage(QWidget):
             # Growth category is state-based, not unread-only: an alert row
             # is created on every over-threshold collection (should_alert
             # still applies its elapsed/approx guards), and it stops
-            # counting once read. A page whose today's accumulated growth
-            # reached the threshold counts even with no unread alert row
-            # left; a single-interval jump alone does not count
-            # (see today_growth_over_threshold).
+            # counting once read. An unread alert only counts on the day
+            # it was created: yesterday's unread alert must not keep the
+            # page in the over-threshold category once today's patrol
+            # shows growth below the threshold. A page whose today's
+            # accumulated growth reached the threshold counts even with
+            # no unread alert row left; a single-interval jump alone
+            # does not count (see today_growth_over_threshold).
             row["is_growth_alert"]=row["monitor_growth"] and (row["page_id"] in unread_pages or today_growth_over_threshold(row,_threshold,(row.get("today") or {}).get("delta")))
             row["growth_threshold"]=_threshold
             _gf,_of,_nf=dashboard_row_flags(row,posts_on)
@@ -9125,6 +9785,7 @@ class SettingsPage(QWidget):
     save_requested=pyqtSignal(bool)
     dev_mode_requested=pyqtSignal(bool)
     manual_update_check_requested=pyqtSignal()
+    view_update_log_requested=pyqtSignal()
     fireworks_preview_requested=pyqtSignal()
     export_requested=pyqtSignal()
     data_dir_requested=pyqtSignal()
@@ -9322,7 +9983,10 @@ class SettingsPage(QWidget):
         _mc=QHBoxLayout();_mc.setSpacing(8)
         self.manual_update_check_button=QPushButton("检查更新");self.manual_update_check_button.setObjectName("SecondaryButton")
         self.manual_update_check_button.clicked.connect(self.manual_update_check_requested.emit)
-        _mc.addWidget(self.manual_update_check_button);_mc.addStretch();bl.addLayout(_mc)
+        _mc.addWidget(self.manual_update_check_button)
+        self.view_update_log_button=QPushButton("查看更新日志");self.view_update_log_button.setObjectName("SecondaryButton")
+        self.view_update_log_button.clicked.connect(self.view_update_log_requested.emit)
+        _mc.addWidget(self.view_update_log_button);_mc.addStretch();bl.addLayout(_mc)
         merged_layout.addWidget(browser);merged_layout.addStretch()
 
         collect_layout=make_tab("巡检与提醒")
@@ -9333,7 +9997,7 @@ class SettingsPage(QWidget):
         self.notify_post_overdue=QCheckBox("发帖超时提醒")
         cl.addWidget(self.notify_post_overdue)
         _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");cl.addWidget(_div)
-        _pt=QLabel("巡检设置");_pt.setObjectName("SettingsTitle");cl.addWidget(_pt)
+        _pt=QLabel("自动巡检设置");_pt.setObjectName("SettingsTitle");cl.addWidget(_pt)
         def _block(row,note=None,indent=0):
             # One setting: its row + subtitle hugging right below it (3px),
             # so the note clearly belongs to the row above it; the card
@@ -9349,6 +10013,12 @@ class SettingsPage(QWidget):
             row.addStretch();return row
         self.interval=DirectNumberSpinBox();self.interval.setRange(5,1440);self.interval.setFixedWidth(70)
         _block(_labeled("每轮间隔（分钟）",[self.interval]),"相邻两轮巡检之间隔多久。")
+        self._interval_hint=QLabel("⚠ 间隔低于 180 分钟\n太短容易被 Facebook 临时限制，页面会提示「暂时被禁止使用此功能」，被限制的那个浏览器这段时间读不到主页，其他没受限的浏览器不受影响。隔几小时不访问会慢慢自动恢复。建议改到 180 分钟以上；坚持用更短的也可以，只是提醒你一下。")
+        self._interval_hint.setWordWrap(True)
+        self._interval_hint.setStyleSheet("background:#FFFBEB;border:1px solid #F59E0B;border-radius:8px;color:#92400E;padding:9px 12px;margin-left:138px;")
+        self._interval_hint.setVisible(False)
+        cl.addWidget(self._interval_hint)
+        self.interval.valueChanged.connect(lambda v:self._interval_hint.setVisible(int(v)<180))
         self.jitter_min=DirectNumberSpinBox();self.jitter_min.setRange(0,1439);self.jitter_min.setFixedWidth(70)
         self.jitter_max=DirectNumberSpinBox();self.jitter_max.setRange(0,1439);self.jitter_max.setFixedWidth(70)
         _block(_labeled("浮动范围（分钟）",[self.jitter_min,QLabel("–"),self.jitter_max]),"每轮开始时间在间隔附近随机前后浮动，不固定在整点。")
@@ -9386,7 +10056,7 @@ class SettingsPage(QWidget):
         dl.addWidget(_subtitle("选新目录后，现有数据会一起迁过去，不用手动搬。"))
         _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");dl.addWidget(_div)
         _dev_title=QLabel("开发者模式");_dev_title.setObjectName("SettingsTitle");dl.addWidget(_dev_title)
-        self.dev_mode=QCheckBox("开发者模式（显示诊断日志窗口）")
+        self.dev_mode=QCheckBox("开发者模式")
         self.dev_mode.setToolTip("开启后显示诊断日志窗口（只能在主窗口内移动），记录发帖检测、名称／粉丝采集、复检与更新检查的诊断信息。默认关闭。")
         self.dev_mode.toggled.connect(self.dev_mode_requested.emit)
         _dm=QWidget();_dl2=QHBoxLayout(_dm);_dl2.setContentsMargins(0,0,0,0);_dl2.setSpacing(6)
@@ -9430,6 +10100,7 @@ class SettingsPage(QWidget):
         _pos=str(self.settings.value("toast_position","bottom_center"))
         if _pos in [k for _,k in TOAST_POSITIONS]:self.toast_position_choice.setCurrentData(_pos,emit=False)
         self.set_ui_scale_label(ui_scale_percent(self.settings))
+        if hasattr(self,"_interval_hint"):self._interval_hint.setVisible(int(self.interval.value())<180)
 
     def save_settings(self):
         timing=save_random_timing(self.settings,(self.interval.value(),self.jitter_min.value(),self.jitter_max.value(),self.gap_min.value(),self.gap_max.value()))
@@ -9566,7 +10237,14 @@ class FirstRunDialog(QDialog):
     """Ask once which modules to monitor. Default: follower growth only."""
 
     def __init__(self,parent=None):
-        super().__init__(parent);self.setWindowTitle("第一次运行");self.resize(560,470)
+        super().__init__(parent);self.setWindowTitle("第一次运行")
+        # Fixed card like BatchAddDialog: no title bar, no minimise, no resize,
+        # so it can never get shrunk/minimised and strand the tour.
+        self.setObjectName("FirstRunDialog")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("QDialog#FirstRunDialog{background:%s;border:1px solid %s;border-radius:16px;}" % (PANEL, BORDER))
+        self.setFixedSize(560,500)
         self.choice="growth"
         root=QVBoxLayout(self);root.setContentsMargins(26,24,26,20);root.setSpacing(12)
         mark=BrandMark(46);root.addWidget(mark)
@@ -9579,7 +10257,7 @@ class FirstRunDialog(QDialog):
             card.clicked.connect(lambda _=False,c=choice:self._select(c));root.addWidget(card)
         self._select("growth")
         actions=QHBoxLayout();actions.setSpacing(10)
-        ok=QPushButton("确认，开始使用");ok.setObjectName("PrimaryButton");ok.clicked.connect(self.accept);actions.addWidget(ok)
+        ok=QPushButton("确定");ok.setObjectName("PrimaryButton");ok.clicked.connect(self.accept);actions.addWidget(ok)
         skip=QPushButton("以后再说");skip.setObjectName("LinkButton");skip.clicked.connect(self.accept);actions.addWidget(skip)
         actions.addStretch();root.addLayout(actions)
         note=QLabel("只问这一次。以后改主意：设置 → 监控模块，随时开关，开关后看板和卡片会跟着变。")
@@ -9783,6 +10461,7 @@ class DiagLogWindow(QDialog):
     post body text.
     """
     append_requested = pyqtSignal(str)
+    reset_tour_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -9811,6 +10490,12 @@ class DiagLogWindow(QDialog):
         toolbar.addWidget(fw_btn)
         toolbar.addWidget(notify_btn)
         toolbar.addWidget(bubble_btn)
+        _tdiv = QFrame()
+        _tdiv.setFrameShape(QFrame.Shape.VLine)
+        toolbar.addWidget(_tdiv)
+        reset_btn = QPushButton("重设新手引导")
+        reset_btn.clicked.connect(self.reset_tour_requested.emit)
+        toolbar.addWidget(reset_btn)
         toolbar.addStretch()
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.VLine)
@@ -10027,6 +10712,152 @@ class CloseChoiceDialog(QDialog):
         self.exec();return self.choice
 
 
+
+
+class _WrapLabel(QLabel):
+    """Word-wrapped label that always reserves enough height for its text.
+    A plain wrapped QLabel inside nested layouts + a scroll area often
+    reports a too-small height (and the scrollbar appearing narrows it
+    further), so the last line(s) get cut off. This recomputes the height
+    from the real width on every resize."""
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setWordWrap(True)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+        self.setMinimumWidth(1)
+        self._fixing = False
+
+    def _fit(self, w=None):
+        w = self.width() if w is None else w
+        if w <= 1 or self._fixing:
+            return
+        self._fixing = True
+        try:
+            h = self.heightForWidth(w)
+            if h > 0 and self.minimumHeight() != h:
+                self.setMinimumHeight(h)
+        finally:
+            self._fixing = False
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._fit(e.size().width())
+
+    def setText(self, t):
+        super().setText(t)
+        self._fit()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self._fit()
+
+
+class UpdateLogPanel(QWidget):
+    """Right-side update log panel (400px). An OVERLAY: it covers the right
+    side of the main window without resizing it. The same panel whether it
+    is opened from Settings or auto-shown once after an update. Its colours
+    come from the app stylesheet, so all three themes work."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("UpdateLogPanel")
+        self.setFixedWidth(400)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        head = QWidget()
+        head_lay = QHBoxLayout(head)
+        head_lay.setContentsMargins(20, 18, 20, 14)
+        head_lay.setSpacing(10)
+        titles = QVBoxLayout()
+        titles.setSpacing(1)
+        title = QLabel("更新日志")
+        tf = title.font(); tf.setBold(True); tf.setPointSize(17); title.setFont(tf)
+        titles.addWidget(title)
+        sub = _WrapLabel("当前版本 v%s · 连接器 v%s" % (APP_VERSION, BUNDLED_CONNECTOR_VERSION))
+        sub.setObjectName("SmallMuted")
+        titles.addWidget(sub)
+        head_lay.addLayout(titles, 1)
+        close_btn = QPushButton("×")
+        close_btn.setObjectName("UpdateLogClose")
+        close_btn.setFixedSize(40, 40)
+        close_btn.setToolTip("关闭")
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.clicked.connect(self.hide)
+        head_lay.addWidget(close_btn)
+        root.addWidget(head)
+        div = QFrame(); div.setFrameShape(QFrame.Shape.HLine); div.setObjectName("HeaderDivider")
+        root.addWidget(div)
+        # Amber note: only when auto-shown right after an update.
+        self._note_box = QWidget()
+        note_wrap = QVBoxLayout(self._note_box)
+        note_wrap.setContentsMargins(20, 14, 20, 0)
+        self._note = _WrapLabel("更新到 v%s 已完成，这次更新了下面这些内容。" % APP_VERSION)
+        self._note.setStyleSheet("QLabel{background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;color:#92400E;padding:10px 12px;font-size:12.5px;}")
+        note_wrap.addWidget(self._note)
+        self._note_box.hide()
+        root.addWidget(self._note_box)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea{border:0;background:transparent;} QScrollArea QWidget{background:transparent;}")
+        body = QWidget()
+        bl = QVBoxLayout(body)
+        bl.setContentsMargins(20, 16, 20, 20)
+        bl.setSpacing(0)
+        for vi, entry in enumerate(CHANGELOG):
+            hrow = QHBoxLayout()
+            hrow.setSpacing(6)
+            vlab = QLabel("v" + entry["version"])
+            vlab.setObjectName("UpdateLogVersion")
+            hrow.addWidget(vlab)
+            if entry["date"]:
+                dlab = QLabel(entry["date"])
+                dlab.setObjectName("SmallMuted")
+                hrow.addWidget(dlab)
+            hrow.addStretch()
+            bl.addLayout(hrow)
+            for grp in entry["groups"]:
+                glab = QLabel(grp["title"])
+                glab.setObjectName("UpdateLogGroup")
+                bl.addSpacing(10)
+                bl.addWidget(glab)
+                for item in grp["items"]:
+                    row = QHBoxLayout()
+                    row.setContentsMargins(0, 0, 0, 0)
+                    row.setSpacing(8)
+                    dot = QLabel("•")
+                    dot.setObjectName("UpdateLogDot")
+                    row.addWidget(dot, 0, Qt.AlignmentFlag.AlignTop)
+                    lab = _WrapLabel(item)
+                    lab.setTextFormat(Qt.TextFormat.PlainText)
+                    row.addWidget(lab, 1)
+                    bl.addLayout(row)
+                    bl.addSpacing(5)
+            if entry["connector"]:
+                conn = _WrapLabel(entry["connector"])
+                conn.setObjectName("SmallMuted")
+                conn.setTextFormat(Qt.TextFormat.PlainText)
+                bl.addSpacing(10)
+                bl.addWidget(conn)
+            # Clear separation between versions: a divider line.
+            if vi < len(CHANGELOG) - 1:
+                bl.addSpacing(16)
+                vdiv = QFrame(); vdiv.setFrameShape(QFrame.Shape.HLine); vdiv.setObjectName("HeaderDivider")
+                bl.addWidget(vdiv)
+                bl.addSpacing(16)
+        bl.addStretch(1)
+        scroll.setWidget(body)
+        root.addWidget(scroll, 1)
+
+    def show_log(self, just_updated=False):
+        self._note_box.setVisible(bool(just_updated))
+        parent = self.parentWidget()
+        if parent is not None:
+            self.setGeometry(parent.width() - 400, 0, 400, parent.height())
+        self.show()
+        self.raise_()
+
 class MainWindow(QMainWindow):
     # Cross-thread jump request: the Windows toast callback runs on a WinRT
     # background thread, so it must not touch widgets directly. Emitting this
@@ -10107,7 +10938,8 @@ class MainWindow(QMainWindow):
 
     def _ask_first_run_modules(self):
         if self._closing:return
-        if self.settings.value(MODULES_ASKED_KEY) is not None:return
+        if self.settings.value(MODULES_ASKED_KEY) is not None:
+            QTimer.singleShot(400,self._maybe_show_tour);return
         dlg=FirstRunDialog(self)
         dlg.exec()
         self.settings.setValue(MODULE_GROWTH_KEY,1)
@@ -10116,6 +10948,44 @@ class MainWindow(QMainWindow):
         self.settings.sync()
         self.settings_page.load_settings()
         self.refresh_all()
+        QTimer.singleShot(400,self._maybe_show_tour)
+
+    def _get_tour(self):
+        if getattr(self,"_tour",None) is None:
+            self._tour=OnboardingTour(self)
+        return self._tour
+
+    def _maybe_show_tour(self):
+        """Show the tour welcome once per version, to old and new users."""
+        if self._closing:return
+        if self.settings.value(TOUR_DONE_KEY) is not None:return
+        if self.worker is not None:return
+        self._get_tour().show_welcome()
+
+    def reset_tour(self):
+        """Developer-mode reset: treat the app as first-time use again."""
+        self.settings.remove(TOUR_DONE_KEY);self.settings.sync()
+        if self._closing:return
+        if self.worker is not None:return
+        self._get_tour().show_welcome()
+        # The developer log window closes once the tour is reset, so it
+        # does not sit on top of the welcome.
+        if self._diag_window is not None:
+            try:
+                self._diag_window.close()
+            except Exception:
+                pass
+
+    def show_update_log(self, just_updated=False):
+        """Open the update log panel on the right (same panel from
+        Settings and after an update)."""
+        if getattr(self, "_update_log_panel", None) is None:
+            return
+        self._update_log_panel.show_log(just_updated=just_updated)
+
+    def hide_update_log(self):
+        if getattr(self, "_update_log_panel", None) is not None:
+            self._update_log_panel.hide()
 
     @staticmethod
     def _set_paths(path):
@@ -10226,6 +11096,7 @@ class MainWindow(QMainWindow):
             self.dashboard.next_run.setParent(self.statusbar);self.dashboard.next_run.hide()
         center_layout.addWidget(self.statusbar)
         shell.addWidget(center,1)
+        self._update_log_panel=UpdateLogPanel(self);self._update_log_panel.hide()
         self._root_layout.addLayout(shell,1)
         self.wire_signals();self.switch_page(0);self._update_window_shape()
 
@@ -10235,6 +11106,7 @@ class MainWindow(QMainWindow):
         d.delete_page.connect(lambda pid:self.delete_ids([pid]))
         d.open_page.connect(self.open_page);d.open_settings_requested.connect(lambda:self.switch_page(4))
         d.collect_subset_requested.connect(self.start_subset_collection)
+        d.cancel_patrol_requested.connect(self.cancel_current_patrol)
         d.inspect_page.connect(self.inspect_single_page);d.sync_page.connect(lambda pid:self.sync_profiles([pid]))
         d.inspect_requested.connect(self.inspect_pages)
         m=self.page_manager;m.add_requested.connect(self.open_batch_dialog)
@@ -10254,6 +11126,7 @@ class MainWindow(QMainWindow):
         settings.data_dir_requested.connect(self.move_data_directory)
         settings.dev_mode_requested.connect(self.set_dev_mode)
         settings.manual_update_check_requested.connect(lambda:self.check_for_updates(manual=True))
+        settings.view_update_log_requested.connect(lambda:self.show_update_log(just_updated=False))
         settings.fireworks_preview_requested.connect(self.play_fireworks)
         self.set_dev_mode(is_true(self.settings.value("dev_mode", False), False))
 
@@ -10329,6 +11202,7 @@ class MainWindow(QMainWindow):
         if on:
             if self._diag_window is None:
                 self._diag_window = DiagLogWindow(self)
+                self._diag_window.reset_tour_requested.connect(self.reset_tour)
             self._diag_window.show()
             self._diag_window.raise_()
             self._diag_window.activateWindow()
@@ -10478,6 +11352,18 @@ class MainWindow(QMainWindow):
     def dashboard_run_button(self):
         if self.worker is not None:self.toggle_pause_collection()
         else:self.start_collection(True)
+
+    def cancel_current_patrol(self):
+        """Cancel the running patrol (once-button right-click menu).
+
+        The worker finishes the current page, then stops; the queued
+        next batch is dropped so it does not auto-start. Already
+        collected pages keep their data.
+        """
+        if self.worker is None:return
+        self._patrol_queue.clear()
+        self.worker.stop()
+        self.dashboard.status.setText("正在取消当前巡检：当前主页处理完成后停止")
 
     def toggle_pause_collection(self):
         if self.worker is None:return
@@ -11001,6 +11887,8 @@ class MainWindow(QMainWindow):
             self.size_grip.move(self.width()-18,self.height()-18);self.size_grip.setVisible(not self.isMaximized())
         self._layout_resize_handles()
         self._position_notification_badge()
+        if getattr(self,"_update_log_panel",None) is not None and not self._update_log_panel.isHidden():
+            self._update_log_panel.setGeometry(self.width()-400,0,400,self.height());self._update_log_panel.raise_()
 
     def paintEvent(self,event):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -11304,6 +12192,12 @@ class MainWindow(QMainWindow):
         disabled_text="#A3A3A3" if light else "#667C95"
         _sheet=f"""
             QMainWindow, QWidget#Root {{ background:transparent; color:{TEXT}; }}
+            QWidget#UpdateLogPanel {{ background:{PANEL}; border-left:1px solid {BORDER}; }}
+            QLabel#UpdateLogVersion {{ font-weight:700; font-size:17px; }}
+            QLabel#UpdateLogGroup {{ color:{ACCENT}; font-weight:700; font-size:13px; }}
+            QLabel#UpdateLogDot {{ color:{ACCENT}; }}
+            QPushButton#UpdateLogClose {{ background:transparent; border:1px solid {BORDER}; border-radius:10px; color:{TEXT}; font-size:26px; font-weight:700; padding:0 0 3px 0; }}
+            QPushButton#UpdateLogClose:hover {{ background:#EF4444; border-color:#EF4444; color:#FFFFFF; }}
             QWidget {{ color:{TEXT}; font-size:13px; }}
             QLabel {{ background:transparent; border:0; }}
             QDialog, QMessageBox {{ background:{BG}; }}
@@ -11520,7 +12414,11 @@ class MainWindow(QMainWindow):
                 result=json.loads(result_path.read_text("utf-8-sig"))
                 if result.get("status")=="failed":
                     QMessageBox.warning(self,"上次更新未安装",str(result.get("message") or "系统安装器或签名验证未通过。原数据保留，可重新检查版本。"))
-                else:self.dashboard.status.setText("更新安装已完成 · 当前版本 "+APP_VERSION)
+                else:
+                    self.dashboard.status.setText("更新安装已完成 · 当前版本 "+APP_VERSION)
+                    if self.settings.value(UPDATE_LOG_SHOWN_KEY) != APP_VERSION:
+                        self.settings.setValue(UPDATE_LOG_SHOWN_KEY, APP_VERSION);self.settings.sync()
+                        self.show_update_log(just_updated=True)
                 result_path.unlink(missing_ok=True)
             except (OSError,ValueError):pass
         pending=DATA_DIR/"updates/pending.json"
