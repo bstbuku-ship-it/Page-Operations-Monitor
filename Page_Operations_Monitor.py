@@ -41,8 +41,8 @@ import base64
 import shlex
 
 APP_TITLE = "专业监控工具"
-APP_VERSION = "1.7.0"
-APP_BUILD = "professional-portable-deployer-ui-v170-20261103-rev32"
+APP_VERSION = "1.7.1"
+APP_BUILD = "professional-portable-deployer-ui-v171-20261105-rev52"
 DEFAULT_INTERVAL_MINUTES = 240
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -207,6 +207,27 @@ def prepare_toast_avatar(page_id, avatar_path=""):
     pid = re.sub(r"[^0-9]", "", str(page_id or "")) or "unknown"
     out_dir = toast_avatar_dir()
     out = out_dir / ("toast-" + pid + ".png")
+    # Reuse a previously encoded toast avatar when the source file is
+    # unchanged: re-encoding with PIL on every toast is pure overhead.
+    try:
+        _rec = None
+        if out.is_file() and out.stat().st_size > 0:
+            _check = toast_avatar_dir() / "toast_check.json"
+            if _check.is_file():
+                _data = json.loads(_check.read_text("utf-8")) or {}
+                _rec = (_data.get("avatars") or {}).get(str(pid)) or {}
+        if _rec and _rec.get("path") == str(out):
+            for _raw in (avatar_path, str(AVATAR_DIR / (pid + ".png"))):
+                if not _raw:
+                    continue
+                _src = Path(str(_raw))
+                if _src.is_file():
+                    _st = _src.stat()
+                    if _rec.get("src") == {"path": str(_src), "mtime": int(_st.st_mtime_ns), "size": int(_st.st_size)}:
+                        return out, "avatar-cached"
+                    break
+    except Exception:
+        pass
     candidates = []
     for raw in (avatar_path, str(AVATAR_DIR / (pid + ".png"))):
         if raw:
@@ -223,7 +244,11 @@ def prepare_toast_avatar(page_id, avatar_path=""):
             fitted.save(tmp, format="PNG", optimize=True)
             if _validate_toast_image(tmp):
                 tmp.replace(out)
-                _record_toast_avatar(pid, out, "avatar-reencoded")
+                try:
+                    _fp = {"path": str(src), "mtime": int(src.stat().st_mtime_ns), "size": int(src.stat().st_size)}
+                except OSError:
+                    _fp = None
+                _record_toast_avatar(pid, out, "avatar-reencoded", _fp)
                 return out, "avatar-reencoded"
             try:
                 tmp.unlink(missing_ok=True)
@@ -244,7 +269,7 @@ def prepare_toast_avatar(page_id, avatar_path=""):
         return logo, "logo"
 
 
-def _record_toast_avatar(pid, path, source):
+def _record_toast_avatar(pid, path, source, fingerprint=None):
     try:
         record = toast_avatar_dir() / "toast_check.json"
         data = {}
@@ -255,7 +280,10 @@ def _record_toast_avatar(pid, path, source):
             size = Path(path).stat().st_size
         except OSError:
             size = -1
-        avatars[str(pid)] = {"path": str(path), "source": source, "bytes": size, "at": now_iso()}
+        _rec = {"path": str(path), "source": source, "bytes": size, "at": now_iso()}
+        if fingerprint is not None:
+            _rec["src"] = fingerprint
+        avatars[str(pid)] = _rec
         data["avatars"] = dict(list(avatars.items())[-200:])
         record.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception:
@@ -663,7 +691,7 @@ def format_compact_count(v) -> str:
     if v is None:
         return "—"
     n = int(v)
-    if abs(n) < 7000:
+    if abs(n) < 10000:
         return f"{n:,}"
     text = f"{n / 10000.0:.1f}".rstrip("0").rstrip(".")
     return text + "W"
@@ -698,9 +726,17 @@ def compact_elapsed(ts, now=None, approximate=False) -> str:
     if seconds < 3600:
         return f"{mark}{max(1, int(seconds // 60))}M"
     hours = seconds / 3600.0
-    if hours < 100:
+    # One decimal only while the value is a single digit; two-plus digits
+    # drop it (the exact time stays in the hover tooltip). Keeps the card
+    # post value at most 5 chars, so it fits its column.
+    if hours < 10:
         return f"{mark}{hours:.1f}H"
-    return f"{mark}{hours / 24.0:.1f}D"
+    if hours < 100:
+        return f"{mark}{int(hours)}H"
+    days = hours / 24.0
+    if days < 10:
+        return f"{mark}{days:.1f}D"
+    return f"{mark}{int(days)}D"
 
 
 def local_time_label(value: str, with_date=True) -> str:
@@ -1594,8 +1630,13 @@ def post_view(row, now=None, interval_seconds=DEFAULT_INTERVAL_MINUTES*60):
     checked = float(row.get("last_post_checked_ts") or 0)
     valid = row.get("post_result") == "ok" and checked > 0 and now - checked <= max(7200, interval_seconds * 2.5)
     if ts is None:
-        label = "待获取" if not checked else "无法获取"
-        return dict(state="unknown", label=label, elapsed=label, elapsed_short=label,
+        if not checked:
+            return dict(state="unknown", label="待获取", elapsed="待获取", elapsed_short="待获取",
+                        tooltip=row.get("post_error") or "尚未成功读取主页贴文时间", overdue=False)
+        if _post_diag_candidates(row.get("post_diag")) == 0:
+            return dict(state="unknown", label="未见贴文", elapsed="未见贴文", elapsed_short="未见贴文",
+                        tooltip="本次巡检没看到该主页的贴文；可能是从未发帖，也可能是帖子没加载出来", overdue=False)
+        return dict(state="unknown", label="无法获取", elapsed="无法获取", elapsed_short="读取不到",
                     tooltip=row.get("post_error") or "尚未成功读取主页贴文时间", overdue=False)
     approximate = bool(row.get("post_precision_seconds", 1) > 1)
     timestamp = datetime.fromtimestamp(ts).astimezone().strftime("%Y-%m-%d %H:%M:%S")
@@ -1754,26 +1795,34 @@ def post_candidates_diag(candidates, now=None):
     return diag
 
 
-DIAG_LOG_MAX_LINES = 500
 _diag_log_lines = []
 _diag_log_listeners = []
 
 
 def diag_log(line):
-    """Append one diagnostic line; keeps only the newest DIAG_LOG_MAX_LINES.
+    """Append one diagnostic line; the log keeps every line (no cap).
 
     Delivery to listeners is best-effort: a dead listener must never break
     a collection round.
     """
     text = str(line)[:500]
     _diag_log_lines.append(text)
-    if len(_diag_log_lines) > DIAG_LOG_MAX_LINES:
-        del _diag_log_lines[:-DIAG_LOG_MAX_LINES]
     for listener in list(_diag_log_listeners):
         try:
             listener(text)
         except Exception:
             pass
+
+
+def _post_diag_candidates(diag):
+    """How many post candidates the last check saw, or None if unknown.
+
+    post_candidates_diag() writes "候选 N · 已认作者 M · 可解析 P"; a
+    zero means the page showed no post elements at all, which post_view
+    tells apart from "posts exist but their time could not be read".
+    """
+    m = re.search(r"候选\s*(\d+)", str(diag or ""))
+    return int(m.group(1)) if m else None
 
 
 def diag_log_snapshot():
@@ -1936,6 +1985,30 @@ class Store:
         with self.lock,self._connect() as c:
             row=c.execute("SELECT * FROM pages WHERE page_id=?",(str(pid),)).fetchone()
             return dict(row) if row else None
+
+    def pages_map(self,pids):
+        """One query for many pages (flush_notices batch path)."""
+        ids=[str(p) for p in dict.fromkeys(str(p or "") for p in (pids or [])) if p]
+        out={}
+        if not ids:
+            return out
+        with self.lock,self._connect() as c:
+            for i in range(0,len(ids),400):
+                chunk=ids[i:i+400]
+                q="SELECT * FROM pages WHERE page_id IN (%s)" % ",".join("?"*len(chunk))
+                for r in c.execute(q,chunk):
+                    out[str(r["page_id"])]=dict(r)
+        return out
+
+    def unread_alert_page_ids(self):
+        """Page ids with unread alerts, without the 500-row display cap."""
+        with self.lock,self._connect() as c:
+            return {str(r[0]) for r in c.execute("SELECT DISTINCT page_id FROM alerts WHERE acknowledged=0")}
+
+    def follower_states(self):
+        """All follower_state rows in one query (dashboard refresh path)."""
+        with self.lock,self._connect() as c:
+            return {str(r["page_id"]):dict(r) for r in c.execute("SELECT * FROM follower_state")}
 
     def rename_page(self,pid,name):
         name=str(name).strip()[:160]
@@ -2150,11 +2223,10 @@ class Store:
                       (json.dumps(rules,ensure_ascii=False),))
 
 
-    def today_change(self,pid,now=None,interval_seconds=DEFAULT_INTERVAL_MINUTES*60):
-        now=time.time() if now is None else float(now)
+    @staticmethod
+    def _today_from_state(row,now,interval_seconds=DEFAULT_INTERVAL_MINUTES*60):
+        now=float(now)
         local=datetime.fromtimestamp(now).astimezone()
-        with self.lock,self._connect() as c:
-            row=c.execute("SELECT * FROM follower_state WHERE page_id=?",(pid,)).fetchone()
         if not row or row["baseline_date"]!=local.date().isoformat():
             return {"delta":None,"partial":True,"note":"今天尚无成功采集记录"}
         if row["latest_ts"]>now+1 or row["latest_ts"]<=row["baseline_ts"]:
@@ -2165,13 +2237,18 @@ class Store:
         if approx:note+="；来源为缩写约值"
         return {"delta":row["latest_count"]-row["baseline_count"],"partial":partial,"approx":approx,"note":note}
 
-
-    def yesterday_change(self,pid,now=None):
-        """Return only yesterday's rolled-up delta; no historical time series is stored."""
+    def today_change(self,pid,now=None,interval_seconds=DEFAULT_INTERVAL_MINUTES*60):
         now=time.time() if now is None else float(now)
-        yesterday=(datetime.fromtimestamp(now).astimezone().date()-timedelta(days=1)).isoformat()
         with self.lock,self._connect() as c:
-            row=c.execute("SELECT yesterday_date,yesterday_delta,yesterday_partial,yesterday_approx FROM follower_state WHERE page_id=?",(pid,)).fetchone()
+            row=c.execute("SELECT * FROM follower_state WHERE page_id=?",(pid,)).fetchone()
+        return self._today_from_state(dict(row) if row else None,now,interval_seconds)
+
+
+    @staticmethod
+    def _yesterday_from_state(row,now):
+        """Return only yesterday's rolled-up delta; no historical time series is stored."""
+        now=float(now)
+        yesterday=(datetime.fromtimestamp(now).astimezone().date()-timedelta(days=1)).isoformat()
         if not row or row["yesterday_date"]!=yesterday or row["yesterday_delta"] is None:
             return {"delta":None,"partial":True,"approx":False,"note":"需要跨日的成功巡检记录后显示"}
         note="昨天从首次有效基准起计算" if row["yesterday_partial"] else "昨天完整基准"
@@ -2179,8 +2256,14 @@ class Store:
         return {"delta":int(row["yesterday_delta"]),"partial":bool(row["yesterday_partial"]),
                 "approx":bool(row["yesterday_approx"]),"note":note}
 
+    def yesterday_change(self,pid,now=None):
+        now=time.time() if now is None else float(now)
+        with self.lock,self._connect() as c:
+            row=c.execute("SELECT yesterday_date,yesterday_delta,yesterday_partial,yesterday_approx FROM follower_state WHERE page_id=?",(pid,)).fetchone()
+        return self._yesterday_from_state(dict(row) if row else None,now)
 
-    def record_posts(self,pid,result,now=None):
+
+    def record_posts(self,pid,result,now=None,notify=True):
         """Persist success/failure separately; only fresh, confirmed results can alert."""
         now=time.time() if now is None else float(now)
         with self.lock,self._connect() as c:
@@ -2226,10 +2309,11 @@ class Store:
             new_alert=None
             if overdue and not key:
                 key=f"{int(ts)}:{limit}:{uuid.uuid4().hex[:8]}"
-                message=f"最近贴文 {_age_label(ts,now)} 前，标准 {limit} 小时"
-                cur=c.execute("""INSERT INTO post_alerts(page_id,alerted_at,alerted_ts,last_post_ts,limit_hours,message)
-                    VALUES(?,?,?,?,?,?)""",(pid,datetime.fromtimestamp(now,timezone.utc).isoformat(),now,ts,limit,message))
-                new_alert={"id":cur.lastrowid,"page_id":pid,"name":display_name(dict(row)),"avatar_path":row["avatar_path"] or "","message":message,"kind":"post","last_post_ts":ts,"limit_hours":limit}
+                if notify:
+                    message=f"最近贴文 {_age_label(ts,now)} 前，标准 {limit} 小时"
+                    cur=c.execute("""INSERT INTO post_alerts(page_id,alerted_at,alerted_ts,last_post_ts,limit_hours,message)
+                        VALUES(?,?,?,?,?,?)""",(pid,datetime.fromtimestamp(now,timezone.utc).isoformat(),now,ts,limit,message))
+                    new_alert={"id":cur.lastrowid,"page_id":pid,"name":display_name(dict(row)),"avatar_path":row["avatar_path"] or "","message":message,"kind":"post","last_post_ts":ts,"limit_hours":limit}
             write_source=str(row["post_source"] or result.get("post_source") or "主页可见贴文")[:180] if reuse_stored else str(result.get("post_source") or "主页可见贴文")[:180]
             write_url=str(row["post_url"] or "")[:1000] if reuse_stored else str(result.get("post_url") or "")[:1000]
             c.execute("""UPDATE pages SET last_post_ts=?,last_post_checked_ts=?,post_result='ok',post_error='',
@@ -2249,9 +2333,8 @@ class Store:
         self.update_metadata(pid,name,result.get("avatar_path") or "",result.get("name_error") or "",
                              result.get("diagnosis_code") or "",result.get("diagnosis_detail") or "")
         _fail_parts=[]
-        if not name and result.get("name_error"):_fail_parts.append("名称")
         if row["monitor_growth"] and not result.get("growth_ok"):_fail_parts.append("粉丝")
-        if _fail_parts:diag_log(f"[采集] {pid} " + "／".join(_fail_parts) + "失败：" + str(result.get("name_error") or result.get("growth_error") or "")[:80])
+        if _fail_parts:diag_log(f"[采集] {pid} " + "／".join(_fail_parts) + "失败：" + str(result.get("growth_error") or "")[:80])
         if purpose=="metadata":
             return {"ignored":False,"success":bool(name or result.get("avatar_fresh")),
                     "alerts":[],"error":result.get("name_error") or result.get("error") or ""}
@@ -2281,7 +2364,7 @@ class Store:
                           ("" if ok else errors[-1],pid))
             successes.append(ok)
         if row["monitor_posts"]:
-            post_alert=self.record_posts(pid,result)
+            post_alert=self.record_posts(pid,result,notify=is_true(opts.get("notify_post_overdue"),True))
             if post_alert: notices.append(post_alert)
             posts_row=self.page(pid)
             ok=bool(result.get("posts_ok") and posts_row and posts_row["post_result"]=="ok")
@@ -2864,6 +2947,7 @@ class BrowserCollector:
                 if post.get("ts"):
                     info.update(posts_ok=True,last_post_ts=post["ts"],post_precision_seconds=post["precision"],
                                 post_source=post["source"],post_url=post["url"])
+                elif _post_diag_candidates(info["post_diag"]) == 0:info["posts_error"]="本次巡检没看到该主页的贴文"
                 else:info["posts_error"]="未读取到可确认的主页自发贴文时间"
             info["collected_at"]=now_iso();info["collected_ts"]=time.time()
             return info
@@ -3084,12 +3168,55 @@ def select_release_asset(release,manifest=None,system=None,machine=None,frozen=N
     return {"name":name,"url":url,"size":size,"sha256":sha,"installer":"platform-bundle","platform":key,
             "version":version,"source_mode":not frozen}
 
+def _rate_limit_wait_seconds(exc):
+    """Seconds until a GitHub 403/429 rate limit resets, or None.
+
+    429 prefers Retry-After; 403 prefers the x-ratelimit-reset epoch.
+    A missing or unparsable header means 'limited, unknown wait' (None),
+    which keeps the old generic message instead of inventing minutes.
+    """
+    try:
+        _headers = exc.headers or {}
+    except AttributeError:
+        return None
+    try:
+        _retry = _headers.get("Retry-After")
+    except Exception:
+        _retry = None
+    if _retry:
+        try:
+            _secs = int(str(_retry).strip())
+            if _secs > 0:
+                return _secs
+        except (ValueError, TypeError):
+            pass
+    try:
+        _reset = _headers.get("x-ratelimit-reset")
+    except Exception:
+        _reset = None
+    if _reset:
+        try:
+            _secs = int(float(str(_reset).strip())) - int(time.time())
+            if _secs > 0:
+                return _secs
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
 def query_latest_release(open_fn=None,system=None,machine=None,frozen=None):
     try:
         release=load_update_json(RELEASES_API,open_fn)
     except urllib.error.HTTPError as exc:
         if exc.code==404:return {"status":"unavailable","message":"暂未找到可公开访问的正式 Release（可能尚未发布或仓库暂不可访问）"}
-        if exc.code in (403,429):raise UpdateError("GitHub 请求受限，请稍后再检查") from exc
+        if exc.code in (403,429):
+            _secs=_rate_limit_wait_seconds(exc)
+            if _secs:
+                _mins=max(1,-(-int(_secs)//60))
+                _err=UpdateError(f"GitHub 请求受限，约 {_mins} 分钟后恢复")
+                _err.retry_after_seconds=_secs
+                raise _err from exc
+            raise UpdateError("GitHub 请求受限，请稍后再检查") from exc
         raise UpdateError(f"GitHub 返回 HTTP {exc.code}") from exc
     except (urllib.error.URLError,TimeoutError,OSError) as exc:
         raise UpdateError("无法连接 GitHub，请检查网络后重试；没有把本次检查当作已是最新版") from exc
@@ -5390,6 +5517,7 @@ def connector_record(row, payload, purpose='monitor'):
         if chosen:
             result.update(posts_ok=True,last_post_ts=chosen['ts'],post_precision_seconds=chosen['precision'],
                           post_source=chosen['source'],post_url=chosen['url'])
+        elif not error and _post_diag_candidates(result['post_diag']) == 0:result['posts_error']='本次巡检没看到该主页的贴文'
         else:result['posts_error']=error or '\u672a\u8bfb\u5230\u53ef\u786e\u8ba4\u7684\u81ea\u53d1\u8d34\u6587\u65f6\u95f4'
     # Diagnosis snapshot: counts only, never page text. Stored in the DB
     # so a later failure can be told apart from a login/timeout/layout
@@ -5494,8 +5622,17 @@ def merge_recheck_record(first, second, row, purpose='monitor'):
         for key in _growth_keys:
             if key in second:out[key]=second[key]
         out['growth_error']=''
-    out['diagnosis_code']=second.get('diagnosis_code') or first.get('diagnosis_code') or 'unknown'
-    out['diagnosis_detail']=second.get('diagnosis_detail') or first.get('diagnosis_detail') or ''
+    # A retry must never downgrade a successful first pass: the narrowed
+    # retry row only reflects one browser's transient state, but the
+    # dashboard treats 'login'/'page_unavailable' as page-level states
+    # (login badge, needs-only classification). Keep the first diagnosis
+    # when it is 'ok'; otherwise the retry's diagnosis is newer info.
+    if first.get('diagnosis_code')=='ok':
+        out['diagnosis_code']='ok'
+        out['diagnosis_detail']=first.get('diagnosis_detail') or ''
+    else:
+        out['diagnosis_code']=second.get('diagnosis_code') or first.get('diagnosis_code') or 'unknown'
+        out['diagnosis_detail']=second.get('diagnosis_detail') or first.get('diagnosis_detail') or ''
     out['name_candidates_count']=max(int(first.get('name_candidates_count') or 0),int(second.get('name_candidates_count') or 0))
     out['follower_text_present']=bool(first.get('follower_text_present') or second.get('follower_text_present'))
 
@@ -5516,7 +5653,17 @@ def merge_recheck_record(first, second, row, purpose='monitor'):
             out['post_diag']=str(second.get('post_diag') or first.get('post_diag') or '')[:300]
     out['rechecked']=True
     out['recheck_ok']=not record_needs_recheck(row,out,purpose)
-    out['collected_ts']=max(float(first.get('collected_ts') or 0),float(second.get('collected_ts') or 0),time.time())
+    # The snapshot timestamp must be the time of the sample whose count
+    # is stored, not the merge time: growth is kept from the first pass
+    # when it succeeded, so stamping merge time inflates the elapsed
+    # interval in should_alert (window max(300, 2.5*interval)) and can
+    # drop an alert when rechecks run long on a small interval.
+    if first.get('growth_ok'):
+        out['collected_ts']=float(first.get('collected_ts') or 0) or time.time()
+    elif second.get('growth_ok'):
+        out['collected_ts']=float(second.get('collected_ts') or 0) or time.time()
+    else:
+        out['collected_ts']=max(float(first.get('collected_ts') or 0),float(second.get('collected_ts') or 0),time.time())
     out['collected_at']=now_iso()
     if out.get('recheck_ok'):
         out.pop('error',None)
@@ -5553,11 +5700,11 @@ except ModuleNotFoundError as exc:
     raise SystemExit(1) from exc
 
 from PyQt6.QtCore import (
-    QObject, QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, QSettings, QThread, QTimer, QUrl,
+    QObject, QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, QSettings, QRunnable, QThread, QThreadPool, QTimer, QUrl,
     pyqtSignal,
 )
 from PyQt6.QtGui import (
-    QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QLinearGradient, QPainter, QPalette,
+    QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QImage, QLinearGradient, QPainter, QPalette,
     QPainterPath, QPen, QPixmap,
 )
 from PyQt6.QtWidgets import (
@@ -5588,7 +5735,7 @@ THEME_PRESETS = {
         red="#F0A3A3",amber="#E5B567",cyan="#67B7D6",input="#1E1F24",hover="#24252B",soft="#1E2A44",light=False,
         tooltip_bg="#232429",tooltip_text="#F2F2F2",tooltip_border="#5B8DEF"),
 }
-TOAST_POSITIONS = (("下居中（默认）", "bottom_center"), ("右上", "top_right"),
+TOAST_POSITIONS = (("下居中", "bottom_center"), ("右上", "top_right"),
                    ("左下角", "bottom_left"), ("右下", "bottom_right"))
 
 
@@ -5771,7 +5918,7 @@ class ValueLabel(ElideLabel):
         p=QPainter(self);font=QFont(self.font());font.setBold(True)
         for px in range(self.large,12,-1):
             font.setPixelSize(px);p.setFont(font)
-            if p.fontMetrics().horizontalAdvance(self.text())<=self.contentsRect().width():break
+            if p.fontMetrics().horizontalAdvance(self.text())<=self.contentsRect().width()-2:break
         p.setPen(self.palette().color(QPalette.ColorRole.WindowText))
         p.drawText(self.contentsRect(),Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,
                    p.fontMetrics().elidedText(self.text(),Qt.TextElideMode.ElideRight,self.contentsRect().width()))
@@ -6343,7 +6490,8 @@ class CollectWorker(QObject):
 class ConnectorCollectWorker(CollectWorker):
     """Distribute one round across the connected browsers (no cap) and auto-recheck ambiguity.
 
-    A name/post result that cannot be confirmed is retried up to five times.  When
+    A name/post result that cannot be confirmed is retried up to five times,
+    each pass running in parallel across browsers (one lane per target).  When
     another selected browser is online the recheck rotates to a browser not yet tried
     for that page; with only one browser it retries the same connector.  A successful
     first-pass follower observation is preserved so the
@@ -6489,44 +6637,79 @@ class ConnectorCollectWorker(CollectWorker):
 
         for t in threads:t.join(timeout=1)
 
-        # Recheck the ambiguous subset up to 5 passes, rotating browsers:
-        # each pass retries only pages still ambiguous, preferring a
-        # browser not yet tried for that page; with a single browser the
-        # same connector simply retries. A later pass can confirm the
-        # post time and move the page to overdue/normal.
+        # Recheck the ambiguous subset up to 5 passes, in parallel across
+        # browsers: each pass plans targets first (same rotation rule as
+        # before: prefer a browser not yet tried for that page, same
+        # connector repeats when alone), then runs one lane per target
+        # browser so no connector ever handles two fetches at once. A
+        # later pass can confirm the post time and move the page to
+        # overdue/normal.
         _pending=list(rechecks);_tried={}
         for _cid0,_row0,_first0 in rechecks:
             _tried.setdefault(str(_row0["page_id"]),set()).add(_cid0)
         _attempt=0
         while _pending and _attempt<RECHECK_MAX_PASSES and not self._stop.is_set():
-            _attempt+=1;_still=[]
-            for source_cid,row,first in _pending:
-                if self._stop.is_set():break
-                _pid=str(row["page_id"])
-                target=self._recheck_connector(source_cid,first,_tried.get(_pid,()))
-                if target:_tried.setdefault(_pid,set()).add(target)
-                second={'page_id':row['page_id'],'metadata_ok':False,'growth_ok':False,'posts_ok':False}
-                if target:
-                    retry_row=dict(row)
-                    retry_purpose='metadata'
-                    if self.purpose=='monitor' and row.get('monitor_posts') and not first.get('posts_ok'):
-                        retry_purpose='monitor';retry_row['monitor_growth']=False;retry_row['monitor_posts']=True
-                    elif self.purpose=='monitor' and row.get('monitor_growth') and not first.get('growth_ok'):
-                        retry_purpose='monitor';retry_row['monitor_growth']=True;retry_row['monitor_posts']=False
-                    try:
-                        self.progress.emit(finalized+1,total,f'自动复检第 {_attempt} 遍 '+display_name(row)+(' · 换浏览器' if target!=source_cid else ' · 当前浏览器'))
-                        payload=self.bridge.request(target,retry_row,retry_purpose,self._stop,timeout=120,retry=True)
-                        second=connector_record(retry_row,payload,retry_purpose)
-                    except ConnectorError as exc:
-                        second.update(error=str(exc),name_error=str(exc),posts_error=str(exc))
-                merged=merge_recheck_record(first,second,row,self.purpose)
-                merged['recheck_connector_changed']=bool(target and target!=source_cid)
-                if record_needs_recheck(row,merged,self.purpose) and _attempt<RECHECK_MAX_PASSES:
-                    _still.append((target or source_cid,row,merged));continue
-                good=self._record_good(row,merged);merged['ok']=good;merged['purpose']=self.purpose
-                self.result.emit(merged);finalized+=1
-                if good:success+=1
+            _attempt+=1
+            _planned=[]
+            for _source_cid,_row,_first in _pending:
+                _pid=str(_row["page_id"])
+                _target=self._recheck_connector(_source_cid,_first,_tried.get(_pid,()))
+                if _target:_tried.setdefault(_pid,set()).add(_target)
+                _planned.append((_source_cid,_row,_first,_target))
+            _by_target={}
+            _still=[]
+            for _source_cid,_row,_first,_target in _planned:
+                if _target:
+                    _by_target.setdefault(_target,[]).append((_source_cid,_row,_first,_target))
+                    continue
+                _second={'page_id':_row['page_id'],'metadata_ok':False,'growth_ok':False,'posts_ok':False}
+                _merged=merge_recheck_record(_first,_second,_row,self.purpose)
+                _merged['recheck_connector_changed']=False
+                if record_needs_recheck(_row,_merged,self.purpose) and _attempt<RECHECK_MAX_PASSES:
+                    _still.append((_source_cid,_row,_merged));continue
+                _good=self._record_good(_row,_merged);_merged['ok']=_good;_merged['purpose']=self.purpose
+                self.result.emit(_merged);finalized+=1
+                if _good:success+=1
                 else:failure+=1
+            _outq=queue.Queue()
+            def _recheck_lane(_cid,_items):
+                for _source_cid,_row,_first,_target in _items:
+                    if self._stop.is_set():break
+                    _retry_row=dict(_row)
+                    _retry_purpose='metadata'
+                    if self.purpose=='monitor' and _row.get('monitor_posts') and not _first.get('posts_ok'):
+                        _retry_purpose='monitor';_retry_row['monitor_growth']=False;_retry_row['monitor_posts']=True
+                    elif self.purpose=='monitor' and _row.get('monitor_growth') and not _first.get('growth_ok'):
+                        _retry_purpose='monitor';_retry_row['monitor_growth']=True;_retry_row['monitor_posts']=False
+                    _second={'page_id':_row['page_id'],'metadata_ok':False,'growth_ok':False,'posts_ok':False}
+                    try:
+                        payload=self.bridge.request(_cid,_retry_row,_retry_purpose,self._stop,timeout=120,retry=True)
+                        _second=connector_record(_retry_row,payload,_retry_purpose)
+                    except ConnectorError as exc:
+                        _second.update(error=str(exc),name_error=str(exc),posts_error=str(exc))
+                    _merged=merge_recheck_record(_first,_second,_row,self.purpose)
+                    _merged['recheck_connector_changed']=bool(_target!=_source_cid)
+                    _outq.put((_cid,_row,_merged,_target,_source_cid))
+            _lanes=[]
+            for _cid,_items in _by_target.items():
+                _t=threading.Thread(target=_recheck_lane,args=(_cid,_items),name='POM-recheck-'+_cid[:8],daemon=True)
+                _lanes.append(_t);_t.start()
+            _need=sum(len(_v) for _v in _by_target.values());_got=0
+            while _got<_need and not self._stop.is_set():
+                try:_cid,_row,_merged,_target,_source_cid=_outq.get(timeout=.25)
+                except queue.Empty:
+                    if not any(_t.is_alive() for _t in _lanes):break
+                    continue
+                _got+=1
+                self.progress.emit(finalized+1,total,f'自动复检第 {_attempt} 遍 '+display_name(_row)+(' · 换浏览器' if _target!=_source_cid else ' · 当前浏览器'))
+                if record_needs_recheck(_row,_merged,self.purpose) and _attempt<RECHECK_MAX_PASSES:
+                    _still.append((_cid,_row,_merged));continue
+                _good=self._record_good(_row,_merged);_merged['ok']=_good;_merged['purpose']=self.purpose
+                self.result.emit(_merged);finalized+=1
+                if _good:success+=1
+                else:failure+=1
+            for _t in _lanes:_t.join(timeout=1)
+            if self._stop.is_set():break
             _pending=_still
         if not self._stop.is_set():
             for source_cid,row,first in _pending:
@@ -6992,6 +7175,171 @@ class OptionCard(ClickableFrame):
         return self._selected
 
 
+PROGRESS_STYLES = (
+    ("fill", "填充式", "白色从左往右漫过按钮，写已处理 / 总数"),
+    ("strip", "底边细条", "按钮底部一条细线走进度，写百分比"),
+    ("ring", "圆环", "图标外套一个圆环，走完一圈就是跑完"),
+    ("badge", "角标", "右上角小角标写已处理 / 总数，按钮不变宽"),
+)
+PROGRESS_BUTTON_WIDTHS = {"fill": 190, "strip": 140, "ring": 170, "badge": 150}
+
+
+CARD_LAYOUTS = (
+    ("oneline", "一行四列", "当前粉丝、昨日、今日、发帖时间放一排，数字自动缩小。"),
+    ("standard", "三列带粉丝", "昨日、今日、发帖时间三列，下面一行当前粉丝。"),
+    ("nofans", "三列无粉丝", "只有昨日、今日、发帖时间三列，不显示当前粉丝数。"),
+    ("hero", "大粉丝数", "当前粉丝放大显示，下面是昨日、今日、发帖时间。"),
+)
+CARD_LAYOUT_KEYS = frozenset(k for k, _, _ in CARD_LAYOUTS)
+
+
+def paint_progress_button(p, rect, style, frac, current, total, paused, font):
+    """Paint the face of a patrol-progress button: icon + text + progress.
+    The blue button background is painted by the caller (the real button's
+    stylesheet, or the settings preview). rect is the button's own rect;
+    the badge style draws a pill that sticks out above rect's top edge,
+    so the caller must leave ~12px of room above it."""
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    frac = max(0.0, min(1.0, float(frac or 0)))
+    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+    verb = "继续巡检" if paused else "暂停巡检"
+    if total and total > 0:
+        if style == "fill":
+            text = f"{verb} {int(current)}/{int(total)}"
+        elif style == "badge":
+            text = verb
+        else:
+            text = f"{verb} · {int(round(frac * 100))}%"
+    else:
+        text = verb
+    bf = QFont(font); bf.setBold(True); p.setFont(bf)
+    tw = p.fontMetrics().horizontalAdvance(text)
+    gw = 16 + 6 + tw
+    gx = x + (w - gw) // 2
+    iy = y + (h - 16) // 2
+    p.setPen(Qt.PenStyle.NoPen)
+    if style == "fill":
+        fw = int(w * frac)
+        if fw > 0:
+            p.setBrush(QColor(255, 255, 255, 90))
+            p.drawRoundedRect(QRectF(x, y, fw, h), 8, 8)
+    elif style == "strip":
+        track = QRectF(x + 7, y + h - 8, w - 14, 4)
+        p.setBrush(QColor(255, 255, 255, 70)); p.drawRoundedRect(track, 2, 2)
+        fw = (w - 14) * frac
+        if fw > 0:
+            p.setBrush(QColor(255, 255, 255, 235))
+            p.drawRoundedRect(QRectF(track.x(), track.y(), fw, 4), 2, 2)
+    if style == "ring":
+        cx, cy, r = gx + 8, iy + 8, 11
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(255, 255, 255, 70), 3))
+        p.drawArc(QRectF(cx - r, cy - r, 2 * r, 2 * r), 0, 360 * 16)
+        p.setPen(QPen(QColor(255, 255, 255, 240), 3))
+        p.drawArc(QRectF(cx - r, cy - r, 2 * r, 2 * r), 90 * 16, -int(frac * 360 * 16))
+    p.drawPixmap(gx, iy, ui_icon("play" if paused else "pause", "#FFFFFF").pixmap(16, 16))
+    p.setPen(QColor("#FFFFFF"))
+    p.drawText(gx + 22, y, w - 22, h, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
+    if style == "badge" and total and total > 0:
+        bf2 = QFont(font); bf2.setBold(True)
+        if font.pixelSize() > 0:
+            bf2.setPixelSize(max(10, font.pixelSize() - 2))
+        else:
+            bf2.setPointSize(max(8, font.pointSize() - 1))
+        p.setFont(bf2)
+        badge = f"{int(current)}/{int(total)}"
+        bw = p.fontMetrics().horizontalAdvance(badge) + 14
+        bx, by = x + w - bw - 5, y - 9
+        p.setPen(QPen(QColor(ACCENT), 1))
+        p.setBrush(QColor("#FFFFFF"))
+        p.drawRoundedRect(QRectF(bx, by, bw, 18), 9, 9)
+        p.setPen(QColor(ACCENT))
+        p.drawText(QRectF(bx, by, bw, 18), Qt.AlignmentFlag.AlignCenter, badge)
+
+
+class ProgressStylePreview(QWidget):
+    """Live miniature of the patrol button in one progress style (40%)."""
+    def __init__(self, style, parent=None):
+        super().__init__(parent)
+        self._style = style
+        self.setFixedHeight(48)
+    def paintEvent(self, event):
+        p = QPainter(self)
+        w = PROGRESS_BUTTON_WIDTHS[self._style]
+        btn = QRect((self.width() - w) // 2, 10, w, 36)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(ACCENT))
+        p.drawRoundedRect(QRectF(btn), 8, 8)
+        paint_progress_button(p, btn, self._style, 0.4, 12, 30, False, self.font())
+        p.end()
+
+
+class CardLayoutPreview(QWidget):
+    """Wireframe miniature of one card layout (for the settings picker)."""
+    def __init__(self, layout_key, parent=None):
+        super().__init__(parent)
+        self._key = layout_key
+        self.setFixedHeight(118)
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        W, H = self.width(), self.height()
+        def _bar(x, y, w, h, color, alpha=255, r=2):
+            c = QColor(color); c.setAlpha(alpha)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(c)
+            p.drawRoundedRect(QRectF(x, y, w, h), r, r)
+        p.setPen(QPen(QColor(BORDER), 1)); p.setBrush(QColor(PANEL))
+        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 8, 8)
+        _bar(10, 10, 20, 20, ACCENT, 255, 5)
+        _bar(36, 12, 52, 6, TEXT, 200)
+        _bar(36, 23, 74, 5, MUTED, 160)
+        def _cell(x, y, w, v_h=8):
+            _bar(x, y, 24, 4, MUTED, 160)
+            _bar(x, y + 8, min(w, 34), v_h, TEXT, 210)
+        _cw = (W - 20) / 3
+        if self._key == "oneline":
+            for _i in range(4):
+                _cell(10 + _i * (W - 20) / 4, 52, 26)
+        elif self._key == "nofans":
+            for _i in range(3):
+                _cell(10 + _i * _cw, 52, 34)
+        elif self._key == "hero":
+            _bar(10, 40, 30, 4, MUTED, 160)
+            _bar(10, 48, 40, 12, TEXT, 210)
+            for _i in range(3):
+                _cell(10 + _i * _cw, 68, 34)
+        else:  # standard
+            for _i in range(3):
+                _cell(10 + _i * _cw, 40, 34)
+            _bar(10, 66, 30, 4, MUTED, 160)
+            _bar(44, 65, 36, 7, TEXT, 210)
+        _bar(10, 94, 3, 8, AMBER, 255, 1)
+        _bar(17, 94, W - 44, 6, MUTED, 160)
+        _bar(10, 106, 46, 6, MUTED, 160)
+        _bar(W - 40, 103, 30, 10, GREEN, 255, 5)
+        p.end()
+
+
+class OnceProgressOverlay(QWidget):
+    """Transparent face over the patrol button while a patrol runs: icon +
+    text + progress in the chosen style. Mouse-transparent, so the button
+    still gets clicks and its right-click menu."""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._style = "fill"; self._frac = 0.0; self._current = 0; self._total = 0; self._paused = False
+        self.hide()
+    def set_state(self, style, frac, current, total, paused):
+        self._style = style; self._frac = frac; self._current = current; self._total = total; self._paused = paused
+        self.update()
+    def paintEvent(self, event):
+        p = QPainter(self)
+        paint_progress_button(p, QRect(0, 12, self.width(), self.height() - 12),
+                              self._style, self._frac, self._current, self._total, self._paused, self.font())
+        p.end()
+
+
 class BrandMark(QWidget):
     def __init__(self,size=40,parent=None):
         super().__init__(parent);self.setFixedSize(size,size)
@@ -7049,17 +7397,123 @@ def resolve_avatar_path(page_id="", preferred=""):
     return ""
 
 
+_AVATAR_SOURCE_CACHE = {}
+_RAIL_PIXMAP_CACHE = {}
+
+
+def _avatar_source_pixmap(path):
+    """Decode an avatar source pixmap once; cache by path+mtime+size (GUI thread only)."""
+    if not path:
+        return QPixmap()
+    try:
+        st = Path(str(path)).stat()
+        key = (str(path), int(st.st_mtime_ns), int(st.st_size))
+    except OSError:
+        return QPixmap(str(path))
+    pm = _AVATAR_SOURCE_CACHE.get(key)
+    if pm is None or pm.isNull():
+        pm = QPixmap(str(path))
+        if len(_AVATAR_SOURCE_CACHE) > 512:
+            _AVATAR_SOURCE_CACHE.clear()
+        _AVATAR_SOURCE_CACHE[key] = pm
+    return pm
+
+
+def _avatar_source_cached(path):
+    """Lookup only: return the cached pixmap, or None without decoding."""
+    if not path:
+        return None
+    try:
+        st = Path(str(path)).stat()
+        key = (str(path), int(st.st_mtime_ns), int(st.st_size))
+    except OSError:
+        return None
+    pm = _AVATAR_SOURCE_CACHE.get(key)
+    return pm if pm is not None and not pm.isNull() else None
+
+
+class _AvatarLoadSignals(QObject):
+    loaded = pyqtSignal(int, str, object)  # token, path, QImage-or-None
+
+
+_AVATAR_LOAD_SIGNALS = _AvatarLoadSignals()
+
+
+class _AvatarLoadTask(QRunnable):
+    """Decode an avatar off the GUI thread; QImage is thread-safe, QPixmap is not."""
+
+    def __init__(self, token, path):
+        super().__init__()
+        self._token = token
+        self._path = path
+
+    def run(self):
+        try:
+            img = QImage(self._path)
+            if img.isNull():
+                img = None
+        except Exception:
+            img = None
+        _AVATAR_LOAD_SIGNALS.loaded.emit(self._token, self._path, img)
+
+
 class AvatarWidget(QWidget):
     def __init__(self, name="", path="", size=52, parent=None, page_id=""):
         super().__init__(parent)
         self.name = name or "P"
+        self.page_id = page_id
         self.path = resolve_avatar_path(page_id,path)
         self.setFixedSize(size,size)
-        self.image = QPixmap(self.path) if self.path else QPixmap()
+        self._scaled_cache = None
+        self._avatar_token = 0
+        self.image = _avatar_source_pixmap(self.path) if self.path else QPixmap()
         if self.image.isNull():
             self.setToolTip("头像与 ID管理共用同一缓存；正常巡检时自动更新。")
         else:
             self.setToolTip("已缓存的真实主页头像")
+        _AVATAR_LOAD_SIGNALS.loaded.connect(self._on_avatar_loaded)
+
+    def set_image(self, name, path):
+        """Swap the avatar without blocking the GUI thread on a fresh decode."""
+        _new = resolve_avatar_path(self.page_id, path)
+        _name = name or "P"
+        if _new == self.path and _name == self.name:
+            return
+        self.name = _name
+        self.path = _new
+        _cached = _avatar_source_cached(self.path)
+        if _cached is not None:
+            self.image = _cached
+            self._scaled_cache = None
+            self.setToolTip("已缓存的真实主页头像")
+            self.update()
+            return
+        self.image = QPixmap()
+        self._scaled_cache = None
+        self.setToolTip("头像与 ID管理共用同一缓存；正常巡检时自动更新。")
+        self._avatar_token += 1
+        if self.path:
+            QThreadPool.globalInstance().start(_AvatarLoadTask(self._avatar_token, self.path))
+        self.update()
+
+    def _on_avatar_loaded(self, token, path, image):
+        if token != self._avatar_token or path != self.path or image is None:
+            return
+        _pm = QPixmap.fromImage(image)
+        if _pm.isNull():
+            return
+        try:
+            _st = Path(path).stat()
+            _key = (str(path), int(_st.st_mtime_ns), int(_st.st_size))
+            if len(_AVATAR_SOURCE_CACHE) > 512:
+                _AVATAR_SOURCE_CACHE.clear()
+            _AVATAR_SOURCE_CACHE[_key] = _pm
+        except OSError:
+            pass
+        self.image = _pm
+        self._scaled_cache = None
+        self.setToolTip("已缓存的真实主页头像")
+        self.update()
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -7067,8 +7521,14 @@ class AvatarWidget(QWidget):
         r = QRectF(0,0,self.width(),self.height())
         clip = QPainterPath(); clip.addRoundedRect(r.adjusted(1,1,-1,-1), self.width()*.28, self.height()*.28); p.setClipPath(clip)
         if not self.image.isNull():
-            scaled = self.image.scaled(self.size(),Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                       Qt.TransformationMode.SmoothTransformation)
+            # The widget size is fixed, so the smooth-scaled pixmap never
+            # changes between paints; rescaling it on every paintEvent
+            # was the largest share of resize-drag cost. Scale once.
+            if self._scaled_cache is None or self._scaled_cache[0] != self.size():
+                scaled = self.image.scaled(self.size(),Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                           Qt.TransformationMode.SmoothTransformation)
+                self._scaled_cache = (self.size(), scaled)
+            scaled = self._scaled_cache[1]
             sx=(scaled.width()-self.width())//2; sy=(scaled.height()-self.height())//2
             p.drawPixmap(0,0,scaled,sx,sy,self.width(),self.height())
         else:
@@ -7110,14 +7570,30 @@ class FlowLayout(QLayout):
     """
     def __init__(self,parent=None,hspacing=8,vspacing=6):
         super().__init__(parent);self._items=[];self._hspacing=hspacing;self._vspacing=vspacing
+        self._hfw_cache={}
         self.setContentsMargins(0,0,0,0)
-    def addItem(self,item):self._items.append(item)
+
+    def invalidate(self):
+        self._hfw_cache.clear()
+        super().invalidate()
+    def addItem(self,item):self._items.append(item);self._hfw_cache.clear()
     def count(self):return len(self._items)
     def itemAt(self,index):return self._items[index] if 0<=index<len(self._items) else None
-    def takeAt(self,index):return self._items.pop(index) if 0<=index<len(self._items) else None
+    def takeAt(self,index):
+        self._hfw_cache.clear()
+        return self._items.pop(index) if 0<=index<len(self._items) else None
     def expandingDirections(self):return Qt.Orientation(0)
     def hasHeightForWidth(self):return True
-    def heightForWidth(self,width):return self._do_layout(QRect(0,0,width,0),True)
+    def heightForWidth(self,width):
+        # Qt queries heightForWidth several times per layout pass; the
+        # result only depends on width + items, so cache it per width.
+        if width in self._hfw_cache:
+            return self._hfw_cache[width]
+        h = self._do_layout(QRect(0,0,width,0),True)
+        if len(self._hfw_cache) > 64:
+            self._hfw_cache.clear()
+        self._hfw_cache[width] = h
+        return h
     def setGeometry(self,rect):
         super().setGeometry(rect);self._do_layout(rect,False)
     def sizeHint(self):
@@ -7168,10 +7644,18 @@ class RailAvatarButton(QPushButton):
         self.clicked.connect(self._copy)
     @staticmethod
     def _pixmap(name,path,size,ring):
+        try:
+            _st = Path(str(path)).stat() if path else None
+            _key = (str(path or ""), size, ring, (str(name or "P")[:1]).upper(),
+                    int(_st.st_mtime_ns) if _st else 0, int(_st.st_size) if _st else 0)
+        except OSError:
+            _key = None
+        if _key is not None and _key in _RAIL_PIXMAP_CACHE:
+            return _RAIL_PIXMAP_CACHE[_key]
         pm=QPixmap(size,size);pm.fill(Qt.GlobalColor.transparent)
         painter=QPainter(pm);painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         clip=QPainterPath();clip.addEllipse(1.5,1.5,size-3,size-3);painter.setClipPath(clip)
-        img=QPixmap(str(path)) if path else QPixmap()
+        img=_avatar_source_pixmap(str(path)) if path else QPixmap()
         if not img.isNull():
             scaled=img.scaled(size,size,Qt.AspectRatioMode.KeepAspectRatioByExpanding,Qt.TransformationMode.SmoothTransformation)
             sx=(scaled.width()-size)//2;sy=(scaled.height()-size)//2
@@ -7182,6 +7666,10 @@ class RailAvatarButton(QPushButton):
             painter.drawText(pm.rect(),Qt.AlignmentFlag.AlignCenter,(str(name or "P")[:1]).upper())
         painter.setClipping(False);painter.setPen(QPen(QColor(ring),2.5));painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawEllipse(QRectF(1.5,1.5,size-3,size-3));painter.end()
+        if _key is not None:
+            if len(_RAIL_PIXMAP_CACHE) > 512:
+                _RAIL_PIXMAP_CACHE.clear()
+            _RAIL_PIXMAP_CACHE[_key] = pm
         return pm
     def _copy(self):
         QApplication.clipboard().setText(self.page_id)
@@ -7202,6 +7690,7 @@ class MetricCard(QFrame):
         header=QHBoxLayout();header.setContentsMargins(0,0,0,0);header.setSpacing(6)
         header.addWidget(self.label,1);header.addWidget(self.badge)
         self.value=ValueLabel("—",32);self.value.setObjectName("MetricValue");self.value.setMinimumHeight(40)
+        self.value.setProperty("tone",kind)
         self.note=ElideLabel("");self.note.setObjectName("SmallMuted");self.note.setMinimumHeight(19)
         layout.addLayout(header);layout.addWidget(self.value);layout.addWidget(self.note)
     def set_badge(self,count):
@@ -7214,6 +7703,10 @@ class MetricCard(QFrame):
         # repeating them on hover adds nothing.
         self.value.setText(str(value));self.value.setToolTip("")
         self.note.setText(str(note));self.note.setToolTip("")
+        _tone=self.kind if str(value)!="—" else ""
+        if self.value.property("tone")!=_tone:
+            self.value.setProperty("tone",_tone)
+            self.value.style().unpolish(self.value);self.value.style().polish(self.value)
 
 
 
@@ -7228,22 +7721,125 @@ class CopyLabel(ElideLabel):
             event.accept()
         else:super().mouseReleaseEvent(event)
 
+def _growth_delta_objectname(row, delta, is_today):
+    """Delta number color, by day: yesterday red, today green.
+    No data / monitoring off stays muted. The over-threshold alert
+    still shows on the card's left stripe and the 超标 chip."""
+    if not row.get("monitor_growth") or delta is None:
+        return "GrowthFlat"
+    return "GrowthUp" if is_today else "GrowthAlert"
+
+
+def _page_card_specs(row, post):
+    """(label, text, objectname, tip) columns; mirrors PageCard.__init__."""
+    today = row.get("today") or {"delta": None, "partial": True, "note": "暂无记录"}
+    yesterday = row.get("yesterday") or {"delta": None, "partial": True, "note": "暂无记录"}
+    _delta_y_full = format_delta(yesterday["delta"])
+    _delta_y_compact = format_delta_compact(yesterday["delta"])
+    _delta_y_tip = yesterday.get("note", "")
+    if row.get("monitor_growth") and _delta_y_compact != _delta_y_full:
+        _delta_y_tip = "实际昨日新增：" + _delta_y_full + (("\n" + _delta_y_tip) if _delta_y_tip else "")
+    _delta_full = format_delta(today["delta"])
+    _delta_compact = format_delta_compact(today["delta"])
+    _delta_tip = today.get("note", "")
+    if row.get("monitor_growth") and _delta_compact != _delta_full:
+        _delta_tip = "实际今日新增：" + _delta_full + (("\n" + _delta_tip) if _delta_tip else "")
+    specs = [
+        ("昨日新增", ("未监控" if not row.get("monitor_growth") else
+          (("≈" if yesterday.get("approx") else "") + _delta_y_compact)),
+         _growth_delta_objectname(row, yesterday.get("delta"), False), _delta_y_tip),
+        ("今日新增", ("未监控" if not row.get("monitor_growth") else
+          (("≈" if today.get("approx") else "") + _delta_compact)),
+         _growth_delta_objectname(row, today.get("delta"), True), _delta_tip),
+        ("距上次发帖", post.get("elapsed_short", post["elapsed"]),
+         "GrowthDown" if post["state"] == "overdue" else "GrowthSoon" if post["state"] in ("soon", "unknown", "unverified")
+         else "GrowthUp" if post["state"] == "ok" else "GrowthFlat", post["tooltip"]),
+    ]
+    if not row.get("monitor_posts"):
+        specs = specs[:2]
+    if not row.get("monitor_growth"):
+        specs = specs[2:]
+    if not specs:
+        specs = [("监控状态", "未开启", "GrowthFlat", "")]
+    return specs
+
+
+def _page_card_badges(row, post, checked):
+    """(status, state) footer badges; mirrors PageCard.__init__."""
+    badges = []
+    if not row.get("monitor_growth") and not row.get("monitor_posts"):
+        badges = [("未选择模块", "off")]
+    elif row.get("diagnosis_code") == "page_unavailable":
+        badges = [("主页不可用", "alert")]
+    else:
+        if row.get("diagnosis_code") == "login":
+            badges.append(("需登录验证", "warning"))
+        elif post["state"] == "overdue":
+            badges.append(("发帖超时", "alert"))
+        elif post["state"] == "soon":
+            badges.append(("即将超时", "warning"))
+        elif row.get("monitor_growth") and row.get("growth_error") and row.get("monitor_posts") and row.get("post_error"):
+            badges.append(("读取失败", "alert"))
+        elif post["state"] in ("unknown", "unverified"):
+            badges.append(("发帖待核实", "warning"))
+        elif row.get("monitor_growth") and row.get("growth_error"):
+            badges.append(("粉丝读取失败", "warning"))
+        elif row.get("monitor_posts") and row.get("post_error"):
+            badges.append(("发帖读取失败", "warning"))
+        elif not checked:
+            badges.append(("待巡检", "off"))
+        if row.get("is_growth_alert"):
+            badges.append(("增长超标", "good"))
+    if not badges:
+        badges = [("正常", "normal")]
+    return badges
+
+
+def _diag_stripe_severity(badges):
+    """Stripe severity follows badge severity: alert red, warning amber,
+    good (growth over threshold only) green, plain diagnostic text grey.
+    The color comes from the theme stylesheet (DiagStripe rules), so it
+    follows theme switches."""
+    states = [state for _, state in badges]
+    if "alert" in states:
+        return "alert"
+    if "warning" in states:
+        return "warning"
+    if "good" in states:
+        return "good"
+    return "plain"
+
+
+def _page_card_diag_text(row):
+    """Diagnosis line; mirrors PageCard.__init__."""
+    diag_parts = []
+    if row.get("monitor_growth") and row.get("growth_error"):
+        diag_parts.append("粉丝：" + str(row.get("growth_error"))[:90])
+    if row.get("monitor_posts") and row.get("post_error"):
+        diag_parts.append("发帖：" + str(row.get("post_error"))[:90])
+    if not diag_parts and row.get("diagnosis_detail") and row.get("diagnosis_code") not in ("", "ok"):
+        diag_parts.append("诊断：" + str(row.get("diagnosis_detail"))[:110])
+    return (row.get("diagnosis_detail") or PAGE_UNAVAILABLE_DETAIL) if row.get("diagnosis_code") == "page_unavailable" else " · ".join(diag_parts)
+
+
 class PageCard(QFrame):
     open_requested=pyqtSignal(str)
     manage_requested=pyqtSignal(str)
     inspect_requested=pyqtSignal(str)
     sync_requested=pyqtSignal(str)
     delete_requested=pyqtSignal(str)
-    def __init__(self,row,rank=0,window_label=""):
+    def __init__(self,row,rank=0,window_label="",layout_key="oneline"):
         super().__init__();self.row=dict(row);self.setObjectName("PageCard")
+        self._layout_key=layout_key if layout_key in CARD_LAYOUT_KEYS else 'oneline'
+
         self.setMinimumWidth(0);self.setFixedHeight(228)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         pid=str(row["page_id"]);name=display_name(row);post=row.get("post_view") or post_view(row)
         layout=QVBoxLayout(self);layout.setContentsMargins(16,12,16,10);layout.setSpacing(8)
         header=QHBoxLayout();header.setSpacing(9)
-        header.addWidget(AvatarWidget(name,row.get("avatar_path",""),60,page_id=pid),0,Qt.AlignmentFlag.AlignTop)
+        self._avatar=AvatarWidget(name,row.get("avatar_path",""),60,page_id=pid);header.addWidget(self._avatar,0,Qt.AlignmentFlag.AlignTop)
         identity=QVBoxLayout();identity.setSpacing(2)
-        title=CopyLabel(name);title.setObjectName("CardTitle");title.setMinimumHeight(22)
+        title=CopyLabel(name);title.setObjectName("CardTitle");title.setMinimumHeight(22);self._title=title
         title.setToolTip(html.escape("专业名称："+(normalize_name(row.get("page_name"),pid) or name or "尚未获取"))+"\n点击复制名称")
         ident=CopyLabel("ID  "+pid,pid);ident.setObjectName("CardId");ident.setMinimumHeight(18)
         ident.setToolTip("公共主页编号："+pid+"\n点击复制完整 ID")
@@ -7251,58 +7847,28 @@ class PageCard(QFrame):
         menu=icon_button("more","主页操作",self,26);menu.setIconSize(QSize(18,18));menu.clicked.connect(self.show_menu)
         header.addWidget(menu,0,Qt.AlignmentFlag.AlignTop);layout.addLayout(header)
 
-        values=QHBoxLayout();values.setSpacing(8)
-        today=row.get("today") or {"delta":None,"partial":True,"note":"暂无记录"}
-        _delta_full = format_delta(today["delta"])
-        _delta_compact = format_delta_compact(today["delta"])
-        _delta_tip = today.get("note", "")
-        if row.get("monitor_growth") and _delta_compact != _delta_full:
-            _delta_tip = "实际今日新增：" + _delta_full + (("\n" + _delta_tip) if _delta_tip else "")
-        specs=[
-            ("当前粉丝" if row.get("monitor_growth") else "上次粉丝",
-             format_compact_count(row.get("last_followers")),"BigNumber",
-             "实际粉丝数："+format_count(row.get("last_followers"))+("\n粉丝监控未开启，显示最后一次已保存值" if not row.get("monitor_growth") else "")+("（约值）" if row.get("approx") else "")),
-            ("今日新增",("未监控" if not row.get("monitor_growth") else
-              (("≈" if today.get("approx") else "")+_delta_compact)),
-             "GrowthUp" if row.get("monitor_growth") and (today.get("delta") or 0)>0 else
-             "GrowthDown" if row.get("monitor_growth") and (today.get("delta") or 0)<0 else "GrowthFlat",_delta_tip),
-            ("距上次发帖",post.get("elapsed_short",post["elapsed"]),
-             "GrowthDown" if post["state"]=="overdue" else "GrowthSoon" if post["state"] in ("soon","unknown","unverified")
-             else "GrowthUp" if post["state"]=="ok" else "GrowthFlat",post["tooltip"])
-        ]
-        if not row.get("monitor_posts"):specs=specs[:2]
-        if not row.get("monitor_growth"):specs=specs[2:]
-        if not specs:specs=[("监控状态","未开启","GrowthFlat","")]
-        for i,(label,text,objectname,tip) in enumerate(specs):
-            col=QVBoxLayout();col.setSpacing(1)
-            heading=ElideLabel(label);heading.setMinimumHeight(17);heading.setObjectName("SmallMuted")
-            value=ValueLabel(text,24 if i==0 else 22);value.setObjectName(objectname);value.setToolTip(tip)
-            col.addWidget(heading);col.addWidget(value);values.addLayout(col,9 if i==2 else 10 if i==0 else 12)
-        layout.addLayout(values)
-        modules=[]
-        if row.get("monitor_growth"):modules.append("粉丝监控")
-        if row.get("monitor_posts"):modules.append("发帖监控")
-        module_hint=ElideLabel(" · ".join(modules) or "尚未选择监控模块")
-        module_hint.setObjectName("SmallMuted");module_hint.setMinimumHeight(22)
-        layout.addWidget(module_hint)
+        self._build_numbers(row,post,layout)
         diag_parts=[]
-        if row.get("name_error"):diag_parts.append("名称："+str(row.get("name_error"))[:90])
         if row.get("monitor_growth") and row.get("growth_error"):diag_parts.append("粉丝："+str(row.get("growth_error"))[:90])
         if row.get("monitor_posts") and row.get("post_error"):diag_parts.append("发帖："+str(row.get("post_error"))[:90])
         if not diag_parts and row.get("diagnosis_detail") and row.get("diagnosis_code") not in ("","ok"):
             diag_parts.append("诊断："+str(row.get("diagnosis_detail"))[:110])
         diag_text=(row.get("diagnosis_detail") or PAGE_UNAVAILABLE_DETAIL) if row.get("diagnosis_code")=="page_unavailable" else " · ".join(diag_parts)
-        diag_label=ElideLabel(diag_text);diag_label.setObjectName("SmallMuted");diag_label.setMinimumHeight(18)
+        diag_label=QLineEdit(diag_text);diag_label.setObjectName("DiagLine");diag_label.setReadOnly(True);diag_label.setFrame(False);diag_label.setMinimumHeight(18);diag_label.setCursor(Qt.CursorShape.IBeamCursor);diag_label.setCursorPosition(0);self._diag_label=diag_label
         diag_label.setToolTip(html.escape(diag_text))
         # Parent first, show second: setVisible(True) on a still-parentless
         # label opens it as its own tiny top-level window (the title-bar-only flash).
-        layout.addWidget(diag_label);diag_label.setVisible(bool(diag_text))
+        diag_row=QWidget();diag_row_layout=QHBoxLayout(diag_row);diag_row_layout.setContentsMargins(0,0,0,0);diag_row_layout.setSpacing(8)
+        diag_stripe=QWidget();diag_stripe.setFixedWidth(4);diag_stripe.setObjectName("DiagStripe");diag_stripe.setProperty("severity","plain")
+        diag_row_layout.addWidget(diag_stripe);diag_row_layout.addWidget(diag_label,1)
+        self._diag_row=diag_row;self._diag_stripe=diag_stripe
+        layout.addWidget(diag_row);diag_row.setVisible(bool(diag_text))
         layout.addStretch(1)
 
-        footer=QHBoxLayout();footer.setSpacing(4)
+        footer=QHBoxLayout();footer.setSpacing(4);self._footer=footer
         checked=row.get("last_inspected_at") or row.get("last_collected_at") or ""
         label=ElideLabel("最近检查 "+local_time_label(checked,False));label.setMinimumHeight(22)
-        label.setToolTip(local_time_label(checked));label.setObjectName("SmallMuted");footer.addWidget(label,1)
+        label.setToolTip(local_time_label(checked));label.setObjectName("SmallMuted");footer.addWidget(label,1);self._checked_label=label
         # Card badges: the post status and the growth status are independent,
         # so both show when both apply (e.g. overdue + over-threshold), and
         # the page belongs to both filter categories as well. "主页不可用" stays alone: with no
@@ -7319,12 +7885,135 @@ class PageCard(QFrame):
             elif row.get("monitor_growth") and row.get("growth_error"):badges.append(("粉丝读取失败","warning"))
             elif row.get("monitor_posts") and row.get("post_error"):badges.append(("发帖读取失败","warning"))
             elif not checked:badges.append(("待巡检","off"))
-            if row.get("is_growth_alert"):badges.append(("增长超标","alert"))
+            if row.get("is_growth_alert"):badges.append(("增长超标","good"))
         if not badges:badges=[("正常","normal")]
+        self._badges=[]
         for status,state in badges:
             badge=QLabel(status);badge.setObjectName("StatusBadge");badge.setProperty("state",state)
-            badge.setMinimumHeight(23);badge.setAlignment(Qt.AlignmentFlag.AlignCenter);footer.addWidget(badge)
+            badge.setMinimumHeight(23);badge.setAlignment(Qt.AlignmentFlag.AlignCenter);footer.addWidget(badge);self._badges.append(badge)
+        self._diag_stripe.setProperty("severity",_diag_stripe_severity(badges))
         layout.addLayout(footer)
+
+    def _build_numbers(self,row,post,card_layout):
+        """Numbers area per the chosen card layout. Sets _spec_heads/_spec_values/_post_value/_fans_value/_fans_holder/_shows_fans."""
+        specs=_page_card_specs(row,post)
+        self._spec_heads=[];self._spec_values=[];self._post_value=None;self._post_state=post["state"]
+        self._fans_value=None;self._fans_holder=None;self._shows_fans=False
+        _fans_text=format_compact_count(row.get("last_followers"))
+        _fans_tip="实际粉丝数："+format_count(row.get("last_followers"))+("（约值）" if row.get("approx") else "")
+        def _cell(label,text,objectname,tip,large=22,head_name="SmallMuted",value_min=28):
+            cell=QWidget();col=QVBoxLayout(cell);col.setContentsMargins(0,0,0,0);col.setSpacing(1)
+            heading=ElideLabel(label);heading.setMinimumHeight(17);heading.setObjectName(head_name)
+            value=ValueLabel(text,large);value.setObjectName(objectname);value.setToolTip(tip);value.setMinimumHeight(value_min)
+            col.addWidget(heading);col.addWidget(value)
+            return cell,heading,value
+        def _specs_into(numbers,large=22,head_name="SmallMuted",value_min=28,weights=None):
+            for _i,(label,text,objectname,tip) in enumerate(specs):
+                _c,_h,_v=_cell(label,text,objectname,tip,large,head_name,value_min)
+                self._spec_heads.append(_h);self._spec_values.append(_v)
+                if label=="距上次发帖":self._post_value=_v
+                numbers.addWidget(_c,weights[_i] if weights else 1)
+        _key=self._layout_key
+        if _key=="oneline":
+            numbers=QHBoxLayout();numbers.setSpacing(8)
+            if row.get("monitor_growth"):
+                _fc,_fh,_fv=_cell("当前粉丝",_fans_text,"FansValue",_fans_tip,22,"CardHeadSmall")
+                self._fans_value=_fv;self._fans_holder=_fc;self._shows_fans=True
+                numbers.addWidget(_fc,1)
+            _specs_into(numbers,22,"CardHeadSmall")
+            card_layout.addLayout(numbers)
+        elif _key=="nofans":
+            numbers=QHBoxLayout();numbers.setSpacing(8)
+            _specs_into(numbers,22,"SmallMuted",28,(12,11,10))
+            card_layout.addLayout(numbers)
+        elif _key=="hero":
+            box=QWidget();box_lay=QVBoxLayout(box);box_lay.setContentsMargins(0,0,0,0);box_lay.setSpacing(4)
+            fans_line=QWidget();fans_lay=QHBoxLayout(fans_line);fans_lay.setContentsMargins(0,0,0,0);fans_lay.setSpacing(4)
+            fans_label=QLabel("当前粉丝");fans_label.setObjectName("SmallMuted");fans_label.setMinimumHeight(22)
+            fans_value=ValueLabel(_fans_text,28);fans_value.setObjectName("FansValue");fans_value.setToolTip(_fans_tip)
+            fans_lay.addWidget(fans_label);fans_lay.addWidget(fans_value,1)
+            self._fans_value=fans_value;self._fans_holder=fans_line;self._shows_fans=True
+            box_lay.addWidget(fans_line)
+            numbers=QHBoxLayout();numbers.setSpacing(8)
+            _specs_into(numbers,22,"SmallMuted",28,(12,11,10))
+            box_lay.addLayout(numbers)
+            card_layout.addWidget(box)
+        else:  # standard
+            numbers=QHBoxLayout();numbers.setSpacing(8)
+            _specs_into(numbers,22,"SmallMuted",28,(12,11,10))
+            card_layout.addLayout(numbers)
+            fans_row=QWidget();fans_layout=QHBoxLayout(fans_row);fans_layout.setContentsMargins(0,0,0,0);fans_layout.setSpacing(4)
+            fans_label=QLabel("当前粉丝");fans_label.setObjectName("SmallMuted");fans_label.setMinimumHeight(22)
+            fans_value=QLabel(_fans_text);fans_value.setObjectName("FansValue");fans_value.setMinimumHeight(22)
+            fans_value.setToolTip(_fans_tip)
+            fans_layout.addWidget(fans_label);fans_layout.addWidget(fans_value,1)
+            self._fans_value=fans_value;self._fans_holder=fans_row;self._shows_fans=True
+            card_layout.addWidget(fans_row);fans_row.setVisible(bool(row.get("monitor_growth")))
+
+    @property
+    def structure_key(self):
+        return (bool(self.row.get("monitor_growth")), bool(self.row.get("monitor_posts")), self._layout_key)
+
+    def refresh_values(self, row):
+        """Update an existing card in place (card reuse); same output as a fresh PageCard."""
+        self.row = dict(row)
+        pid = str(row["page_id"])
+        name = display_name(row)
+        post = row.get("post_view") or post_view(row)
+        if self._avatar is not None:
+            self._avatar.set_image(name, row.get("avatar_path", ""))
+        self._title.setText(name)
+        self._title.setToolTip(html.escape("专业名称：" + (normalize_name(row.get("page_name"), pid) or name or "尚未获取")) + "\n点击复制名称")
+        for (_label, _text, _obj, _tip), _head, _val in zip(_page_card_specs(row, post), self._spec_heads, self._spec_values):
+            _head.setText(_label)
+            _val.setText(_text)
+            if _val.objectName() != _obj:
+                _val.setObjectName(_obj)
+                _val.style().unpolish(_val)
+                _val.style().polish(_val)
+            _val.setToolTip(_tip)
+        if self._fans_value is not None:
+            self._fans_value.setText(format_compact_count(row.get("last_followers")))
+            self._fans_value.setToolTip("实际粉丝数：" + format_count(row.get("last_followers")) + ("（约值）" if row.get("approx") else ""))
+        if self._fans_holder is not None:
+            self._fans_holder.setVisible(bool(row.get("monitor_growth")) and self._shows_fans)
+        _diag = _page_card_diag_text(row)
+        self._diag_label.setText(_diag)
+        self._diag_label.setCursorPosition(0)
+        self._diag_label.setToolTip(html.escape(_diag))
+        self._diag_row.setVisible(bool(_diag))
+        checked = row.get("last_inspected_at") or row.get("last_collected_at") or ""
+        self._checked_label.setText("最近检查 " + local_time_label(checked, False))
+        self._checked_label.setToolTip(local_time_label(checked))
+        for _b in self._badges:
+            _b.hide()
+            _b.deleteLater()
+        self._badges = []
+        _new_badges = _page_card_badges(row, post, checked)
+        self._diag_stripe.setProperty("severity", _diag_stripe_severity(_new_badges))
+        self._diag_stripe.style().unpolish(self._diag_stripe)
+        self._diag_stripe.style().polish(self._diag_stripe)
+        for _status, _state in _new_badges:
+            badge = QLabel(_status)
+            badge.setObjectName("StatusBadge")
+            badge.setProperty("state", _state)
+            badge.setMinimumHeight(23)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._footer.addWidget(badge)
+            self._badges.append(badge)
+        self._post_state = post["state"]
+        self.update()
+
+    def refresh_clock(self, now, interval):
+        """Update only the time-driven post text. True = post state changed, full refresh needed."""
+        if self._post_value is None:
+            return False
+        post = post_view(self.row, now, interval)
+        if post["state"] != self._post_state:
+            return True
+        self._post_value.setText(post.get("elapsed_short", post["elapsed"]))
+        self._post_value.setToolTip(post["tooltip"])
+        return False
 
     def mouseDoubleClickEvent(self,event):
         self.manage_requested.emit(self.row["page_id"]);event.accept()
@@ -7334,7 +8023,6 @@ class PageCard(QFrame):
         menu=QMenu(self)
         menu.addAction("编辑监控模块 / 发帖标准",lambda:self.manage_requested.emit(pid))
         menu.addAction("仅巡检本主页",lambda:self.inspect_requested.emit(pid))
-        menu.addAction("仅同步本主页资料",lambda:self.sync_requested.emit(pid))
         menu.addSeparator()
         menu.addAction("打开主页",lambda:self.open_requested.emit(pid))
         menu.addSeparator()
@@ -7352,7 +8040,7 @@ class ResponsiveCards(QWidget):
         self.grid=QGridLayout(self);self.grid.setContentsMargins(0,0,4,6)
         self.grid.setHorizontalSpacing(10);self.grid.setVerticalSpacing(10)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.cards=[];self.columns=0
+        self.cards=[];self.columns=0;self._last_reflow_visible=False
     def set_cards(self,cards):
         while self.grid.count():
             item=self.grid.takeAt(0)
@@ -7362,10 +8050,28 @@ class ResponsiveCards(QWidget):
                 # new one until then.
                 item.widget().hide();item.widget().deleteLater()
         self.cards=list(cards);self.columns=0;self.reflow()
+    def arrange(self,cards):
+        """Lay out cards in order without deleting any (card reuse)."""
+        while self.grid.count():
+            item=self.grid.takeAt(0)
+            if item.widget():item.widget().hide()
+        self.cards=list(cards);self.columns=0;self.reflow()
+
     def reflow(self):
         available=max(220,self.width()-4)
         columns=max(1,min(4,int((available+10)//(290+10))))
+        _was_visible=self._last_reflow_visible
+        self._last_reflow_visible=self.isVisible()
         if columns==self.columns:return
+        if self.columns and _was_visible:
+            # Hysteresis: don't flip the column count back and forth
+            # while a drag hovers on a threshold; require 30px beyond it.
+            # A reflow that follows a hidden one (startup, page return) is
+            # not a drag: it takes the computed count outright, so the
+            # first visible layout can never get stuck one band below a
+            # threshold the way a slow drag can.
+            if columns>self.columns and available<(300*columns-10)+30:return
+            if columns<self.columns and available>=(300*self.columns-10)-30:return
         self.columns=columns
         while self.grid.count():self.grid.takeAt(0)
         for i,w in enumerate(self.cards):
@@ -7404,7 +8110,8 @@ class BatchAddDialog(QDialog):
         actions=QHBoxLayout();actions.addStretch()
         cancel=QPushButton("取消");cancel.clicked.connect(self.reject);actions.addWidget(cancel)
         save=QPushButton("确认导入");save.setObjectName("PrimaryButton");save.clicked.connect(self.accept);actions.addWidget(save);root.addLayout(actions)
-        self.edit.textChanged.connect(self.update_preview);self.update_preview()
+        self._preview_timer=QTimer(self);self._preview_timer.setSingleShot(True);self._preview_timer.timeout.connect(self.update_preview)
+        self.edit.textChanged.connect(lambda:self._preview_timer.start(300));self.update_preview()
     def text(self):return self.edit.toPlainText()
     def mode(self):return self.mode_box.currentData()
     def update_preview(self):
@@ -7487,7 +8194,7 @@ def dashboard_row_flags(row, posts_on):
     pending_review = bool(posts_on and row.get("monitor_posts") and row.get("post_result") == "pending")
     uncertain = pv.get("state") in ("unknown", "unverified")
     other = (row.get("status") in ("采集失败", "部分成功") or bool(row.get("growth_error"))
-             or bool(posts_on and row.get("post_error")) or bool(row.get("name_error")))
+             or bool(posts_on and row.get("post_error")))
     needs = bool(pending_review or uncertain or other) and not overdue
     return (growth, overdue, needs)
 
@@ -7496,6 +8203,7 @@ class DashboardPage(QWidget):
     collect_once=pyqtSignal()
     collect_subset_requested=pyqtSignal(str)
     inspect_page=pyqtSignal(str)
+    inspect_requested=pyqtSignal(list)
     sync_page=pyqtSignal(str)
     toggle_auto=pyqtSignal()
     view_alerts=pyqtSignal()
@@ -7506,7 +8214,12 @@ class DashboardPage(QWidget):
 
     def __init__(self,store,settings):
         super().__init__();self.setObjectName("DashboardPage");self.store=store;self.settings=settings
-        self.paused=False;self._active=False;self._auto=False
+        self.paused=False;self._active=False;self._auto=False;self._card_cache={};self._empty_frame=None
+        _ps=str(self.settings.value("progress_style","fill") or "fill")
+        self._prog_style=_ps if _ps in PROGRESS_BUTTON_WIDTHS else "fill";self._prog_current=0;self._prog_total=0
+        _cl=str(self.settings.value("card_layout","oneline") or "oneline")
+        self._card_layout=_cl if _cl in CARD_LAYOUT_KEYS else 'oneline'
+
         self.build_ui();self.refresh()
 
     def build_ui(self):
@@ -7516,11 +8229,13 @@ class DashboardPage(QWidget):
         self.once_btn=QPushButton("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
         self.once_btn.setIconSize(QSize(16,16));self.once_btn.setObjectName("PrimaryButton");self.once_btn.setFixedSize(140,40)
         self._once_menu=QMenu(self.once_btn)
-        self._once_menu.addAction("仅巡检读取失败的主页",lambda:self.collect_subset_requested.emit("failed"))
-        self._once_menu.addAction("仅巡检未巡检的主页",lambda:self.collect_subset_requested.emit("uninspected"))
+        self._once_menu.addAction("仅巡检失败主页",lambda:self.collect_subset_requested.emit("failed"))
+        self._once_menu.addAction("仅巡检未巡检主页",lambda:self.collect_subset_requested.emit("uninspected"))
         self.once_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.once_btn.customContextMenuRequested.connect(lambda _pos: self._once_menu.popup(self.once_btn.mapToGlobal(QPoint(0, self.once_btn.height()))))
         self.once_btn.clicked.connect(self.collect_once.emit);action_lay.addWidget(self.once_btn)
+        self._once_overlay=OnceProgressOverlay(self.action_bar)
+        self.once_btn.installEventFilter(self);self._sync_once_overlay()
         self.auto_btn=QPushButton("启用自动巡检");self.auto_btn.setObjectName("AutoButton");self.auto_btn.setFixedSize(140,40)
         self.auto_btn.clicked.connect(self.toggle_auto.emit);action_lay.addWidget(self.auto_btn)
         # No separate settings button/panel: hovering the auto-inspection
@@ -7531,8 +8246,8 @@ class DashboardPage(QWidget):
         metrics=QHBoxLayout();metrics.setSpacing(12)
         self.metric_pages=MetricCard("专业主页数",ACCENT,"pages")
         self.metric_total=MetricCard("当前粉丝总量",CYAN,"people")
-        self.metric_yesterday=MetricCard("昨日新增",AMBER,"history")
-        self.metric_today=MetricCard("今日新增数",RED,"bell")
+        self.metric_yesterday=MetricCard("昨日新增",RED,"history")
+        self.metric_today=MetricCard("今日新增数",GREEN,"bell")
         self.metric_today.badge_clicked.connect(lambda:self._set_filter_mode("needs"))
         for metric in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_today):metrics.addWidget(metric,1)
         root.addLayout(metrics)
@@ -7540,7 +8255,7 @@ class DashboardPage(QWidget):
         self.search=QLineEdit();self.search.setPlaceholderText("搜索名称 / 专业 ID");self.search.setClearButtonEnabled(True)
         self.search.setMinimumWidth(150);self.search.setMaximumWidth(300);self.search.setFixedHeight(36)
         self.search.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
-        self.search.textChanged.connect(lambda _:self.refresh())
+        self.search.textChanged.connect(lambda _:self._on_search_changed())
         toolbar.addWidget(self.search,0,Qt.AlignmentFlag.AlignTop)
         self._chip_row=ChipRow()
         self._filter_chips={}
@@ -7550,6 +8265,9 @@ class DashboardPage(QWidget):
             if mode in ("needs","post_overdue","growth_alert"):chip.setMinimumWidth(chip.sizeHint().width()+20)
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
             chip.clicked.connect(lambda _=False,m=mode:self._set_filter_mode(m))
+            chip.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            chip.customContextMenuRequested.connect(lambda pos,m=mode:self._on_chip_context_menu(m,pos))
+            if mode=="growth_alert":chip.badge.setProperty("tone","good")
             self._chip_row.layout().addWidget(chip);self._filter_chips[mode]=chip
         toolbar.addWidget(self._chip_row,1)
         self._sort_mode=str(self.settings.value("dashboard/sort","growth"))
@@ -7572,16 +8290,6 @@ class DashboardPage(QWidget):
         al.addLayout(arow)
         self.rail_alerts=QVBoxLayout();self.rail_alerts.setSpacing(10);al.addLayout(self.rail_alerts)
         rail.addWidget(alerts_card)
-        overview_card=QFrame();overview_card.setObjectName("RailCard")
-        ol=QVBoxLayout(overview_card);ol.setContentsMargins(14,10,14,10);ol.setSpacing(7)
-        ot=QLabel("概览");ot.setObjectName("PanelTitle");ol.addWidget(ot)
-        def _kv2(label):
-            # Numbers sit a fixed 3-5 character gap after the title instead of
-            # being pushed to the far right edge, so they are never clipped.
-            row=QHBoxLayout();row.setSpacing(0);row.addWidget(QLabel(label));row.addSpacing(40)
-            val=QLabel("—");val.setObjectName("SmallMuted");row.addWidget(val);row.addStretch();ol.addLayout(row);return val
-        self.rail_inspected=_kv2("已巡检主页");self.rail_failed=_kv2("读取失败");self.rail_unavailable=_kv2("主页不可用");self.rail_growth_alerts=_kv2("增长超标提醒")
-        rail.addWidget(overview_card)
         rail.addStretch(1)
         rail_widget=QWidget();rail_widget.setLayout(rail)
         self.rail_widget=rail_widget
@@ -7599,6 +8307,15 @@ class DashboardPage(QWidget):
         self.search.textChanged.connect(self._remember_view)
         self._apply_filter_chips()
 
+    def _on_search_changed(self):
+        # Typing must not rebuild all cards per keystroke: wait until
+        # input settles, then refresh once.
+        if not hasattr(self, "_search_timer"):
+            self._search_timer = QTimer(self)
+            self._search_timer.setSingleShot(True)
+            self._search_timer.timeout.connect(self.refresh)
+        self._search_timer.start(300)
+
     def filter_mode(self):
         return getattr(self,"_filter_mode","all")
 
@@ -7606,17 +8323,40 @@ class DashboardPage(QWidget):
         posts_on=modules_posts_enabled(self.settings)
         growth_on=modules_growth_enabled(self.settings)
         _counts=getattr(self,"_chip_counts",None) or {}
+        _all_dual=getattr(self,"_all_pages_dual",False)
         if getattr(self,"_filter_mode","all")=="needs" and _counts.get("needs",1)==0:self._filter_mode="all"
         if getattr(self,"_filter_mode","all")=="growth_alert" and _counts.get("growth_alert",1)==0:self._filter_mode="all"
         if not posts_on and getattr(self,"_filter_mode","all") in ("posts","post_overdue"):self._filter_mode="all"
         if not growth_on and getattr(self,"_filter_mode","all")=="growth_alert":self._filter_mode="all"
+        if _all_dual and getattr(self,"_filter_mode","all") in ("growth","posts"):self._filter_mode="all"
         for mode,chip in self._filter_chips.items():
-            if mode in ("posts","post_overdue"):visible=posts_on
+            if mode=="growth":visible=not _all_dual
+            elif mode=="posts":visible=posts_on and not _all_dual
+            elif mode=="post_overdue":visible=posts_on
             elif mode=="growth_alert":visible=growth_on and _counts.get("growth_alert",1)>0
             elif mode=="needs":visible=_counts.get("needs",1)>0
             else:visible=True
             chip.setVisible(visible)
             chip.setProperty("active",mode==self._filter_mode);chip.style().unpolish(chip);chip.style().polish(chip)
+
+    def filter_ids(self,mode):
+        """Page ids in one filter chip's scope, from the last refresh."""
+        rows=getattr(self,"_last_rows",None) or []
+        if mode=="growth":return [str(r["page_id"]) for r in rows if r.get("monitor_growth")]
+        if mode=="posts":return [str(r["page_id"]) for r in rows if r.get("monitor_posts")]
+        if mode=="needs":return [str(r["page_id"]) for r in rows if r.get("needs_attention")]
+        if mode=="post_overdue":return [str(r["page_id"]) for r in rows if r.get("is_post_overdue")]
+        if mode=="growth_alert":return [str(r["page_id"]) for r in rows if r.get("cat_growth")]
+        return [str(r["page_id"]) for r in rows]
+
+    def _on_chip_context_menu(self,mode,pos):
+        ids=self.filter_ids(mode)
+        if not ids:return
+        _label="巡检全部主页" if mode=="all" else "巡检此类主页"
+        menu=QMenu(self)
+        menu.addAction(f"{_label}（{len(ids)} 个）",lambda:self.inspect_requested.emit(ids))
+        chip=self._filter_chips.get(mode)
+        menu.popup(chip.mapToGlobal(pos) if chip is not None else self.mapToGlobal(pos))
 
     def _set_filter_mode(self,mode):
         self._filter_mode=mode;self._apply_filter_chips();self._remember_view();self.refresh()
@@ -7650,38 +8390,98 @@ class DashboardPage(QWidget):
         self.settings.sync()
 
 
+    def eventFilter(self,obj,event):
+        if obj is self.once_btn and event.type() in (QEvent.Type.Move,QEvent.Type.Resize,QEvent.Type.Show):
+            self._sync_once_overlay()
+        return super().eventFilter(obj,event)
+
+    def _sync_once_overlay(self):
+        if not hasattr(self,"_once_overlay"):return
+        g=self.once_btn.geometry()
+        self._once_overlay.setGeometry(g.x(),g.y()-12,g.width(),g.height()+12)
+
+    def _frac(self):
+        return (self._prog_current/self._prog_total) if self._prog_total>0 else 0.0
+
+    def set_progress_style(self,style):
+        if style not in PROGRESS_BUTTON_WIDTHS:return
+        self._prog_style=style
+        if self._active:
+            self.once_btn.setFixedWidth(PROGRESS_BUTTON_WIDTHS[style])
+            self._sync_once_overlay()
+            self._once_overlay.set_state(style,self._frac(),self._prog_current,self._prog_total,self.paused)
+
+    def set_card_layout(self,key):
+        key=key if key in CARD_LAYOUT_KEYS else "oneline"
+        if key==getattr(self,"_card_layout","oneline"):return
+        self._card_layout=key
+        self.refresh()
+
+    def set_patrol_progress(self,current,total):
+        self._prog_current=int(current or 0);self._prog_total=int(total or 0)
+        if self._active:
+            self._once_overlay.set_state(self._prog_style,self._frac(),self._prog_current,self._prog_total,self.paused)
+
     def set_running(self,auto,active):
         self._auto=auto;self._active=active
         label="暂停中" if active and self.paused else "巡检中" if active else "自动巡检已开启" if auto else "待巡检"
         self.run_badge.setToolTip("")
-        self.once_btn.setText("继续巡检" if active and self.paused else "暂停巡检" if active else "立即巡检")
-        self.once_btn.setIcon(ui_icon("pause" if active and not self.paused else "play","#FFFFFF"))
+        if active:
+            # The overlay paints the button face (icon + text + progress);
+            # keep the button itself blank so nothing is drawn twice.
+            self.once_btn.setText("");self.once_btn.setIcon(QIcon())
+            self.once_btn.setFixedWidth(PROGRESS_BUTTON_WIDTHS.get(self._prog_style,140))
+            self._sync_once_overlay()
+            self._once_overlay.set_state(self._prog_style,self._frac(),self._prog_current,self._prog_total,self.paused)
+            self._once_overlay.show();self._once_overlay.raise_()
+        else:
+            self._once_overlay.hide();self.once_btn.setFixedWidth(140)
+            self.once_btn.setText("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
+            self._prog_current=0;self._prog_total=0
         self.once_btn.setToolTip("暂停在当前主页处理完成后生效；继续不会从头重跑" if active else "巡检所有已选择模块的专业 ID")
         self.auto_btn.setText("暂停自动巡检" if auto else "启用自动巡检")
         self.auto_btn.setProperty("autoEnabled",auto)
         self._refresh_auto_tooltip()
         self.auto_btn.style().unpolish(self.auto_btn);self.auto_btn.style().polish(self.auto_btn)
 
+    def showEvent(self,event):
+        super().showEvent(event)
+        # The pre-show layout may still carry the hidden width; re-lay out
+        # once the event loop has settled so the column count matches the
+        # real width (startup 1-column bug).
+        QTimer.singleShot(0,self._reflow_after_show)
+
+    def _reflow_after_show(self):
+        if not hasattr(self,"cards"):return
+        self.cards.columns=0
+        self.cards.reflow()
+
+    def refresh(self):        self.auto_btn.style().unpolish(self.auto_btn);self.auto_btn.style().polish(self.auto_btn)
+
     def refresh(self):
         now=time.time()
         try:interval=int(self.settings.value("interval_minutes",DEFAULT_INTERVAL_MINUTES))*60
         except (ValueError,TypeError):interval=DEFAULT_INTERVAL_MINUTES*60
         rows=apply_module_gating(self.store.dashboard_rows(None,interval),self.settings)
+        self._last_rows=rows
+        self._all_pages_dual=bool(rows) and all(r.get("monitor_growth") and r.get("monitor_posts") for r in rows)
         posts_on=modules_posts_enabled(self.settings)
         self._apply_filter_chips()
         if not self._active or not hasattr(self,"_last_inspection_stamp"):
             self._last_inspection_stamp=latest_inspection_stamp(self.settings,rows)
         self.run_badge.setText("上次巡检时间："+inspection_stamp_label(self._last_inspection_stamp))
-        unread_pages={a["page_id"] for a in self.store.alert_rows() if not a["acknowledged"]}
+        unread_pages=self.store.unread_alert_page_ids()
         _threshold=_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)
         today_sum=0;covered=0;partial=0;yesterday_sum=0;yesterday_covered=0;yesterday_partial=0
         growth_rows=[r for r in rows if r["monitor_growth"]]
         post_rows=[r for r in rows if r["monitor_posts"]]
+        states=self.store.follower_states()
         for row in rows:
             row["post_view"]=post_view(row,now,interval)
             if row["monitor_growth"]:
-                row["today"]=self.store.today_change(row["page_id"],now,interval)
-                row["yesterday"]=self.store.yesterday_change(row["page_id"],now)
+                _st=states.get(row["page_id"])
+                row["today"]=self.store._today_from_state(_st,now,interval)
+                row["yesterday"]=self.store._yesterday_from_state(_st,now)
                 if row["today"]["delta"] is not None:
                     today_sum+=row["today"]["delta"];covered+=1
                     partial+=int(row["today"]["partial"])
@@ -7696,6 +8496,7 @@ class DashboardPage(QWidget):
             # left; a single-interval jump alone does not count
             # (see today_growth_over_threshold).
             row["is_growth_alert"]=row["monitor_growth"] and (row["page_id"] in unread_pages or today_growth_over_threshold(row,_threshold,(row.get("today") or {}).get("delta")))
+            row["growth_threshold"]=_threshold
             _gf,_of,_nf=dashboard_row_flags(row,posts_on)
             row["cat_growth"]=_gf;row["is_post_overdue"]=_of;row["needs_attention"]=_nf
         total=sum(r["last_followers"] for r in growth_rows if r["last_followers"] is not None)
@@ -7704,7 +8505,7 @@ class DashboardPage(QWidget):
         unverified=sum(r["post_view"]["state"] in ("unknown","unverified") for r in rows)
         g,p=self.store.unread_totals()
         unavailable=sum(1 for r in rows if r.get("diagnosis_code")=="page_unavailable")
-        failed=sum(1 for r in rows if r.get("diagnosis_code")!="page_unavailable" and (r.get("status") in ("采集失败","部分成功") or r.get("growth_error") or (posts_on and r.get("post_error")) or r.get("name_error")))
+        failed=sum(1 for r in rows if r.get("diagnosis_code")!="page_unavailable" and (r.get("status") in ("采集失败","部分成功") or r.get("growth_error") or (posts_on and r.get("post_error"))))
         self.metric_pages.set_values(len(rows),(f"粉丝 {len(growth_rows)} · 发帖 {len(post_rows)}" if posts_on else f"仅粉丝监控 {len(growth_rows)}")+(f" · 失败 {failed}" if failed else ""))
         self.metric_total.set_values(format_count(total) if sampled else "—",f"有粉丝记录 {sampled} / {len(growth_rows)}")
         self.metric_yesterday.set_values(format_delta(yesterday_sum) if yesterday_covered else "—",
@@ -7747,12 +8548,24 @@ class DashboardPage(QWidget):
         self.search.setToolTip("匹配 %s 个，共 %s 个主页" % (len(filtered),len(rows)))
         cards=[]
         for r in filtered:
-            card=PageCard(r)
-            card.open_requested.connect(self.open_page.emit)
-            card.manage_requested.connect(self.open_manager.emit)
-            card.inspect_requested.connect(self.inspect_page.emit)
-            card.sync_requested.connect(self.sync_page.emit)
-            card.delete_requested.connect(self.delete_page.emit);cards.append(card)
+            _pid=str(r["page_id"]);_card=self._card_cache.get(_pid)
+            _key=(bool(r.get("monitor_growth")),bool(r.get("monitor_posts")),self._card_layout)
+            if _card is None or _card.structure_key!=_key:
+                if _card is not None:_card.hide();_card.deleteLater()
+                _card=PageCard(r,layout_key=self._card_layout)
+                _card.open_requested.connect(self.open_page.emit)
+                _card.manage_requested.connect(self.open_manager.emit)
+                _card.inspect_requested.connect(self.inspect_page.emit)
+                _card.sync_requested.connect(self.sync_page.emit)
+                _card.delete_requested.connect(self.delete_page.emit)
+                self._card_cache[_pid]=_card
+            else:
+                _card.refresh_values(r)
+            cards.append(_card)
+        _live={str(r["page_id"]) for r in rows}
+        for _pid in list(self._card_cache):
+            if _pid not in _live:
+                _old=self._card_cache.pop(_pid);_old.hide();_old.deleteLater()
         if not cards:
             empty=QFrame();empty.setObjectName("EmptyState");layout=QVBoxLayout(empty);layout.setContentsMargins(20,30,20,30)
             # "打开 ID管理" is only for the no-pages case in the three
@@ -7772,9 +8585,12 @@ class DashboardPage(QWidget):
                 msg.setWordWrap(True);msg.setObjectName("SmallMuted");layout.addWidget(msg)
                 add=QPushButton("打开 ID管理");add.setObjectName("PrimaryButton");add.clicked.connect(lambda:self.open_manager.emit(""))
                 layout.addWidget(add,0,Qt.AlignmentFlag.AlignLeft)
-            cards=[empty]
+            if self._empty_frame is not None:self._empty_frame.hide();self._empty_frame.deleteLater()
+            cards=[empty];self._empty_frame=empty
         scroll=self.scroll.verticalScrollBar().value()
-        self.cards.set_cards(cards)
+        if self._empty_frame is not None and not (len(cards)==1 and cards[0] is self._empty_frame):
+            self._empty_frame.hide();self._empty_frame.deleteLater();self._empty_frame=None
+        self.cards.arrange(cards)
         self.scroll.verticalScrollBar().setValue(scroll)
         _tv=random_inspection_timing(self.settings);self.set_timing_values(*_tv)
         if hasattr(self,"rail_alerts"):
@@ -7819,14 +8635,24 @@ class DashboardPage(QWidget):
                 if _gc:_parts.append("粉丝增长超标 %d 个" % _gc)
                 _sum=QLabel(" · ".join(_parts));_sum.setObjectName("SmallMuted");_sum.setWordWrap(True)
                 self.rail_alerts.addWidget(_sum)
-        if hasattr(self,"rail_inspected"):
-            _inspected=sum(1 for r in rows if r.get("last_inspected_at"))
-            self.rail_inspected.setText(f"{_inspected} / {len(rows)}")
-            self.rail_failed.setText(f"{failed} 个")
-            self.rail_unavailable.setText(f"{unavailable} 个")
-            self.rail_growth_alerts.setText(f"{g} 条")
 
 
+
+
+    def refresh_clock(self):
+        """Light time-only refresh. True if any post state changed (full refresh needed)."""
+        try:
+            interval = int(self.settings.value("interval_minutes", DEFAULT_INTERVAL_MINUTES)) * 60
+        except (ValueError, TypeError):
+            interval = DEFAULT_INTERVAL_MINUTES * 60
+        now = time.time()
+        try:
+            for card in list(self._card_cache.values()):
+                if card.refresh_clock(now, interval):
+                    return True
+        except Exception:
+            return True
+        return False
 
 class AlertsPage(QWidget):
     ack_requested=pyqtSignal()
@@ -7969,7 +8795,10 @@ class PageEditDialog(QDialog):
         ml.addWidget(self.growth);ml.addWidget(self.posts);ml.addStretch();form.addRow("监控模块（可多选）",modules)
         self.hours=QSpinBox();self.hours.setRange(1,8760);self.hours.setValue(int(row["post_limit_hours"]));self.hours.setSuffix(" 小时")
         if not self._posts_enabled:self.hours.setEnabled(False)
-        form.addRow("发帖超时标准",self.hours)
+        _hr=QWidget();_hl=QHBoxLayout(_hr);_hl.setContentsMargins(0,0,0,0);_hl.setSpacing(6)
+        _hl.addWidget(self.hours);_hl.addStretch()
+        form.addRow("发帖超时标准",_hr)
+        form.addRow(_subtitle("主页超过这么久没发新贴，就进发帖超时。"))
         self.notes=QPlainTextEdit(str(row.get("notes") or ""));self.notes.setMaximumHeight(82);form.addRow("备注",self.notes);root.addLayout(form)
         actions=QHBoxLayout();actions.addStretch()
         cancel=QPushButton("取消");cancel.clicked.connect(self.reject);actions.addWidget(cancel)
@@ -8272,10 +9101,9 @@ class PageManagementPage(QWidget):
             if row.get("diagnosis_code")=="page_unavailable":state="主页不可用"
             elif row.get("diagnosis_code")=="login":state="需登录验证"
             elif row.get("growth_error") or (posts_on and row.get("post_error")):state="读取失败"
-            elif row.get("name_error"):state="待核实"
             elif normalize_name(row["page_name"],pid):state="已同步"
             else:state="名称待获取"
-            _diag_parts=[str(row.get("diagnosis_detail") or ""),str(row.get("name_error") or ""),str(row.get("growth_error") or "")]
+            _diag_parts=[str(row.get("diagnosis_detail") or ""),str(row.get("growth_error") or "")]
             if posts_on:_diag_parts.append(str(row.get("post_error") or ""))
             _diag_tip="；".join(x for x in _diag_parts if x)
             item=self.table.item(i,8);item.setText(state);item.setToolTip(html.escape(_diag_tip or str(row.get("metadata_checked_at") or "巡检时同步资料")))
@@ -8296,12 +9124,15 @@ class SettingsPage(QWidget):
     login_requested=pyqtSignal()
     save_requested=pyqtSignal(bool)
     dev_mode_requested=pyqtSignal(bool)
+    manual_update_check_requested=pyqtSignal()
+    fireworks_preview_requested=pyqtSignal()
     export_requested=pyqtSignal()
-    backup_requested=pyqtSignal()
     data_dir_requested=pyqtSignal()
     theme_requested=pyqtSignal(str)
     ui_scale_requested=pyqtSignal(int)
     toast_position_requested=pyqtSignal(str)
+    progress_style_requested=pyqtSignal(str)
+    card_layout_requested=pyqtSignal(str)
 
     def __init__(self,store:Store,settings:QSettings):
         super().__init__();self.store=store;self.settings=settings
@@ -8344,6 +9175,26 @@ class SettingsPage(QWidget):
         self.toast_position_requested.emit(self.toast_position_choice.currentData())
         show_hint(self,"提示会显示在这里",kind="success")
 
+    def set_selected_progress_style(self,name):
+        for key,card in getattr(self,"progress_cards",{}).items():
+            card.setSelected(key==name)
+
+    def _on_progress_style_picked(self,key):
+        if key not in PROGRESS_BUTTON_WIDTHS:return
+        self._progress_style=key;self.set_selected_progress_style(key)
+        self.settings.setValue("progress_style",key);self.settings.sync()
+        self.progress_style_requested.emit(key)
+
+    def set_selected_card_layout(self,name):
+        for key,card in getattr(self,"card_layout_cards",{}).items():
+            card.setSelected(key==name)
+
+    def _on_card_layout_picked(self,key):
+        if key not in CARD_LAYOUT_KEYS:return
+        self._card_layout=key;self.set_selected_card_layout(key)
+        self.settings.setValue("card_layout",key);self.settings.sync()
+        self.card_layout_requested.emit(key)
+
     @staticmethod
     def card():
         card=QFrame();card.setObjectName("SettingsCard")
@@ -8376,6 +9227,8 @@ class SettingsPage(QWidget):
 
         themes_layout=make_tab("外观")
         themes,thel=self.card()
+        _theme_title=QLabel("界面模式");_theme_title.setObjectName("SettingsTitle");thel.addWidget(_theme_title)
+        _theme_note=QLabel("选择亮色或暗色界面风格。");_theme_note.setObjectName("SmallMuted");thel.addWidget(_theme_note)
         theme_row=QHBoxLayout();theme_row.setSpacing(12)
         self.theme_cards={}
         _theme_descs={"云白":"暖白底色，深蓝点缀","护眼绿":"淡绿底色，深绿点缀（微信绿系）","曜石黑":"深灰底色，柔和浅蓝"}
@@ -8403,21 +9256,50 @@ class SettingsPage(QWidget):
             card.clicked.connect(lambda _=False,n=_name:self.theme_requested.emit(n))
             theme_row.addWidget(card,1);self.theme_cards[_name]=card
         thel.addLayout(theme_row)
+        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");thel.addWidget(_div)
         _zoom_title=QLabel("界面缩放");_zoom_title.setObjectName("SettingsTitle");thel.addWidget(_zoom_title)
         _zoom_row=QHBoxLayout();_zoom_row.setSpacing(8)
+        _zoom_min=QLabel("80%");_zoom_min.setObjectName("SmallMuted");_zoom_row.addWidget(_zoom_min)
         self.zoom_out_btn=QPushButton("−");self.zoom_out_btn.setFixedSize(38,36)
+        self.zoom_out_btn.setToolTip("缩小 10%")
         self.zoom_label=QLabel("100%");self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter);self.zoom_label.setFixedWidth(64)
         self.zoom_in_btn=QPushButton("+");self.zoom_in_btn.setFixedSize(38,36)
+        self.zoom_in_btn.setToolTip("放大 10%")
         self.zoom_out_btn.clicked.connect(lambda:self.ui_scale_requested.emit(ui_scale_percent(self.settings)-10))
         self.zoom_in_btn.clicked.connect(lambda:self.ui_scale_requested.emit(ui_scale_percent(self.settings)+10))
         _zoom_row.addWidget(self.zoom_out_btn);_zoom_row.addWidget(self.zoom_label);_zoom_row.addWidget(self.zoom_in_btn)
-        _zoom_note=QLabel("80% – 130%，每次 10%，立即生效");_zoom_note.setObjectName("SmallMuted");_zoom_row.addWidget(_zoom_note)
+        _zoom_max=QLabel("130%");_zoom_max.setObjectName("SmallMuted");_zoom_row.addWidget(_zoom_max)
         _zoom_row.addStretch();thel.addLayout(_zoom_row)
+        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");thel.addWidget(_div)
         _toast_title=QLabel("消息提示位置");_toast_title.setObjectName("SettingsTitle");thel.addWidget(_toast_title)
         _toast_note=QLabel("点选立即弹出一条真实提示");_toast_note.setObjectName("SmallMuted");thel.addWidget(_toast_note)
         self.toast_position_choice=SegmentedChoice(TOAST_POSITIONS,"bottom_center")
         self.toast_position_choice.changed.connect(self._on_toast_position_changed)
         thel.addWidget(self.toast_position_choice)
+        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");thel.addWidget(_div)
+        _prog_title=QLabel("巡检进度条样式");_prog_title.setObjectName("SettingsTitle");thel.addWidget(_prog_title)
+        _prog_note=QLabel("巡检进行时，「立即巡检」按钮上的进度显示方式，点一张卡片就选中。");_prog_note.setObjectName("SmallMuted");thel.addWidget(_prog_note)
+        _prog_grid=QGridLayout();_prog_grid.setSpacing(12)
+        _prog_grid.setColumnStretch(0,1);_prog_grid.setColumnStretch(1,1);_prog_grid.setColumnStretch(2,1);_prog_grid.setColumnStretch(3,1)
+        self.progress_cards={};self._progress_style="fill"
+        for _i,(_key,_name,_desc) in enumerate(PROGRESS_STYLES):
+            _card=OptionCard(_name,_desc)
+            _prev=ProgressStylePreview(_key);_prev.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            _card.layout().insertWidget(0,_prev)
+            _card.clicked.connect(lambda _=False,k=_key:self._on_progress_style_picked(k))
+            _prog_grid.addWidget(_card,_i//4,_i%4);self.progress_cards[_key]=_card
+        thel.addLayout(_prog_grid)
+        _card_title=QLabel("卡片排版");_card_title.setObjectName("SettingsTitle");thel.addWidget(_card_title)
+        _card_note=QLabel("小卡片上数字的排版方式，点一张卡片就选中，立即生效。");_card_note.setObjectName("SmallMuted");thel.addWidget(_card_note)
+        _card_row=QHBoxLayout();_card_row.setSpacing(12)
+        self.card_layout_cards={};self._card_layout="oneline"
+        for _i,(_key,_name,_desc) in enumerate(CARD_LAYOUTS):
+            _card=OptionCard(_name,_desc)
+            _prev=CardLayoutPreview(_key);_prev.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            _card.layout().insertWidget(0,_prev)
+            _card.clicked.connect(lambda _=False,k=_key:self._on_card_layout_picked(k))
+            _card_row.addWidget(_card,1);self.card_layout_cards[_key]=_card
+        thel.addLayout(_card_row)
         themes_layout.addWidget(themes);themes_layout.addStretch()
 
         merged_layout=make_tab("连接与更新")
@@ -8435,61 +9317,82 @@ class SettingsPage(QWidget):
         _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");bl.addWidget(_div)
         _upd_title=QLabel("版本更新");_upd_title.setObjectName("SettingsTitle");bl.addWidget(_upd_title)
         _ver_label=QLabel(f"当前版本：v{APP_VERSION}");_ver_label.setTextFormat(Qt.TextFormat.PlainText);_ver_label.setObjectName("SmallMuted");bl.addWidget(_ver_label)
-        self.auto_update=QCheckBox("启动后自动检查新版本，并在发现新版时提示")
+        self.auto_update=QCheckBox("启动时自动检查更新")
         bl.addWidget(self.auto_update)
-        self.auto_install=QCheckBox("下载完成后自动安装更新")
-        self.auto_install.setChecked(True)
-        bl.addWidget(self.auto_install)
+        _mc=QHBoxLayout();_mc.setSpacing(8)
+        self.manual_update_check_button=QPushButton("检查更新");self.manual_update_check_button.setObjectName("SecondaryButton")
+        self.manual_update_check_button.clicked.connect(self.manual_update_check_requested.emit)
+        _mc.addWidget(self.manual_update_check_button);_mc.addStretch();bl.addLayout(_mc)
         merged_layout.addWidget(browser);merged_layout.addStretch()
 
         collect_layout=make_tab("巡检与提醒")
         collect,cl=self.card()
-        form=QGridLayout();form.setHorizontalSpacing(18);form.setVerticalSpacing(13)
-        self.interval=DirectNumberSpinBox();self.interval.setRange(5,1440)
-        self.jitter_min=DirectNumberSpinBox();self.jitter_min.setRange(0,1439)
-        self.jitter_max=DirectNumberSpinBox();self.jitter_max.setRange(0,1439)
-        self.gap_min=DirectNumberSpinBox();self.gap_min.setRange(0,120)
-        self.gap_max=DirectNumberSpinBox();self.gap_max.setRange(0,120)
-        form.addWidget(QLabel("每轮间隔（分钟）"),0,0);form.addWidget(self.interval,0,1)
-        float_label=QLabel("浮动范围（分钟）");form.addWidget(float_label,0,2)
-        float_box=QWidget();float_layout=QHBoxLayout(float_box);float_layout.setContentsMargins(0,0,0,0);float_layout.setSpacing(6)
-        float_layout.addWidget(self.jitter_min);float_layout.addWidget(QLabel("–"));float_layout.addWidget(self.jitter_max);float_layout.addStretch();form.addWidget(float_box,0,3)
-        form.addWidget(QLabel("主页间隔（秒）"),1,0)
-        gap_box=QWidget();gap_layout=QHBoxLayout(gap_box);gap_layout.setContentsMargins(0,0,0,0);gap_layout.setSpacing(6)
-        gap_layout.addWidget(self.gap_min);gap_layout.addWidget(QLabel("–"));gap_layout.addWidget(self.gap_max);gap_layout.addStretch();form.addWidget(gap_box,1,1,1,3)
-        for widget in (self.interval,self.jitter_min,self.jitter_max,self.gap_min,self.gap_max):widget.setFixedWidth(86)
-        self.start_auto=QCheckBox("启动时自动巡检")
-        self.start_auto.setToolTip("只有在此明确开启，下次启动才自动巡检。主界面的按钮仅控制本次运行。")
-        self.silent_to_tray=QCheckBox("静默收起到托盘")
-        self.silent_to_tray.setToolTip("开启：关闭窗口不提示。关闭：收起时提示仍在后台运行。两种情况都保持托盘巡检，完全退出请用托盘菜单。")
-        form.addWidget(self.start_auto,2,0,1,4);form.addWidget(self.silent_to_tray,3,0,1,4)
-        form.setColumnStretch(1,1);form.setColumnStretch(3,1);cl.addLayout(form)
-        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");cl.addWidget(_div)
-        _gt=QLabel("增长提醒");_gt.setObjectName("SettingsTitle");cl.addWidget(_gt)
-        self.alert_enabled=QCheckBox("开启桌面增长提醒")
+        _nt=QLabel("系统通知弹窗提醒");_nt.setObjectName("SettingsTitle");cl.addWidget(_nt)
+        self.alert_enabled=QCheckBox("粉丝增长提醒")
         cl.addWidget(self.alert_enabled)
+        self.notify_post_overdue=QCheckBox("发帖超时提醒")
+        cl.addWidget(self.notify_post_overdue)
+        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");cl.addWidget(_div)
+        _pt=QLabel("巡检设置");_pt.setObjectName("SettingsTitle");cl.addWidget(_pt)
+        def _block(row,note=None,indent=0):
+            # One setting: its row + subtitle hugging right below it (3px),
+            # so the note clearly belongs to the row above it; the card
+            # layout keeps 13px between blocks.
+            g=QWidget();gl=QVBoxLayout(g);gl.setContentsMargins(0,0,0,0);gl.setSpacing(3)
+            gl.addLayout(row)
+            if note:gl.addWidget(_subtitle(note, indent=indent))
+            cl.addWidget(g)
+        def _labeled(label_text,widgets):
+            row=QHBoxLayout();row.setSpacing(8)
+            _lab=QLabel(label_text);_lab.setFixedWidth(130);row.addWidget(_lab)
+            for _w in widgets:row.addWidget(_w)
+            row.addStretch();return row
+        self.interval=DirectNumberSpinBox();self.interval.setRange(5,1440);self.interval.setFixedWidth(70)
+        _block(_labeled("每轮间隔（分钟）",[self.interval]),"相邻两轮巡检之间隔多久。")
+        self.jitter_min=DirectNumberSpinBox();self.jitter_min.setRange(0,1439);self.jitter_min.setFixedWidth(70)
+        self.jitter_max=DirectNumberSpinBox();self.jitter_max.setRange(0,1439);self.jitter_max.setFixedWidth(70)
+        _block(_labeled("浮动范围（分钟）",[self.jitter_min,QLabel("–"),self.jitter_max]),"每轮开始时间在间隔附近随机前后浮动，不固定在整点。")
+        self.gap_min=DirectNumberSpinBox();self.gap_min.setRange(0,120);self.gap_min.setFixedWidth(70)
+        self.gap_max=DirectNumberSpinBox();self.gap_max.setRange(0,120);self.gap_max.setFixedWidth(70)
+        _block(_labeled("主页间隔（秒）",[self.gap_min,QLabel("–"),self.gap_max]),"同一轮里，每两个主页之间隔几秒再读。")
+        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");cl.addWidget(_div)
+        _gt=QLabel("粉丝增长");_gt.setObjectName("SettingsTitle");cl.addWidget(_gt)
         _tr=QHBoxLayout();_tr.setSpacing(8)
-        _tr.addWidget(QLabel("当日增长阈值"))
+        _tr.addWidget(QLabel("当日粉丝增长阈值"))
         self.threshold=DirectNumberSpinBox();self.threshold.setRange(1,100_000_000);self.threshold.setSingleStep(100)
-        self.threshold.setFixedWidth(110)
+        self.threshold.setFixedWidth(90)
         _tr.addWidget(self.threshold);_tr.addStretch()
-        cl.addLayout(_tr)
+        _block(_tr,"当天粉丝累计新增达到这个数就提醒。")
+        self.fireworks_enabled=QCheckBox("新超标时放烟花")
+        self.fireworks_enabled.setToolTip("有主页新超标时，在屏幕上放一场烟花。关掉「粉丝增长提醒」后，烟花也不会触发。")
+        self.alert_enabled.toggled.connect(lambda checked:self.fireworks_enabled.setEnabled(checked))
+        _fw=QHBoxLayout();_fw.setSpacing(8)
+        _fw.addWidget(self.fireworks_enabled)
+        self.fireworks_preview_button=QPushButton("预览效果");self.fireworks_preview_button.setObjectName("SecondaryButton")
+        self.fireworks_preview_button.clicked.connect(self.fireworks_preview_requested.emit)
+        _fw.addWidget(self.fireworks_preview_button);_fw.addStretch()
+        cl.addLayout(_fw)
         collect_layout.addWidget(collect);collect_layout.addStretch()
 
         data_layout=make_tab("数据管理")
         data,dl=self.card()
         self.data_path_label=QLabel(str(DATA_DIR));self.data_path_label.setTextFormat(Qt.TextFormat.PlainText);self.data_path_label.setObjectName("PathLabel");self.data_path_label.setWordWrap(True);dl.addWidget(self.data_path_label)
         buttons=QHBoxLayout()
-        self.choose_data_dir=QPushButton("更改保存目录并迁移数据");self.choose_data_dir.setObjectName("PrimaryButton")
+        self.choose_data_dir=QPushButton("更改保存目录");self.choose_data_dir.setObjectName("PrimaryButton")
         self.choose_data_dir.clicked.connect(self.data_dir_requested.emit);buttons.addWidget(self.choose_data_dir)
         folder=QPushButton("打开数据目录");folder.setObjectName("SecondaryButton")
         folder.clicked.connect(lambda:QDesktopServices.openUrl(QUrl.fromLocalFile(str(DATA_DIR))));buttons.addWidget(folder)
-        backup=QPushButton("备份数据库");backup.setObjectName("SecondaryButton");backup.clicked.connect(self.backup_requested.emit)
-        buttons.addWidget(backup);buttons.addStretch();dl.addLayout(buttons)
+        buttons.addStretch();dl.addLayout(buttons)
+        dl.addWidget(_subtitle("选新目录后，现有数据会一起迁过去，不用手动搬。"))
+        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");dl.addWidget(_div)
+        _dev_title=QLabel("开发者模式");_dev_title.setObjectName("SettingsTitle");dl.addWidget(_dev_title)
         self.dev_mode=QCheckBox("开发者模式（显示诊断日志窗口）")
-        self.dev_mode.setToolTip("开启后显示可移动、可最小化、可关闭的诊断日志窗口，记录发帖检测、名称／粉丝采集、复检与更新检查的诊断信息。默认关闭。")
+        self.dev_mode.setToolTip("开启后显示诊断日志窗口（只能在主窗口内移动），记录发帖检测、名称／粉丝采集、复检与更新检查的诊断信息。默认关闭。")
         self.dev_mode.toggled.connect(self.dev_mode_requested.emit)
-        dl.addWidget(self.dev_mode)
+        _dm=QWidget();_dl2=QHBoxLayout(_dm);_dl2.setContentsMargins(0,0,0,0);_dl2.setSpacing(6)
+        _dl2.addWidget(self.dev_mode);_dl2.addStretch()
+        dl.addWidget(_dm)
+        dl.addWidget(_subtitle("打开诊断日志窗口，记录巡检每一步的判断，排查问题用。", indent=28))
         data_layout.addWidget(data);data_layout.addStretch()
 
         self.save_note=QLabel("所有设置修改后自动保存，下次启动继续使用");self.save_note.setObjectName("SmallMuted")
@@ -8508,14 +9411,21 @@ class SettingsPage(QWidget):
                (self.threshold,_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)))
         for widget,value in pairs:
             widget.blockSignals(True);widget.setValue(value);widget.blockSignals(False)
-        for widget,key,default in ((self.start_auto,"start_auto",False),(self.silent_to_tray,"silent_to_tray",True),
-                (self.alert_enabled,"alert_enabled",True),
+        for widget,key,default in ((self.alert_enabled,"alert_enabled",True),(self.notify_post_overdue,"notify_post_overdue",True),
+                (self.fireworks_enabled,"fireworks_enabled",True),
                 (self.auto_update,"auto_check_updates",True),
-                (self.auto_install,"update/auto_install",True),(self.dev_mode,"dev_mode",False)):
+                (self.dev_mode,"dev_mode",False)):
             widget.blockSignals(True);widget.setChecked(is_true(self.settings.value(key,default),default));widget.blockSignals(False)
         for widget,key,default in ((self.module_growth_switch,MODULE_GROWTH_KEY,True),(self.module_posts_switch,MODULE_POSTS_KEY,False)):
             widget.blockSignals(True);widget.setChecked(is_true(self.settings.value(key,default),default));widget.blockSignals(False)
         self._refresh_module_statuses()
+        self.fireworks_enabled.setEnabled(self.alert_enabled.isChecked())
+        _style=str(self.settings.value("progress_style","fill") or "fill")
+        if _style not in PROGRESS_BUTTON_WIDTHS:_style="fill"
+        self._progress_style=_style;self.set_selected_progress_style(_style)
+        _cl=str(self.settings.value("card_layout","oneline") or "oneline")
+        if _cl not in CARD_LAYOUT_KEYS:_cl="oneline"
+        self._card_layout=_cl;self.set_selected_card_layout(_cl)
         self.set_selected_theme(migrate_theme_name(self.settings.value("ui_theme","云白")))
         _pos=str(self.settings.value("toast_position","bottom_center"))
         if _pos in [k for _,k in TOAST_POSITIONS]:self.toast_position_choice.setCurrentData(_pos,emit=False)
@@ -8526,11 +9436,11 @@ class SettingsPage(QWidget):
         for widget,value in zip((self.interval,self.jitter_min,self.jitter_max,self.gap_min,self.gap_max),timing):
             widget.blockSignals(True);widget.setValue(value);widget.blockSignals(False)
         values={
-            "start_auto":int(self.start_auto.isChecked()),
-            "min_to_tray":1,"silent_to_tray":int(self.silent_to_tray.isChecked()),"alert_enabled":int(self.alert_enabled.isChecked()),
+            "min_to_tray":1,"alert_enabled":int(self.alert_enabled.isChecked()),
+            "notify_post_overdue":int(self.notify_post_overdue.isChecked()),
+            "fireworks_enabled":int(self.fireworks_enabled.isChecked()),"progress_style":getattr(self,"_progress_style","fill"),"card_layout":getattr(self,"_card_layout","oneline"),
             "alert_threshold":self.threshold.value(),
             "auto_check_updates":int(self.auto_update.isChecked()),"dev_mode":int(self.dev_mode.isChecked()),
-            "update/auto_install":int(self.auto_install.isChecked()),
             MODULE_GROWTH_KEY:int(self.module_growth_switch.isChecked()),MODULE_POSTS_KEY:int(self.module_posts_switch.isChecked()),
         }
         for key,value in values.items():self.settings.setValue(key,value)
@@ -8577,6 +9487,8 @@ class UpdateWorker(QObject):
                 result={"status":"ready","path":str(path),"info":self.info}
         except Exception as exc:
             result={"status":"cancelled" if self.cancel_event.is_set() else "error","message":str(exc)[:600]}
+            if getattr(exc,"retry_after_seconds",None):
+                result["retry_after_seconds"]=exc.retry_after_seconds
         self.done.emit(result)
 
 class UpdateDialog(QDialog):
@@ -8877,6 +9789,12 @@ class DiagLogWindow(QDialog):
         self.setWindowTitle("诊断日志（开发者模式）")
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowCloseButtonHint)
         self._placed = False
+        self._clamping = False
+        self._snap_timer = QTimer(self); self._snap_timer.setInterval(120)
+        self._snap_timer.timeout.connect(self._snap_check)
+        _parent = self.parentWidget()
+        if _parent is not None:
+            _parent.installEventFilter(self)
         self._listener = lambda text: self.append_requested.emit(text)
         self.view = QPlainTextEdit()
         self.view.setReadOnly(True)
@@ -8890,12 +9808,9 @@ class DiagLogWindow(QDialog):
         notify_btn.clicked.connect(self._test_notification)
         bubble_btn = QPushButton("测试气泡")
         bubble_btn.clicked.connect(self._test_bubble)
-        sample_btn = QPushButton("模拟诊断行")
-        sample_btn.clicked.connect(self._test_sample_line)
         toolbar.addWidget(fw_btn)
         toolbar.addWidget(notify_btn)
         toolbar.addWidget(bubble_btn)
-        toolbar.addWidget(sample_btn)
         toolbar.addStretch()
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.VLine)
@@ -8911,7 +9826,7 @@ class DiagLogWindow(QDialog):
         toolbar.addWidget(close_btn)
         root.addLayout(toolbar)
         status_row = QHBoxLayout()
-        self._status_label = QLabel("共 0 行 · 最多保留 500 行")
+        self._status_label = QLabel("共 0 行")
         self._status_label.setStyleSheet("color:#6B7280;")
         status_row.addWidget(self._status_label)
         status_row.addStretch()
@@ -8920,7 +9835,7 @@ class DiagLogWindow(QDialog):
         status_row.addWidget(live_label)
         root.addLayout(status_row)
         root.addWidget(self.view, 1)
-        footer = QLabel("关闭窗口仅隐藏，日志继续记录；重新打开时显示最近 500 行。")
+        footer = QLabel("关闭窗口仅隐藏，日志继续记录。")
         footer.setStyleSheet("color:#9CA3AF;")
         root.addWidget(footer)
         self.append_requested.connect(self._append)
@@ -8930,7 +9845,7 @@ class DiagLogWindow(QDialog):
         self.resize(self.minimumSizeHint())
 
     def _refresh_status(self):
-        self._status_label.setText("共 %d 行 · 最多保留 500 行" % len(diag_log_snapshot()))
+        self._status_label.setText("共 %d 行" % len(diag_log_snapshot()))
 
     def _test_fireworks(self):
         diag_log("[烟花] 手动测试播放一次")
@@ -8964,11 +9879,6 @@ class DiagLogWindow(QDialog):
             show("测试气泡：这是诊断日志窗口发出的测试提示。", kind="info")
         diag_log("[气泡] 测试气泡已显示")
 
-    def _test_sample_line(self):
-        diag_log("[发帖] 测试主页（0000000000000000）本次=11-03 14:15:36 精度=3600s "
-                 "已存=11-03 14:47:02 精度=3600s 差=1886s 判定=沿用已存（约值确认） "
-                 "写入=ok 写入时间=11-03 14:47:02")
-
     def _place_bottom_right(self):
         """First show only: dock at the main window's bottom-right with a
         margin, never flush against the edge. Later shows keep wherever
@@ -8994,6 +9904,61 @@ class DiagLogWindow(QDialog):
         except Exception:
             pass
 
+    def _clamp_inside_parent(self):
+        """Keep this floating window inside the main window: it can be
+        dragged and resized, but never moved out of the main window.
+        Clamping runs immediately, except mid-drag (see _defer_or_clamp):
+        during a drag it snaps back once on release, so it never fights
+        the window manager."""
+        if getattr(self, "_clamping", False) or self.isMinimized():
+            return
+        parent = self.parentWidget()
+        if parent is None or not self.isVisible():
+            return
+        try:
+            pg = parent.frameGeometry()
+            fg = self.frameGeometry()
+            x = max(pg.x(), min(fg.x(), pg.x() + pg.width() - fg.width()))
+            y = max(pg.y(), min(fg.y(), pg.y() + pg.height() - fg.height()))
+            if (x, y) != (fg.x(), fg.y()):
+                self._clamping = True
+                try:
+                    self.move(x, y)
+                finally:
+                    self._clamping = False
+        except Exception:
+            pass
+
+    def _snap_check(self):
+        # Dragging: wait until the mouse is released, then snap back once.
+        if QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+            return
+        self._snap_timer.stop()
+        self._clamp_inside_parent()
+
+    def _defer_or_clamp(self):
+        # Clamping on every move event fights the window manager mid-drag
+        # and flickers; wait for the release, then snap back once.
+        if QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+            if not self._snap_timer.isActive():
+                self._snap_timer.start()
+        else:
+            self._clamp_inside_parent()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._defer_or_clamp()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._defer_or_clamp()
+
+    def eventFilter(self, watched, event):
+        # The main window moved or resized: pull the log back inside.
+        if watched is self.parentWidget() and event.type() in (QEvent.Type.Move, QEvent.Type.Resize):
+            self._clamp_inside_parent()
+        return super().eventFilter(watched, event)
+
     def showEvent(self, event):
         super().showEvent(event)
         if not getattr(self, "_placed", False):
@@ -9005,6 +9970,7 @@ class DiagLogWindow(QDialog):
         add_diag_log_listener(self._listener)
 
     def hideEvent(self, event):
+        self._snap_timer.stop()
         remove_diag_log_listener(self._listener)
         super().hideEvent(event)
 
@@ -9020,6 +9986,45 @@ class DiagLogWindow(QDialog):
 
     def _copy_all(self):
         QApplication.clipboard().setText(self.view.toPlainText())
+
+
+def _subtitle(text, indent=0):
+    lab = QLabel(text); lab.setObjectName("SmallMuted"); lab.setWordWrap(True)
+    if indent:
+        lab.setIndent(indent)
+    return lab
+
+
+class CloseChoiceDialog(QDialog):
+    """What closing the window should do. choice: background/wait/stop/None."""
+
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("关闭窗口");self.setModal(True);self.choice=None
+        self.resize(480,300)
+        root=QVBoxLayout(self);root.setContentsMargins(26,22,26,20);root.setSpacing(10)
+        title=QLabel("关闭窗口");title.setObjectName("DialogTitle");root.addWidget(title)
+        for heading,desc in (("继续后台运行","窗口藏到托盘，巡检和提醒继续。"),
+                             ("等待完成后退出","不再开新任务，本轮巡检结束后自动退出。"),
+                             ("立即停止并退出","马上停止当前巡检并退出。")):
+            h=QLabel(heading);_f=h.font();_f.setBold(True);h.setFont(_f);root.addWidget(h)
+            d=QLabel(desc);d.setObjectName("SmallMuted");d.setWordWrap(True);root.addWidget(d)
+        root.addSpacing(6)
+        actions=QHBoxLayout();actions.setSpacing(10)
+        ok=QPushButton("继续后台运行");ok.setObjectName("PrimaryButton");ok.setFixedHeight(38)
+        ok.clicked.connect(lambda _=False:self._pick("background"));actions.addWidget(ok)
+        wait=QPushButton("等待完成后退出");wait.setObjectName("SecondaryButton");wait.setFixedHeight(38)
+        wait.clicked.connect(lambda _=False:self._pick("wait"));actions.addWidget(wait)
+        stop=QPushButton("立即停止并退出");stop.setFixedHeight(38)
+        stop.setStyleSheet("QPushButton{border:1.5px solid #DC2626;color:#DC2626;border-radius:9px;background:#FFFFFF;}")
+        stop.clicked.connect(lambda _=False:self._pick("stop"));actions.addWidget(stop)
+        root.addLayout(actions)
+
+    def _pick(self,choice):
+        self.choice=choice;self.accept()
+
+    def exec_choice(self):
+        self.exec();return self.choice
 
 
 class MainWindow(QMainWindow):
@@ -9057,7 +10062,8 @@ class MainWindow(QMainWindow):
             except (ValueError,TypeError):return fallback
         self.store.migrate_legacy_settings(old_json("post_monitor_rules",[]),old_json("post_monitor_data",{}))
         self.worker=None;self.worker_thread=None;self.login_worker=None;self.login_thread=None
-        self._closing=False;self._maintenance=False;self._tray_hint_shown=False
+        self._patrol_queue=[];self._patrol_running=[]
+        self._closing=False;self._maintenance=False;self._tray_hint_shown=False;self._exit_after_round=False
         self.auto_enabled=False;self.next_run_at=None;self.active_run_id=None
         self.run_started_at=None;self.run_ok=0;self.run_fail=0;self.current_purpose="monitor"
         self._tick=0;self._popup=None;self._notice_queue=[];self._toast=None;self._diag_window=None;self._fireworks_overlay=None;self._growth_alert_seen=None;self._fireworks_pending=0
@@ -9073,9 +10079,7 @@ class MainWindow(QMainWindow):
         self.resize(1536,1024);self.setMinimumSize(1200,800)
         self.tray=QSystemTrayIcon(make_app_icon(),self);self.tray.setToolTip(APP_TITLE)
         self.tray_menu=QMenu(self)
-        self.tray_menu.addAction("打开监控看板",self.show_dashboard)
-        self.tray_menu.addAction("立即巡检",self.dashboard_run_button)
-        self.tray_menu.addAction("启用 / 暂停自动巡检",self.toggle_auto)
+        self.tray_menu.addAction("打开软件",self.show_dashboard)
         self.tray_menu.addSeparator();self.tray_menu.addAction("完全退出",self.exit_application)
         self.tray.setContextMenu(self.tray_menu);self.tray.activated.connect(self.on_tray_activated)
         if QSystemTrayIcon.isSystemTrayAvailable():self.tray.show()
@@ -9232,6 +10236,7 @@ class MainWindow(QMainWindow):
         d.open_page.connect(self.open_page);d.open_settings_requested.connect(lambda:self.switch_page(4))
         d.collect_subset_requested.connect(self.start_subset_collection)
         d.inspect_page.connect(self.inspect_single_page);d.sync_page.connect(lambda pid:self.sync_profiles([pid]))
+        d.inspect_requested.connect(self.inspect_pages)
         m=self.page_manager;m.add_requested.connect(self.open_batch_dialog)
         m.delete_requested.connect(self.delete_ids)
         m.config_changed.connect(self.refresh_dashboard)
@@ -9243,10 +10248,20 @@ class MainWindow(QMainWindow):
         settings.theme_requested.connect(self.apply_theme)
         settings.ui_scale_requested.connect(self.set_ui_scale)
         settings.toast_position_requested.connect(self.set_toast_position)
-        settings.export_requested.connect(self.export_csv);settings.backup_requested.connect(self.backup_db)
+        settings.progress_style_requested.connect(self._on_progress_style_changed)
+        settings.card_layout_requested.connect(self._on_card_layout_changed)
+        settings.export_requested.connect(self.export_csv)
         settings.data_dir_requested.connect(self.move_data_directory)
         settings.dev_mode_requested.connect(self.set_dev_mode)
+        settings.manual_update_check_requested.connect(lambda:self.check_for_updates(manual=True))
+        settings.fireworks_preview_requested.connect(self.play_fireworks)
         self.set_dev_mode(is_true(self.settings.value("dev_mode", False), False))
+
+    def _on_progress_style_changed(self, style):
+        self.dashboard.set_progress_style(style)
+
+    def _on_card_layout_changed(self, key):
+        self.dashboard.set_card_layout(key)
 
     def play_fireworks(self):
         if self._fireworks_overlay is None:
@@ -9276,6 +10291,8 @@ class MainWindow(QMainWindow):
         visible page, the play is deferred until the user switches back.
         """
         if not modules_growth_enabled(self.settings):
+            return
+        if not is_true(self.settings.value("fireworks_enabled", True), True):
             return
         current = set(getattr(self.dashboard, "_growth_alert_ids", None) or set())
         fresh = set()
@@ -9415,7 +10432,13 @@ class MainWindow(QMainWindow):
         self.alerts.focus_alert(entry or {})
 
     def schedule_refresh(self):
-        if not self.paint_timer.isActive():self.paint_timer.start(450)
+        if self.paint_timer.isActive():return
+        # During an active collection round results arrive steadily;
+        # refreshing every 450ms means rebuilding the dashboard for the
+        # whole round. Throttle to 5s mid-round; cleanup_worker already
+        # does a final refresh_all when the round ends.
+        _ms=5000 if self.worker_thread is not None else 450
+        self.paint_timer.start(_ms)
 
     def open_batch_dialog(self):
         if self._tasks_busy():return
@@ -9462,13 +10485,55 @@ class MainWindow(QMainWindow):
         self.dashboard.set_running(self.auto_enabled,True)
         self.dashboard.status.setText("已请求暂停：当前主页处理完成后停止进入下一页" if self.dashboard.paused else "继续本轮巡检")
 
+    def _enqueue_patrol(self,pages):
+        """Add pages to the patrol queue; start a round at once when idle.
+
+        A single-page patrol no longer waits for the current round to end:
+        it joins the queue, and the next batch starts automatically when
+        the running round finishes. Pages already queued or running are
+        skipped instead of being added twice.
+        """
+        queued={pid for pid,_ in self._patrol_queue}
+        running={pid for pid,_ in self._patrol_running}
+        fresh=[p for p in pages if str(p["page_id"]) not in queued and str(p["page_id"]) not in running]
+        if not fresh:
+            show_hint(self,"已在巡检队列中。",kind="info");return
+        for p in fresh:self._patrol_queue.append((str(p["page_id"]),display_name(p)))
+        if self._maybe_start_queued_round():return
+        if any(str(p["page_id"]) in {pid for pid,_ in self._patrol_queue} for p in fresh):
+            show_hint(self,"已加入巡检队列，本轮跑完就巡检。",kind="info")
+        # Otherwise the pages were dropped by _start_worker (for example no
+        # module enabled); it already explained why in the status bar.
+
+    def _maybe_start_queued_round(self):
+        """Start one round from the patrol queue. True if a round started."""
+        if self.worker_thread is not None or self.login_thread is not None or self._maintenance or self._closing:
+            return False
+        if not self._patrol_queue:return False
+        if not self.selected_connectors(require_all=False):
+            # Browsers offline: keep the queue; the next patrol action
+            # (or the next round's cleanup) tries again.
+            return False
+        queued=list(self._patrol_queue);self._patrol_queue=[]
+        chosen={pid for pid,_ in queued}
+        pages=[p for p in self.store.list_pages() if str(p["page_id"]) in chosen]
+        if not pages:
+            return False
+        self._start_worker(pages,"monitor")
+        return self.worker_thread is not None
+
     def start_collection(self,once=True):
         if self._closing or self._maintenance:return
         if self.login_thread is not None:
             if once:show_hint(self,"请先关闭登录浏览器，再巡检。",kind="warning")
             elif self.auto_enabled:self.auto_timer.start(30000)
             return
-        if self.worker_thread is not None:return
+        if self.worker_thread is not None:
+            if once:
+                pages=self.store.list_pages(enabled_only=True)
+                if pages:self._enqueue_patrol(pages)
+            return
+        if self._maybe_start_queued_round():return
         pages=self.store.list_pages(enabled_only=True)
         if not pages:
             self.stop_auto()
@@ -9477,29 +10542,32 @@ class MainWindow(QMainWindow):
         self._start_worker(pages,"monitor")
 
     def inspect_single_page(self,pid):
-        if self._tasks_busy():return
+        if self.login_thread is not None or self._maintenance:
+            show_hint(self,"请等待当前巡检或连接任务结束后再操作。暂停不会结束当前任务。",kind="warning");return
         pages=[p for p in self.store.list_pages() if str(p["page_id"])==str(pid)]
         if not pages:show_hint(self,"找不到该主页。",kind="warning");return
-        self._start_worker(pages,"monitor")
+        self._enqueue_patrol(pages)
 
     def inspect_pages(self,ids):
-        if self._tasks_busy():return
+        if self.login_thread is not None or self._maintenance:
+            show_hint(self,"请等待当前巡检或连接任务结束后再操作。暂停不会结束当前任务。",kind="warning");return
         chosen={str(x) for x in ids}
         pages=[p for p in self.store.list_pages() if str(p["page_id"]) in chosen]
         if not pages:show_hint(self,"请先选择要巡检的主页。",kind="warning");return
-        self._start_worker(pages,"monitor")
+        self._enqueue_patrol(pages)
 
     def start_subset_collection(self,mode):
-        if self._tasks_busy():return
+        if self.login_thread is not None or self._maintenance:
+            show_hint(self,"请等待当前巡检或连接任务结束后再操作。暂停不会结束当前任务。",kind="warning");return
         pages=self.store.list_pages(enabled_only=True)
         if mode=="failed":
             pages=[p for p in pages if p.get("status") in ("采集失败","部分成功") or p.get("growth_error")
-                   or (modules_posts_enabled(self.settings) and p.get("post_error")) or (p.get("name_error") and not normalize_name(p.get("page_name"),p.get("page_id")))]
+                   or (modules_posts_enabled(self.settings) and p.get("post_error"))]
         elif mode=="uninspected":
             pages=[p for p in pages if not p.get("last_inspected_at")]
         if not pages:
             show_hint(self,"没有符合条件的主页。",kind="warning");return
-        self._start_worker(pages,"monitor")
+        self._enqueue_patrol(pages)
 
     def sync_profiles(self,ids):
         if self._tasks_busy():return
@@ -9524,8 +10592,10 @@ class MainWindow(QMainWindow):
             return
         if len(pages)<len(cids):
             # Small rounds (single-page recheck) simply use fewer
-            # connectors instead of refusing the whole round.
-            cids=cids[:len(pages)]
+            # connectors instead of refusing the whole round. Pick them
+            # at random so consecutive small rounds spread across
+            # browsers instead of always using the first ones.
+            cids=random.sample(cids,len(pages))
         self.auto_timer.stop();self.next_run_at=None;self.current_purpose=purpose
         self.active_run_id=uuid.uuid4().hex;self.store.start_run(self.active_run_id,len(pages))
         self.run_started_at=time.time();self.run_ok=0;self.run_fail=0
@@ -9539,14 +10609,17 @@ class MainWindow(QMainWindow):
         self.worker_thread.finished.connect(self.cleanup_worker)
         self.dashboard.paused=False;self.dashboard.set_running(self.auto_enabled,True);self.page_manager.set_busy(True)
         self.dashboard.status.setText(f"通过 {len(cids)} 个 Chrome 连接器并行开始任务 · {len(pages)} 个 ID")
+        if purpose=="monitor":
+            self._patrol_running=[(str(p["page_id"]),display_name(p)) for p in pages]
         self.worker_thread.start()
 
     def on_progress(self,current,total,info):
         self.dashboard.status.setText(f"{info}  ·  {current}/{total}")
+        self.dashboard.set_patrol_progress(current,total)
 
     def on_collect_result(self,data):
         options={key:self.settings.value(key,default) for key,default in
-                 (("interval_minutes",DEFAULT_INTERVAL_MINUTES),("alert_threshold",500),("alert_enabled",1))}
+                 (("interval_minutes",DEFAULT_INTERVAL_MINUTES),("alert_threshold",500),("alert_enabled",1),("notify_post_overdue",1))}
         try:out=self.store.apply_collection(data,options,self.current_purpose)
         except Exception as exc:
             import traceback;log_exception(traceback.format_exc())
@@ -9564,12 +10637,13 @@ class MainWindow(QMainWindow):
         queued=self._notice_queue;self._notice_queue=[]
         if not queued:return
         fresh=self.store.combined_alerts(limit=300,unread_only=True);entries=[]
+        pages=self.store.pages_map([r.get("page_id") for r in queued])
         for raw in queued:
             match=next((row for row in fresh if row.get("kind")==raw.get("kind") and row.get("page_id")==raw.get("page_id")
                         and (not raw.get("id") or int(row.get("id") or 0)==int(raw.get("id") or 0))),None)
             item=dict(match or raw)
             pid=str(item.get("page_id") or "")
-            page=self.store.page(pid) or {}
+            page=pages.get(pid) or {}
             # Popup must use the same avatar cache as the dashboard. A queued/stale path
             # must never override the current valid page avatar.
             current_avatar=str(page.get("avatar_path") or "") if isinstance(page,dict) else ""
@@ -9607,15 +10681,21 @@ class MainWindow(QMainWindow):
         self.schedule_refresh()
 
     def cleanup_worker(self):
+        _finished_purpose=self.current_purpose
         thread=self.worker_thread
         self.worker=None;self.worker_thread=None;self.active_run_id=None
         if thread:thread.deleteLater()
         self.dashboard.paused=False;self.page_manager.set_busy(False)
         self.dashboard.set_running(self.auto_enabled,False)
         if self._closing:self.check_pending_exit();return
-        if self.auto_enabled:self.schedule_next_round(self.run_started_at)
+        if getattr(self,"_exit_after_round",False):
+            self._exit_after_round=False;self.exit_application();return
+        if _finished_purpose=="monitor":
+            self._patrol_running=[]
+        _started=self._maybe_start_queued_round()
+        if not _started and self.auto_enabled:self.schedule_next_round(self.run_started_at)
         self.refresh_all()
-        if self.current_purpose=="monitor":self._check_fireworks()
+        if _finished_purpose=="monitor":self._check_fireworks()
 
     def toggle_auto(self):
         if self.auto_enabled:self.stop_auto()
@@ -9654,7 +10734,10 @@ class MainWindow(QMainWindow):
         elif self.worker_thread:self.dashboard.next_run.setText("当前轮次进行中")
         elif self.auto_enabled:self.dashboard.next_run.setText("自动巡检等待中")
         else:self.dashboard.next_run.setText("自动巡检未开启")
-        if self._tick%60==0 and not self._maintenance:self.refresh_dashboard()
+        # The 60s tick used to rebuild the whole dashboard even with no
+        # new data. Now only time-driven post text is refreshed; a full
+        # refresh runs only if some post actually changed state.
+        if self._tick%60==0 and not self._maintenance and self.dashboard.refresh_clock():self.refresh_dashboard()
 
     def open_login_browser(self):
         if self._connector_dialog is None:
@@ -9923,15 +11006,24 @@ class MainWindow(QMainWindow):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
         radius=0 if self.isMaximized() else 20
         rect=QRectF(0.5,0.5,self.width()-1,self.height()-1)
-        p.setBrush(QColor(BG))
         # Outer edge: a faint 20%-opacity line (black on light themes, white
         # on the dark theme) so the window edge stays visible against other
         # windows, instead of the near-invisible theme border colour.
         _preset=THEME_PRESETS.get(migrate_theme_name(getattr(self,"theme_name","云白")),THEME_PRESETS["云白"])
         _edge=QColor(255,255,255,51) if not _preset.get("light",True) else QColor(0,0,0,51)
-        p.setPen(QPen(_edge,1))
-        if radius:p.drawRoundedRect(rect,radius,radius)
-        else:p.drawRect(rect)
+        # Cache the rasterized background: re-rasterizing the antialiased
+        # rounded rect on every paint frame is a large share of resize
+        # cost. The pixmap is rebuilt only when size/radius/theme change.
+        _key=(self.width(),self.height(),radius,str(BG),_edge.rgba())
+        _cached=getattr(self,"_bg_cache",None)
+        if _cached is None or _cached[0]!=_key:
+            _pm=QPixmap(max(1,self.width()),max(1,self.height()));_pm.fill(Qt.GlobalColor.transparent)
+            _pp=QPainter(_pm);_pp.setRenderHint(QPainter.RenderHint.Antialiasing)
+            _pp.setBrush(QColor(BG));_pp.setPen(QPen(_edge,1))
+            if radius:_pp.drawRoundedRect(rect,radius,radius)
+            else:_pp.drawRect(rect)
+            _pp.end();self._bg_cache=(_key,_pm)
+        p.drawPixmap(0,0,self._bg_cache[1])
         p.end()
         super().paintEvent(event)
 
@@ -9966,6 +11058,14 @@ class MainWindow(QMainWindow):
             if manual:
                 if self._update_dialog:self._update_dialog.show();self._update_dialog.raise_()
                 else:self.dashboard.status.setText("版本检查正在进行，请稍候")
+            return
+        try:_backoff_until=float(self.settings.value("update/backoff_until",0))
+        except (ValueError,TypeError):_backoff_until=0
+        if _backoff_until>time.time():
+            _mins=max(1,-(-int(_backoff_until-time.time())//60))
+            _msg=f"GitHub 请求受限，约 {_mins} 分钟后恢复"
+            self.dashboard.status.setText(_msg)
+            if manual:self.show_toast(_msg)
             return
         self._update_manual=bool(manual)
         self.dashboard.status.setText("正在检查 GitHub 正式发布版本…")
@@ -10031,23 +11131,9 @@ class MainWindow(QMainWindow):
         try:self.store.export_csv(path,kind);show_hint(self,"已导出："+path,kind="success")
         except Exception as exc:QMessageBox.warning(self,"导出失败",str(exc))
 
-    def backup_db(self):
-        stamp=datetime.now().strftime("%Y%m%d_%H%M")
-        path,_=QFileDialog.getSaveFileName(self,"备份数据库",str(Path.home()/f"ProfessionalMonitor_backup_{stamp}.db"),"本地数据库数据库 (*.db)")
-        if not path:return
-        try:
-            self.store.backup(Path(path))
-            show_hint(self,f"本地主页、当前状态与预警已备份（不含浏览器登录资料）：\n{path}",kind="success")
-        except Exception as exc:
-            QMessageBox.warning(self,"备份失败",str(exc))
-
-
     def on_tray_activated(self,reason):
         if reason==QSystemTrayIcon.ActivationReason.DoubleClick:self.show_dashboard()
 
-    def on_tray_hint(self):
-        if is_true(self.settings.value("silent_to_tray",1),True):return
-        self.tray.showMessage(APP_TITLE,"窗口已收起到托盘，继续后台运行。双击托盘图标可打开；完全退出请使用托盘菜单。",QSystemTrayIcon.MessageIcon.Information,4000)
 
     def exit_application(self):
         self._closing=True;self.auto_enabled=False;self.auto_timer.stop();self.next_run_at=None
@@ -10057,23 +11143,14 @@ class MainWindow(QMainWindow):
         if self._closing and self.worker_thread is None and self.login_thread is None and self._update_thread is None:
             QTimer.singleShot(0,self.close)
 
-    def closeEvent(self,event):
-        log_window_event("close_event","closing=%s visible=%s"%(self._closing,self.isVisible()))
-        try:
-            self.settings_page.flush_pending();self.save_ui_state()
-        except Exception as exc:
-            log_exception("保存设置失败："+str(exc))
-            QMessageBox.warning(self,"设置未能保存",str(exc)+"\n请检查数据目录写入权限。")
-            event.ignore();self._closing=False;return
-        if self._toast is not None:self._toast.hide()
-        if not self._closing:
-            event.ignore()
-            if QSystemTrayIcon.isSystemTrayAvailable():
-                self.tray.show();self.hide();self.on_tray_hint()
-            else:
-                # Never hide the only recoverable window when the OS has no tray.
-                self.showMinimized()
-            return
+    def _finish_close(self,event):
+        """Closing branch shared by closeEvent and the close dialog.
+
+        close() called from inside closeEvent is swallowed by Qt (proven
+        offscreen: a nested close() never re-enters closeEvent), so the
+        dialog must not go through exit_application()->close(); it calls
+        this directly with the outer event instead.
+        """
         self._closing=True
         self.auto_enabled=False;self.auto_timer.stop();self.count_timer.stop();self._updates_timer.stop()
         if self.worker_thread is not None or self.login_thread is not None or self._update_thread is not None:
@@ -10081,6 +11158,12 @@ class MainWindow(QMainWindow):
             if self.login_worker:self.login_worker.stop()
             if self._update_worker:self._update_worker.cancel()
             self.dashboard.status.setText("正在安全结束当前任务…")
+            if not getattr(self,"_exit_timeout_armed",False):
+                # Backstop: a hung page load must not trap the process in
+                # "正在安全结束当前任务…" forever; 10s is past any single
+                # page timeout, and settings were already flushed above.
+                self._exit_timeout_armed=True
+                QTimer.singleShot(10000,self._force_exit_after_timeout)
             event.ignore();return
         if self._install_command:
             try:
@@ -10094,6 +11177,50 @@ class MainWindow(QMainWindow):
         self._connector_timer.stop();self.connector.stop()
         self.settings.sync();self.tray.hide();event.accept()
         QTimer.singleShot(0,QApplication.instance().quit)
+
+    def closeEvent(self,event):
+        log_window_event("close_event","closing=%s visible=%s"%(self._closing,self.isVisible()))
+        try:
+            self.settings_page.flush_pending();self.save_ui_state()
+        except Exception as exc:
+            log_exception("保存设置失败："+str(exc))
+            QMessageBox.warning(self,"设置未能保存",str(exc)+"\n请检查数据目录写入权限。")
+            event.ignore();self._closing=False;return
+        if self._toast is not None:self._toast.hide()
+        if not self._closing:
+            event.ignore()
+            if QSystemTrayIcon.isSystemTrayAvailable() and not is_true(self.settings.value("silent_to_tray",1),True):
+                choice=CloseChoiceDialog(self).exec_choice()
+                if choice=="background":
+                    self._exit_after_round=False
+                    self.tray.show();self.hide();return
+                if choice=="wait":
+                    self.auto_enabled=False;self.auto_timer.stop();self.next_run_at=None
+                    self._exit_after_round=True
+                    if self.worker_thread is None:
+                        self._exit_after_round=False
+                        self._finish_close(event)
+                    else:
+                        self.tray.show();self.hide()
+                    return
+                if choice=="stop":
+                    self._finish_close(event);return
+                return
+            if QSystemTrayIcon.isSystemTrayAvailable():
+                self.tray.show();self.hide()
+            else:
+                # Never hide the only recoverable window when the OS has no tray.
+                self.showMinimized()
+            return
+        self._finish_close(event)
+
+    def _force_exit_after_timeout(self):
+        if getattr(self, "_closing", False):
+            try:
+                log_window_event("force_exit", "close wait exceeded 10s")
+            except Exception:
+                pass
+            os._exit(0)
 
     def _refresh_theme_swatches(self,name):
         if not hasattr(self,"theme_swatches"):return
@@ -10217,6 +11344,10 @@ class MainWindow(QMainWindow):
             QLabel#SectionTitle {{ font-size:17px;font-weight:750; }}
             QLabel#SettingsTitle, QLabel#PanelTitle {{ font-size:15px;font-weight:750; }}
             QLabel#Subtitle, QLabel#SmallMuted, QLabel#FooterText {{ color:{MUTED};font-size:12px; }}
+            QLabel#CardHeadSmall {{ color:{MUTED};font-size:11px; }}
+            QLineEdit#DiagLine {{ background:transparent;border:0;color:{MUTED};font-size:12px;padding:0; }}
+            QLineEdit#DiagLine:focus {{ background:transparent;border:0; }}
+            QLabel#FansValue {{ color:{TEXT};font-size:12px; }}
             QLabel#Eyebrow {{ color:{CYAN};font-size:11px;font-weight:700; }}
             QLabel#RunBadge {{ color:{TEXT};font-size:13px;font-weight:650;padding:7px 8px; }}
             QFrame#MetricCard, QFrame#PageCard, QFrame#SettingsCard, QFrame#EmptyState, QFrame#DetailStat, QFrame#RailCard {{
@@ -10227,8 +11358,11 @@ class MainWindow(QMainWindow):
             QLabel#AlertRowTitle {{ color:{AMBER};font-size:12px;font-weight:650; }}
             QLabel#MetricLabel {{ color:{MUTED};font-size:13px;font-weight:600; }}
             QLabel#MetricValue {{ color:{TEXT};font-size:32px;font-weight:750; }}
+            QLabel#MetricValue[tone="history"] {{ color:{RED}; }}
+            QLabel#MetricValue[tone="bell"] {{ color:{GREEN}; }}
             QPushButton#MetricBadge {{ background:{RED};color:#FFFFFF;border:0;border-radius:10px;font-size:11px;font-weight:800;padding:0; }}
             QLabel#ChipBadge {{ background:{RED};color:#FFFFFF;border-radius:8px;font-size:10px;font-weight:800;padding:0; }}
+            QLabel#ChipBadge[tone="good"] {{ background:{GREEN};color:#FFFFFF;border-radius:8px;font-size:10px;font-weight:800;padding:0; }}
             QLabel#CardTitle {{ font-size:16px;font-weight:750;color:{TEXT}; }}
             QLabel#CardId {{ color:{MUTED};font-size:13px; }}
             QLabel#BigNumber {{ color:{TEXT};font-weight:800; }}
@@ -10236,11 +11370,17 @@ class MainWindow(QMainWindow):
             QLabel#GrowthDown {{ color:{RED};font-weight:750; }}
             QLabel#GrowthSoon {{ color:{AMBER};font-weight:700; }}
             QLabel#GrowthFlat {{ color:{MUTED};font-weight:650; }}
+            QLabel#GrowthAlert {{ color:{RED};font-weight:750; }}
+            QWidget#DiagStripe[severity="alert"] {{ background:{RED};border-radius:2px; }}
+            QWidget#DiagStripe[severity="warning"] {{ background:{AMBER};border-radius:2px; }}
+            QWidget#DiagStripe[severity="plain"] {{ background:{MUTED};border-radius:2px; }}
+            QWidget#DiagStripe[severity="good"] {{ background:{GREEN};border-radius:2px; }}
             QLabel#StatusBadge {{ background:{status_ok_bg};color:{GREEN};border:1px solid {status_ok_border};border-radius:12px;
                 padding:4px 11px;font-size:13px;font-weight:700; }}
             QLabel#StatusBadge[state='alert'] {{ background:{status_alert_bg};color:{RED};border-color:{status_alert_border}; }}
             QLabel#StatusBadge[state='warning'] {{ background:{status_warn_bg};color:{AMBER};border-color:{status_warn_border}; }}
             QLabel#StatusBadge[state='off'] {{ background:{PANEL_2};color:{MUTED};border-color:{BORDER}; }}
+            QLabel#StatusBadge[state='good'] {{ background:{status_ok_bg};color:{GREEN};border-color:{status_ok_border}; }}
             QLabel#UpdatePill {{ background:{status_warn_bg};color:{AMBER};border:1px solid {status_warn_border};border-radius:11px;padding:3px 9px;font-size:12px;font-weight:700; }}
             QLabel#DetailNumber {{ color:{TEXT};font-size:20px;font-weight:800; }}
             QLabel#PathLabel {{ color:{CYAN};font-size:12px; }}
@@ -10295,7 +11435,7 @@ class MainWindow(QMainWindow):
                 border-top-left-radius:8px;border-top-right-radius:8px;margin-right:5px; }}
             QTabBar::tab:selected {{ background:{soft};color:{TEXT};border-bottom-color:{ACCENT}; }}
             QMenu {{ background:{PANEL};border:1px solid {BORDER};padding:6px;color:{TEXT};border-radius:12px; }}
-            QMenu::item {{ padding:9px 20px;border-radius:8px;font-size:13.5px;font-weight:600; }}
+            QMenu::item {{ padding:6px 14px;border-radius:8px;font-size:12px;font-weight:500; }}
             QMenu::item:selected {{ background:{soft}; }}
             QMenu::indicator {{ width:16px;height:16px; }}
             QPushButton#MenuButton {{ background:{PANEL};border:1px solid {BORDER};border-radius:10px;
@@ -10425,7 +11565,7 @@ class MainWindow(QMainWindow):
         diag_log(f"[更新] 检查结果：{status} " + str(result.get("version") or result.get("message") or "")[:80])
         if status=="new":
             self.set_update_attention(True,result.get("version",""))
-            self.settings.setValue("update/last_checked",now_iso());self.settings.sync()
+            self.settings.setValue("update/last_checked",now_iso());self.settings.remove("update/backoff_until");self.settings.sync()
             version=result.get("version","")
             snoozed=str(self.settings.value("update/snooze_version",""))==version
             try:until=float(self.settings.value("update/snooze_until",0))
@@ -10435,6 +11575,7 @@ class MainWindow(QMainWindow):
             else:self._show_update_dialog(result)
         elif status=="ready":
             self.set_update_attention(True,(result.get("info") or {}).get("version",""))
+            self.settings.remove("update/backoff_until")
             info=dict(result["info"]);info["path"]=result["path"]
             save_json_atomic(DATA_DIR/"updates/pending.json",info)
             if self._try_silent_install(result["path"],info):
@@ -10443,6 +11584,9 @@ class MainWindow(QMainWindow):
             self.dashboard.status.setText("新版已下载并校验，可选择更新或稍后安装")
         elif status in ("error","cancelled"):
             message=str(result.get("message") or "下载已取消")
+            if result.get("retry_after_seconds"):
+                try:self.settings.setValue("update/backoff_until",time.time()+float(result["retry_after_seconds"]));self.settings.sync()
+                except (ValueError,TypeError):pass
             self.dashboard.status.setText(message)
             if self._update_dialog and self._update_operation!="check":
                 self._update_dialog.error(message)
@@ -10451,7 +11595,7 @@ class MainWindow(QMainWindow):
                 else:QMessageBox.warning(self,"版本检查未完成",message)
         elif status=="current":
             self.set_update_attention(False)
-            self.settings.setValue("update/last_checked",now_iso());self.settings.sync()
+            self.settings.setValue("update/last_checked",now_iso());self.settings.remove("update/backoff_until");self.settings.sync()
             message="当前已是最新版本（V"+APP_VERSION+"）"
             self.dashboard.status.setText(message)
             if self._update_manual:self.show_toast(message)
