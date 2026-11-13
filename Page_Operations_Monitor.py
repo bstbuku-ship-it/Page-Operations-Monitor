@@ -16,12 +16,13 @@ import threading
 import time
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path, PurePosixPath
 from urllib.parse import parse_qs, urlsplit
 import hashlib
 import html
 import json
+from xml.sax.saxutils import escape as _xml_escape
 import zipfile
 import shutil
 import subprocess
@@ -41,14 +42,14 @@ import base64
 import shlex
 
 APP_TITLE = "专业监控工具"
-APP_VERSION = "1.7.2"
-APP_BUILD = "professional-portable-deployer-ui-v172-20261106-rev62"
+APP_VERSION = "1.7.3"
+APP_BUILD = "professional-portable-deployer-ui-v173-20261112-rev87"
 
 # Update log, bundled in the code in Whitaker's wording and grouping:
 # version header "vX.Y.Z (date)", groups 优化/新增/修复 (first release
 # uses 首个版本), connector line on its own after the groups.
 UPDATE_LOG_SHOWN_KEY = "update_log/shown_for"
-CHANGELOG = [{'version': '1.7.2', 'date': '2026-11-06', 'groups': [{'title': '新增', 'items': ['第一次打开会弹新手引导，带你走一遍装连接器、加主页、设自动巡检时间、跑巡检、看提醒；老用户也会弹一次，确认过就不再弹。', '自动巡检间隔设到 180 分钟以下时，设置里会出现提示，提醒你太短容易被 Facebook 临时限制。', '巡检跑起来之后，右键点「立即巡检」可以取消当前这一轮。']}, {'title': '优化', 'items': ['设置 → 巡检与提醒里的「巡检设置」改名「自动巡检设置」。']}, {'title': '修复', 'items': ['昨天超标、今天没超标的主页，不再一直留在「粉丝增长超标」里。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.1', 'date': '2026-11-06', 'groups': [{'title': '优化', 'items': ['主页小卡片改版：数值显示为「昨日新增 / 今日新增 / 距上次发帖」三列，当前粉丝单独一行（仅开启粉丝监控时显示）。', '昨日新增以红色、今日新增以绿色显示，无数据时为灰色；数值达 10000 以上以 W 为单位显示。', '点击「仅巡检本主页」后立即排入队列，无需等待上一轮结束；多个浏览器并行执行。', '发帖状态区分为「未见贴文」「读取不到」「待获取」三种。', '设置页重新整理：说明文字移至控件下方，「巡检与提醒」拆分为三节，粉丝增长提醒与发帖超时提醒可分别开关。', '精简设置项，移除「启动自动巡检」「静默收起到托盘」「备份数据库」。', '托盘右键菜单精简为「打开软件」「完全退出」。']}, {'title': '新增', 'items': ['筛选胶囊支持右键直接巡检该类主页。', '关闭窗口时可选择继续后台运行、等待本轮结束后退出或立即退出。']}, {'title': '修复', 'items': ['主页名称本轮未读取到时，不再判定为异常。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.0', 'date': '2026-11-04', 'groups': [{'title': '新增', 'items': ['浏览器连接器升级至 1.4.7（需手动更新），工具栏图标以角标显示离线 / 空闲 / 执行中状态。', '粉丝增长达标时播放烟花提示。', '自动复检：对仍无法确认的主页最多复检 5 遍，并优先更换浏览器重试。', '新增界面缩放（80%–130%）与消息提示位置设置。', '新增诊断日志窗口。']}, {'title': '优化', 'items': ['优化预警分类规则：粉丝增长超标、发帖超时、需处理三个维度独立统计。', '排序精简为三项，默认「增长预警优先」。', '卡片数值达 1000 以上以 k 为单位显示，悬停可查看精确值。', '设置页改为 5 个横向标签页。', '巡检间隔默认值调整为 240 分钟。', '通知历史支持清空已读记录。', '统一各类提示的显示样式。', '重写浏览器连接窗口，支持筛选、停用、删除与重新检测。', '并行巡检自动识别新上线的浏览器，不再限制数量。']}], 'connector': ''}, {'version': '1.6.2', 'date': '', 'groups': [{'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.1', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['Windows 版改用标准安装程序，提供简体中文安装向导，可自选安装路径。', '新增绿色便携版，解压即用，数据保存在软件文件夹内。']}, {'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.0', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['新增三套主题：云白（默认）、护眼绿、曜石黑。', '新增监控模块开关，首次运行时可选择启用的模块。', '支持静默升级：后台下载并校验新版本，空闲时自动安装并重启，可在「设置 → 更新」中关闭。', '提示气泡按类型区分图标：成功、警告、普通提示。', '主页卡片支持通过三点菜单删除。', '左侧栏新增预警头像行。', '接入 Windows 系统通知。']}, {'title': '优化', 'items': ['界面改为圆角风格，并新增左侧边栏。', '提示气泡按主题配色，宽度随内容自适应。', '主页不可用时直接给出判断。', 'ID 管理列表按专业名称排序。', '精简通知文案，不再显示 ID。']}, {'title': '修复', 'items': ['修复提示气泡偶尔被裁掉最后一个字的问题。']}], 'connector': '浏览器连接器保持 1.4.1，无需重新安装。'}, {'version': '1.5.0', 'date': '', 'groups': [{'title': '优化', 'items': ['软件名称统一为「专业监控工具」。', '「设置中心」更名为「设置」，移除「恢复默认巡检参数」「打开运行日志」「重置窗口布局」。', '专业 ID 管理入口统一为「FB专业ID管理」。', '更新提示改为「升级 / 以后再说」，下载并校验完成后再次确认安装。']}, {'title': '新增', 'items': ['设置新增「智能清理缓存」，扫描后经确认再清理，不影响 ID、通知、头像、设置、数据库及浏览器连接记录。']}], 'connector': ''}, {'version': '1.4.0', 'date': '2026-10-15', 'groups': [{'title': '新增', 'items': ['首页新增「昨日新增」指标。', '点击「查看通知」可直达通知界面并高亮对应预警。']}, {'title': '优化', 'items': ['通知界面默认仅显示未读及今日通知，较早的已读记录移至「历史记录」。', '预警弹窗头像与主页卡片保持一致。', '首页巡检参数布局更紧凑。', '数字输入框改为点击即选中、输入即保存。', '顶部图标按主题分层配色，有未读通知时显示红色。', '浏览器按钮增加状态灯：绿色可用、黄色部分连接、红色无连接。', '浏览器连接窗口简化；多个连接器可并行巡检，最多 10 个。', '浏览器连接器改为紧凑弹窗，可直接填写浏览器备注。']}], 'connector': ''}, {'version': '1.3.0', 'date': '2026-10-14', 'groups': [{'title': '新增', 'items': ['浏览器连接器改为同机自动发现、自动连接，无需手动输入配对码。', '检测到多个 Chrome 配置时可选择巡检所用浏览器，并记住上次选择。', '专业 ID 的粉丝监控与发帖监控可独立启用，支持批量管理。', '首页显示上次巡检时间，支持随机巡检间隔与随机主页间隔。', '关闭窗口后可留在系统托盘运行，再次启动时自动唤回已有窗口。', '最近预警增加主页头像。', '支持通过 GitHub Releases 检查并更新软件。']}], 'connector': ''}, {'version': '1.0.0', 'date': '2026-10-12', 'groups': [{'title': '首个版本', 'items': ['支持批量导入主页 ID，可直接粘贴谷歌表格内容并自动清洗。', '登录监控账号后，逐页采集粉丝数、主页名称与头像。', '首页展示当前粉丝与今日新增。', '支持粉丝增长桌面提醒。', '支持发帖时间监控与超时判断。', '提供专业 ID 管理：添加、编辑、批量设置、批量删除、导出清单。', '支持立即巡检与自动巡检。', '支持系统托盘、数据导出、数据目录迁移与数据库备份。', '支持检查新版本。']}], 'connector': ''}]
+CHANGELOG = [{'version': '1.7.3', 'date': '2026-11-12', 'groups': [{'title': '新增', 'items': ['左侧导航栏可以收起来，只留一列图标，点 ‹ 收起、点 › 展开。', '设置 → 外观里可以换导航栏样式：胶囊分组、清爽线条、深色导航三种。', '左侧导航栏新增「趋势」：上面是所有专业汇总趋势图，下面是每个专业的趋势图；点日期药丸可以选几号到几号。']}, {'title': '优化', 'items': ['启用自动巡检后，按钮变成深蓝色；点启用后等 5 秒再开始第一轮，5 秒内点取消就不立即巡检。', '窗口默认 1230×720，最小 1024×650；拉到 1200 以下侧栏自动收起，拖回自动展开；卡片按宽度排，最多 6 列；开发者模式最小 1080×560，开发者日志里可以输入尺寸测试、还原默认尺寸。', '通知、发帖超时、需处理、粉丝增长超标的数字，三个主题统一成正红色。', '更新完旧的安装包会自动清理，只留当前版本。', '浏览器连接窗口里，在线绿色、离线红色；状态和备注不再弹重复提示。', '关闭窗口改成新确认框，只有最小化到托盘和完全退出两个选项。', '左侧导航栏的「最近预警」板块删掉了。', '更新前会验证发布者的签名，签名不对就不会安装。']}, {'title': '修复', 'items': ['趋势日历下面三个快捷日期，现在只有点中的那一个有颜色；手动在日历上选日期后，三个都不亮了。', '头像不会再误抓成贴文里的图片。', '粉丝增长超标时，每录到一个就立刻放一次烟花。']}], 'connector': '浏览器连接器保持 1.4.7，已安装的无需重新安装。'}, {'version': '1.7.2', 'date': '2026-11-06', 'groups': [{'title': '新增', 'items': ['第一次打开会弹新手引导，带你走一遍装连接器、加主页、设自动巡检时间、跑巡检、看提醒；老用户也会弹一次，确认过就不再弹。', '自动巡检间隔设到 180 分钟以下时，设置里会出现提示，提醒你太短容易被 Facebook 临时限制。', '巡检跑起来之后，右键点「立即巡检」可以取消当前这一轮。']}, {'title': '优化', 'items': ['设置 → 巡检与提醒里的「巡检设置」改名「自动巡检设置」。']}, {'title': '修复', 'items': ['昨天超标、今天没超标的主页，不再一直留在「粉丝增长超标」里。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.1', 'date': '2026-11-06', 'groups': [{'title': '优化', 'items': ['主页小卡片改版：数值显示为「昨日新增 / 今日新增 / 距上次发帖」三列，当前粉丝单独一行（仅开启粉丝监控时显示）。', '昨日新增以红色、今日新增以绿色显示，无数据时为灰色；数值达 10000 以上以 W 为单位显示。', '点击「仅巡检本主页」后立即排入队列，无需等待上一轮结束；多个浏览器并行执行。', '发帖状态区分为「未见贴文」「读取不到」「待获取」三种。', '设置页重新整理：说明文字移至控件下方，「巡检与提醒」拆分为三节，粉丝增长提醒与发帖超时提醒可分别开关。', '精简设置项，移除「启动自动巡检」「静默收起到托盘」「备份数据库」。', '托盘右键菜单精简为「打开软件」「完全退出」。']}, {'title': '新增', 'items': ['筛选胶囊支持右键直接巡检该类主页。', '关闭窗口时可选择继续后台运行、等待本轮结束后退出或立即退出。']}, {'title': '修复', 'items': ['主页名称本轮未读取到时，不再判定为异常。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.0', 'date': '2026-11-04', 'groups': [{'title': '新增', 'items': ['浏览器连接器升级至 1.4.7（需手动更新），工具栏图标以角标显示离线 / 空闲 / 执行中状态。', '粉丝增长达标时播放烟花提示。', '自动复检：对仍无法确认的主页最多复检 5 遍，并优先更换浏览器重试。', '新增界面缩放（80%–130%）与消息提示位置设置。', '新增诊断日志窗口。']}, {'title': '优化', 'items': ['优化预警分类规则：粉丝增长超标、发帖超时、需处理三个维度独立统计。', '排序精简为三项，默认「增长预警优先」。', '卡片数值达 1000 以上以 k 为单位显示，悬停可查看精确值。', '设置页改为 5 个横向标签页。', '巡检间隔默认值调整为 240 分钟。', '通知历史支持清空已读记录。', '统一各类提示的显示样式。', '重写浏览器连接窗口，支持筛选、停用、删除与重新检测。', '并行巡检自动识别新上线的浏览器，不再限制数量。']}], 'connector': ''}, {'version': '1.6.2', 'date': '', 'groups': [{'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.1', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['Windows 版改用标准安装程序，提供简体中文安装向导，可自选安装路径。', '新增绿色便携版，解压即用，数据保存在软件文件夹内。']}, {'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.0', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['新增三套主题：云白（默认）、护眼绿、曜石黑。', '新增监控模块开关，首次运行时可选择启用的模块。', '支持静默升级：后台下载并校验新版本，空闲时自动安装并重启，可在「设置 → 更新」中关闭。', '提示气泡按类型区分图标：成功、警告、普通提示。', '主页卡片支持通过三点菜单删除。', '左侧栏新增预警头像行。', '接入 Windows 系统通知。']}, {'title': '优化', 'items': ['界面改为圆角风格，并新增左侧边栏。', '提示气泡按主题配色，宽度随内容自适应。', '主页不可用时直接给出判断。', 'ID 管理列表按专业名称排序。', '精简通知文案，不再显示 ID。']}, {'title': '修复', 'items': ['修复提示气泡偶尔被裁掉最后一个字的问题。']}], 'connector': '浏览器连接器保持 1.4.1，无需重新安装。'}, {'version': '1.5.0', 'date': '', 'groups': [{'title': '优化', 'items': ['软件名称统一为「专业监控工具」。', '「设置中心」更名为「设置」，移除「恢复默认巡检参数」「打开运行日志」「重置窗口布局」。', '专业 ID 管理入口统一为「FB专业ID管理」。', '更新提示改为「升级 / 以后再说」，下载并校验完成后再次确认安装。']}, {'title': '新增', 'items': ['设置新增「智能清理缓存」，扫描后经确认再清理，不影响 ID、通知、头像、设置、数据库及浏览器连接记录。']}], 'connector': ''}, {'version': '1.4.0', 'date': '2026-10-15', 'groups': [{'title': '新增', 'items': ['首页新增「昨日新增」指标。', '点击「查看通知」可直达通知界面并高亮对应预警。']}, {'title': '优化', 'items': ['通知界面默认仅显示未读及今日通知，较早的已读记录移至「历史记录」。', '预警弹窗头像与主页卡片保持一致。', '首页巡检参数布局更紧凑。', '数字输入框改为点击即选中、输入即保存。', '顶部图标按主题分层配色，有未读通知时显示红色。', '浏览器按钮增加状态灯：绿色可用、黄色部分连接、红色无连接。', '浏览器连接窗口简化；多个连接器可并行巡检，最多 10 个。', '浏览器连接器改为紧凑弹窗，可直接填写浏览器备注。']}], 'connector': ''}, {'version': '1.3.0', 'date': '2026-10-14', 'groups': [{'title': '新增', 'items': ['浏览器连接器改为同机自动发现、自动连接，无需手动输入配对码。', '检测到多个 Chrome 配置时可选择巡检所用浏览器，并记住上次选择。', '专业 ID 的粉丝监控与发帖监控可独立启用，支持批量管理。', '首页显示上次巡检时间，支持随机巡检间隔与随机主页间隔。', '关闭窗口后可留在系统托盘运行，再次启动时自动唤回已有窗口。', '最近预警增加主页头像。', '支持通过 GitHub Releases 检查并更新软件。']}], 'connector': ''}, {'version': '1.0.0', 'date': '2026-10-12', 'groups': [{'title': '首个版本', 'items': ['支持批量导入主页 ID，可直接粘贴谷歌表格内容并自动清洗。', '登录监控账号后，逐页采集粉丝数、主页名称与头像。', '首页展示当前粉丝与今日新增。', '支持粉丝增长桌面提醒。', '支持发帖时间监控与超时判断。', '提供专业 ID 管理：添加、编辑、批量设置、批量删除、导出清单。', '支持立即巡检与自动巡检。', '支持系统托盘、数据导出、数据目录迁移与数据库备份。', '支持检查新版本。']}], 'connector': ''}]
 DEFAULT_INTERVAL_MINUTES = 240
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -450,7 +451,7 @@ def build_toast_payload(entries):
     if remaining > 0:
         message = (message + " · 另有 %d 条预警" % remaining).strip()
     image, source = prepare_toast_avatar(pid, str(first.get("avatar_path") or ""))
-    return {"title": title, "message": message, "image_path": image,
+    return {"title": _xml_escape(title), "message": _xml_escape(message), "image_path": image,
             "image_source": source, "page_id": pid, "count": len(entries)}
 
 _SYSTEM_TOASTERS = []
@@ -1936,6 +1937,10 @@ class Store:
                     yesterday_date TEXT NOT NULL DEFAULT '',yesterday_delta INTEGER,
                     yesterday_partial INTEGER NOT NULL DEFAULT 1,yesterday_approx INTEGER NOT NULL DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS daily_followers (
+                    page_id TEXT NOT NULL,day TEXT NOT NULL,followers INTEGER NOT NULL,
+                    approx INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(page_id, day)
+                );
             """)
             previous=self._columns(c,"pages")
             columns={"custom_name":"TEXT NOT NULL DEFAULT ''","approx":"INTEGER NOT NULL DEFAULT 0",
@@ -1964,6 +1969,7 @@ class Store:
                 for order,row in enumerate(c.execute("SELECT page_id FROM pages ORDER BY created_at,page_id").fetchall(),1):
                     c.execute("UPDATE pages SET sort_order=? WHERE page_id=?",(order,row["page_id"]))
             self._migrate_snapshot_storage(c)
+            self._backfill_daily_followers(c)
             for row in c.execute("SELECT page_id,page_name,custom_name FROM pages").fetchall():
                 if not normalize_name(row["page_name"],row["page_id"]):
                     c.execute("UPDATE pages SET page_name='' WHERE page_id=?",(row["page_id"],))
@@ -2545,7 +2551,92 @@ class Store:
             c.execute("""UPDATE pages SET last_followers=?,previous_followers=?,last_collected_at=?,approx=?,
                 page_name=CASE WHEN ?<>'' THEN ? ELSE page_name END,status='正常',updated_at=? WHERE page_id=?""",
                 (count,prior["count"] if prior else None,stamp,approx,name,name,now_iso(),pid))
+            c.execute("INSERT OR REPLACE INTO daily_followers(page_id,day,followers,approx) VALUES(?,?,?,?)",
+                      (pid,day,count,approx))
         return prior
+
+    def _backfill_daily_followers(self, c):
+        """Seed yesterday + today from follower_state so the default view has 2 points.
+        Also reconstruct the day before yesterday (baseline - yesterday_delta)
+        when yesterday was fully recorded, so growth is computable for both
+        days in the default view. The reconstructed row is marked approx=1:
+        it is derived, not directly observed."""
+        today = datetime.now().astimezone().date()
+        yesterday = today - timedelta(days=1)
+        day_before = yesterday - timedelta(days=1)
+        for row in c.execute("SELECT * FROM follower_state").fetchall():
+            pid = str(row["page_id"])
+            if str(row["baseline_date"] or "") == today.isoformat():
+                c.execute("INSERT OR IGNORE INTO daily_followers(page_id,day,followers,approx) VALUES(?,?,?,?)",
+                          (pid, yesterday.isoformat(), int(row["baseline_count"]), int(row["baseline_approx"] or 0)))
+                c.execute("INSERT OR IGNORE INTO daily_followers(page_id,day,followers,approx) VALUES(?,?,?,?)",
+                          (pid, today.isoformat(), int(row["latest_count"]), int(row["latest_approx"] or 0)))
+                y_delta = row["yesterday_delta"]
+                if y_delta is not None and not int(row["yesterday_partial"] or 0):
+                    before = int(row["baseline_count"]) - int(y_delta)
+                    if before >= 0:
+                        c.execute("INSERT OR IGNORE INTO daily_followers(page_id,day,followers,approx) VALUES(?,?,?,?)",
+                                  (pid, day_before.isoformat(), before, 1))
+
+    def daily_series(self, pid, start_day, end_day):
+        """One page daily followers in [start_day, end_day]; only days with data."""
+        with self.lock, self._connect() as c:
+            rows = c.execute(
+                "SELECT day,followers FROM daily_followers WHERE page_id=? AND day>=? AND day<=? ORDER BY day",
+                (str(pid), str(start_day), str(end_day))).fetchall()
+        return [(str(r["day"]), int(r["followers"])) for r in rows]
+
+    def daily_total_series(self, start_day, end_day):
+        """All pages summed daily followers; a day counts if any page has data."""
+        with self.lock, self._connect() as c:
+            rows = c.execute(
+                "SELECT day,SUM(followers) AS total FROM daily_followers WHERE day>=? AND day<=? GROUP BY day ORDER BY day",
+                (str(start_day), str(end_day))).fetchall()
+        return [(str(r["day"]), int(r["total"])) for r in rows]
+
+    def daily_growth_series(self, pid, start_day, end_day):
+        """Daily follower growth for one page in [start_day, end_day].
+        Growth on day D = followers(D) - followers(D-1); a day is skipped
+        when either day has no recorded number."""
+        start = start_day - timedelta(days=1)
+        rows = dict(self.daily_series(pid, start, end_day))
+        out = {}
+        d = start_day
+        while d <= end_day:
+            prev = rows.get((d - timedelta(days=1)).isoformat())
+            cur = rows.get(d.isoformat())
+            if prev is not None and cur is not None:
+                out[d.isoformat()] = int(cur) - int(prev)
+            d += timedelta(days=1)
+        return out
+
+    def daily_total_growth_series(self, start_day, end_day):
+        """All pages summed daily growth in [start_day, end_day].
+        A page counts toward a day only when it has numbers for that day
+        and the day before, so a missing day never inflates the total."""
+        start = start_day - timedelta(days=1)
+        with self.lock, self._connect() as c:
+            rows = c.execute(
+                "SELECT page_id,day,followers FROM daily_followers WHERE day>=? AND day<=? ORDER BY day",
+                (str(start), str(end_day))).fetchall()
+        by_page = {}
+        for r in rows:
+            by_page.setdefault(str(r["page_id"]), {})[str(r["day"])] = int(r["followers"])
+        out = {}
+        d = start_day
+        while d <= end_day:
+            prev_key = (d - timedelta(days=1)).isoformat()
+            cur_key = d.isoformat()
+            total = 0
+            any_page = False
+            for series in by_page.values():
+                if prev_key in series and cur_key in series:
+                    total += series[cur_key] - series[prev_key]
+                    any_page = True
+            if any_page:
+                out[cur_key] = total
+            d += timedelta(days=1)
+        return out
 
 
 # ========== Browser collector (self-contained) ==========
@@ -2626,6 +2717,40 @@ def log_exception(text):
         with log_path.open("a",encoding="utf-8") as f:
             f.write("\n"+now_iso()+"\n"+str(text)+"\n")
     except OSError:pass
+
+
+def _bigger_avatar_url(url):
+    """Ask Facebook's CDN for a bigger avatar: rewrite a /p168x168/ or
+    /s160x160/ path segment to /p480x480/; otherwise bump width=/height=
+    query params to 480. No size marker -> return the URL unchanged."""
+    u = str(url or "")
+    if not u:
+        return u
+    bigger = re.sub(r"/[ps]\d+x\d+/", "/p480x480/", u, count=1)
+    if bigger != u:
+        return bigger
+    if "width=" in u or "height=" in u:
+        bigger = re.sub(r"([?&](?:width|height)=)\d+", r"\g<1>480", u)
+        if bigger != u:
+            return bigger
+    return u
+
+
+_AVATAR_ALT_RE = re.compile(r"profile picture|profile photo|avatar|picture of|page picture|page profile|头像|大头贴|大頭貼|头像照片|照片墙|主页照片", re.IGNORECASE)
+
+
+def _avatar_url_key(url):
+    """Normalize a Facebook image URL to the photo it identifies: drop the
+    scheme/host, query string and the size segment, so the same photo at
+    different sizes compares equal (used to match candidates to og:image)."""
+    u = str(url or "").strip()
+    if u.startswith("//"):
+        u = "https:" + u
+    try:
+        path = urlsplit(u).path
+    except ValueError:
+        path = u.split("?", 1)[0]
+    return re.sub(r"/[ps]\d+x\d+/", "/", path)
 
 
 class BrowserCollector:
@@ -2779,7 +2904,7 @@ class BrowserCollector:
             const ancestor=el.closest('a[href]');
             if(ancestor&&/\/profile\.php|\/pages\/|facebook\.com\//i.test(ancestor.href||''))score+=15;
             if(el.closest('nav,[role=navigation],[role=banner],[data-pagelet=RightRail]'))score-=120;
-            if(el.closest('article'))score-=85;
+            if(el.closest('article')||el.closest('[role="article"]'))score-=85;
             if(r.width<48||r.height<48)score-=55;
             if(src.startsWith('data:image/'))score+=5;
             if(score>=25)hits.push({url:src,selector:sel,index:i,score,alt,width:r.width,height:r.height});
@@ -2802,16 +2927,29 @@ class BrowserCollector:
                     for item in page.locator(sel).all()[:3]:
                         url=item.get_attribute('src',timeout=800)
                         if url:
-                            candidates.append({"url":url,"selector":"","index":-1,"score":70})
+                            candidates.append({"url":url,"selector":"","index":-1,"score":70,"avatar_signal":True})
                 except Exception:
                     pass
+        og_urls=[]
         for selector in ("meta[property='og:image']","meta[name='twitter:image']"):
             try:
                 url=page.locator(selector).first.get_attribute('content',timeout=1100)
                 if url:
+                    og_urls.append(url)
                     candidates.append({"url":url,"selector":"","index":-1,"score":0})
             except Exception:
                 continue
+        # Cross-check against og:image (the page's own avatar): a visible
+        # candidate showing the same photo wins over post images, even if a
+        # post image scored higher; it also counts as an avatar signal.
+        og_keys={_avatar_url_key(u) for u in og_urls}
+        for candidate in candidates:
+            _key=_avatar_url_key(candidate.get("url") or "")
+            if _key and _key in og_keys:
+                candidate["og_match"]=True
+                candidate["score"]=float(candidate.get("score") or 0)+120
+            if candidate.get("og_match") or _AVATAR_ALT_RE.search(str(candidate.get("alt") or "")):
+                candidate["avatar_signal"]=True
         # Do not mistake the site's top-nav or large cover for the page avatar.
         candidates.sort(key=lambda item:float(item.get('score') or 0),reverse=True)
         seen=set();dedup=[]
@@ -2838,7 +2976,10 @@ class BrowserCollector:
             ratio=max(im.width,im.height)/min(im.width,im.height)
             if ratio>1.55:
                 raise ValueError('图片更像横幅或封面，不作为头像保存')
-            avatar=ImageOps.fit(im.convert('RGB'),(192,192),method=Image.Resampling.LANCZOS)
+            # Keep the downloaded size (up to 480): a 640px original stays
+            # sharp at 480, a 168px original is stored as-is, never upscaled.
+            side=min(480,max(im.width,im.height))
+            avatar=ImageOps.fit(im.convert('RGB'),(side,side),method=Image.Resampling.LANCZOS)
         ensure_private_directory(AVATAR_DIR)
         target=AVATAR_DIR / f'{pid}.png'
         output=io.BytesIO()
@@ -2850,7 +2991,18 @@ class BrowserCollector:
         old=Path(previous) if previous else None
         old_valid=bool(old and old.is_file() and old.stat().st_size>200)
         if old_valid and not force and time.time()-old.stat().st_mtime<5*86400:
-            return str(old)
+            # Legacy 192x192 caches were upscaled from small thumbnails:
+            # treat them as expired once so they get re-downloaded bigger.
+            # A failed re-download still falls back to the old file below.
+            _legacy=False
+            try:
+                from PIL import Image as _PilImage
+                with _PilImage.open(old) as _im:
+                    _legacy=(_im.width==192 and _im.height==192)
+            except Exception:
+                _legacy=False
+            if not _legacy:
+                return str(old)
         try:
             from PIL import Image
         except ImportError:
@@ -2860,19 +3012,30 @@ class BrowserCollector:
             remaining=deadline-time.monotonic()
             if remaining<0.25:
                 break
+            if old_valid and not candidate.get("avatar_signal"):
+                # No avatar signal (no avatar alt text, no og:image match):
+                # keep the good old avatar instead of letting a post image
+                # replace it. Without an old avatar, any candidate is tried.
+                continue
             url=str(candidate.get('url') or '').strip()
             if url and url.startswith('//'):
                 url='https:'+url
             if url and self._is_facebook_image_url(url) and not any(x in url.lower() for x in ('emoji.php','static.xx.fbcdn.net/rsrc.php')):
-                try:
-                    resp=self.context.request.get(url,timeout=min(3800,max(350,int(remaining*1000))))
-                    if resp.ok and (resp.headers.get('content-type') or '').lower().startswith('image/'):
-                        try:
-                            return self._save_avatar_bytes(pid,resp.body())
-                        except (OSError,ValueError):
-                            pass
-                except Exception:
-                    pass
+                _tries=[_bigger_avatar_url(url)]
+                if _tries[0]!=url:
+                    _tries.append(url)
+                for _try_url in _tries:
+                    if not self._is_facebook_image_url(_try_url):
+                        continue
+                    try:
+                        resp=self.context.request.get(_try_url,timeout=min(3800,max(350,int(remaining*1000))))
+                        if resp.ok and (resp.headers.get('content-type') or '').lower().startswith('image/'):
+                            try:
+                                return self._save_avatar_bytes(pid,resp.body())
+                            except (OSError,ValueError):
+                                pass
+                    except Exception:
+                        pass
             # A browser-rendered image can be visible even if its signed URL
             # cannot be downloaded via the network request context. Screenshot
             # that *element*, not the whole page or cover image.
@@ -3081,6 +3244,13 @@ REPOSITORY_URL = "https://github.com/" + REPOSITORY
 RELEASES_API = "https://api.github.com/repos/" + REPOSITORY + "/releases/latest"
 # Fill these when building signed installation packages. Never take publisher pins from remote JSON.
 UPDATE_WINDOWS_PUBLISHER_THUMBPRINT = ""
+# Update-manifest Ed25519 public key (base64 of the raw 32-byte public key,
+# from ReleaseSigner; fingerprint 7012-CFB2-DCEC-4DC7). The public key may
+# be public; the private key must never be put in code or committed.
+UPDATE_MANIFEST_PUBKEY_B64 = "Bb3XUBVn7Qkbbrjzq7gWmnJiJI85UA2VaiSuekSIeqI="
+UPDATE_MANIFEST_NAME = "update-manifest.json"
+UPDATE_MANIFEST_SIG_NAME = "update-manifest.json.sig"
+UPDATE_MANIFEST_FAIL = "更新清单签名验证失败，已停止更新"
 # 1.5.2 is a Windows-only release. The macOS Team ID is intentionally left
 # empty, so macOS auto-install stays unavailable (see signed_install_available).
 UPDATE_MACOS_TEAM_ID = ""
@@ -3136,6 +3306,56 @@ def load_update_json(url,open_fn=None):
     if not isinstance(value,dict):raise UpdateError("更新信息格式不正确")
     return value
 
+
+def _manifest_public_key():
+    """Ed25519 public key built into the program, or None.
+
+    Only the public half is needed; verification needs nothing secret.
+    cryptography is imported lazily so the program still starts when it
+    is missing (update checks then fail closed, see below).
+    """
+    try:
+        raw = base64.b64decode(UPDATE_MANIFEST_PUBKEY_B64.strip(), validate=True)
+    except Exception:
+        return None
+    if len(raw) != 32:
+        return None
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        return Ed25519PublicKey.from_public_bytes(raw)
+    except Exception:
+        return None
+
+
+def _verify_manifest_bytes(manifest_bytes, sig_bytes):
+    """Verify raw manifest bytes against the signature.
+
+    Runs on the downloaded bytes BEFORE any JSON parsing, never on
+    re-serialized content. Any failure (no key, bad signature, bad
+    input) means rejection, never a fallback to the GitHub digest.
+    """
+    pub = _manifest_public_key()
+    if pub is None:
+        return False
+    try:
+        from cryptography.exceptions import InvalidSignature
+        pub.verify(bytes(sig_bytes), bytes(manifest_bytes))
+        return True
+    except InvalidSignature:
+        return False
+    except Exception:
+        return False
+
+
+def _load_update_bytes(url, open_fn=None, limit=MAX_UPDATE_JSON_BYTES):
+    """Raw bytes from a trusted update URL, with a size cap."""
+    with (open_fn or open_update_url)(url) as response:
+        raw = response.read(limit + 1)
+    if len(raw) > limit:
+        raise UpdateError("更新清单过大，已停止")
+    return raw
+
+
 def _asset_digest(asset,manifest_item=None):
     digest=str(asset.get("digest") or "")
     api_hash=digest[7:].lower() if digest.startswith("sha256:") else ""
@@ -3174,6 +3394,10 @@ def select_release_asset(release,manifest=None,system=None,machine=None,frozen=N
             manifest_item=manifest[name]
         elif manifest.get("sha256"):
             manifest_item=manifest
+    if not manifest_item or not str(manifest_item.get("sha256") or ""):
+        # No sha256 for this package in the verified manifest: reject the
+        # update instead of falling back to the GitHub digest.
+        raise UpdateError(UPDATE_MANIFEST_FAIL)
     sha=_asset_digest(asset,manifest_item)
     return {"name":name,"url":url,"size":size,"sha256":sha,"installer":"platform-bundle","platform":key,
             "version":version,"source_mode":not frozen}
@@ -3233,12 +3457,41 @@ def query_latest_release(open_fn=None,system=None,machine=None,frozen=None):
     if release.get("draft") or release.get("prerelease"):return {"status":"unavailable","message":"没有正式发布的稳定版本"}
     tag=str(release.get("tag_name") or "")
     if release_version(tag)<=release_version(APP_VERSION):return {"status":"current","version":tag}
-    manifest=None
+    # A signed manifest is mandatory once the program carries a public
+    # key: download the manifest AND its signature, verify the raw bytes
+    # first, and only then parse. Missing .sig, bad signature, missing
+    # manifest, or a version that does not match the Release tag all reject
+    # the update; there is no fallback to the GitHub digest.
+    assets_by_name={}
     for asset in release.get("assets",[]):
-        if isinstance(asset,dict) and asset.get("name")=="update-manifest.json":
-            url=str(asset.get("browser_download_url") or "")
-            if not _trusted_update_url(url,asset=True):raise UpdateError("更新清单地址无效")
-            manifest=load_update_json(url,open_fn);break
+        if isinstance(asset,dict) and isinstance(asset.get("name"),str):
+            assets_by_name[asset["name"]]=asset
+    manifest_asset=assets_by_name.get(UPDATE_MANIFEST_NAME)
+    sig_asset=assets_by_name.get(UPDATE_MANIFEST_SIG_NAME)
+    if not manifest_asset or not sig_asset:
+        raise UpdateError(UPDATE_MANIFEST_FAIL)
+    manifest_url=str(manifest_asset.get("browser_download_url") or "")
+    sig_url=str(sig_asset.get("browser_download_url") or "")
+    if not _trusted_update_url(manifest_url,asset=True) or not _trusted_update_url(sig_url,asset=True):
+        raise UpdateError(UPDATE_MANIFEST_FAIL)
+    try:
+        manifest_bytes=_load_update_bytes(manifest_url,open_fn)
+        sig_raw=_load_update_bytes(sig_url,open_fn,limit=4096)
+        sig_bytes=base64.b64decode(sig_raw.strip(),validate=True)
+    except UpdateError:
+        raise
+    except Exception:
+        raise UpdateError(UPDATE_MANIFEST_FAIL) from None
+    if not _verify_manifest_bytes(manifest_bytes,sig_bytes):
+        raise UpdateError(UPDATE_MANIFEST_FAIL)
+    try:
+        manifest=json.loads(manifest_bytes.decode("utf-8-sig"))
+    except (UnicodeError,ValueError):
+        raise UpdateError(UPDATE_MANIFEST_FAIL) from None
+    if not isinstance(manifest,dict) or manifest.get("schema")!=1 or not isinstance(manifest.get("assets"),dict):
+        raise UpdateError(UPDATE_MANIFEST_FAIL)
+    if str(manifest.get("version") or "")!=str(tag).lstrip("vV"):
+        raise UpdateError(UPDATE_MANIFEST_FAIL)
     plan=select_release_asset(release,manifest,system,machine,frozen)
     return {"status":"new","version":tag.lstrip("vV"),"title":str(release.get("name") or tag)[:200],
             "notes":str(release.get("body") or "本版本未填写更新日志。")[:50000],
@@ -3287,6 +3540,53 @@ def download_release_asset(plan,folder,progress=None,cancel=None,open_fn=None):
     finally:
         try:part.unlink(missing_ok=True)
         except OSError:pass
+
+def cleanup_old_updates(updates_dir,keep_versions,keep_paths=()):
+    """Remove update files from older versions; keep only the given ones.
+
+    keep_versions: version strings to keep (current version, plus a failed
+    install's version so it can be retried). keep_paths: exact file paths
+    to keep (a pending update's downloaded file). Only files whose name
+    carries a version number are touched, and only version folders under
+    updates/extracted/; helper/, pending.json and anything unrecognised
+    are left alone. Returns (removed_files, removed_dirs, freed_bytes).
+    Never raises: a failed delete is skipped and the rest still runs.
+    """
+    keep_versions={str(v) for v in keep_versions if v}
+    keep_paths={str(Path(p).resolve()) for p in keep_paths if p}
+    removed_files=[];removed_dirs=[];freed=0
+    try:
+        base=Path(updates_dir)
+        if not base.is_dir():return ([],[],0)
+        _ver_re=re.compile(r"(\d+\.\d+\.\d+(?:\.\d+)?)")
+        for entry in list(base.iterdir()):
+            try:
+                if entry.is_symlink() or not entry.is_file():continue
+                if entry.suffix.lower() not in (".zip",".exe",".msi",".pkg",".dmg"):continue
+                m=_ver_re.search(entry.name)
+                if not m:continue
+                if m.group(1) in keep_versions:continue
+                if str(entry.resolve()) in keep_paths:continue
+                size=entry.stat().st_size
+                entry.unlink()
+                removed_files.append(entry.name);freed+=size
+            except OSError:
+                continue
+        extracted=base/"extracted"
+        if extracted.is_dir() and not extracted.is_symlink():
+            for sub in list(extracted.iterdir()):
+                try:
+                    if sub.is_symlink() or not sub.is_dir():continue
+                    if not _ver_re.fullmatch(sub.name):continue
+                    if sub.name in keep_versions:continue
+                    size=sum(p.stat().st_size for p in sub.rglob("*") if p.is_file())
+                    shutil.rmtree(sub)
+                    removed_dirs.append(sub.name);freed+=size
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return (removed_files,removed_dirs,freed)
 
 def save_json_atomic(path,value):
     payload=json.dumps(value,ensure_ascii=False,indent=2).encode("utf-8")
@@ -3547,7 +3847,7 @@ def start_background_uninstall(script_text):
     if os.name != "nt":
         raise RuntimeError("卸载仅支持 Windows 安装版。")
     import tempfile
-    path = Path(tempfile.gettempdir()) / ("pmt-uninstall-%d.ps1" % os.getpid())
+    path = Path(tempfile.gettempdir()) / ("pmt-uninstall-%s.ps1" % secrets.token_hex(8))
     path.write_text(script_text, encoding="utf-8-sig")
     powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
@@ -5710,15 +6010,15 @@ except ModuleNotFoundError as exc:
     raise SystemExit(1) from exc
 
 from PyQt6.QtCore import (
-    QObject, QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, QSettings, QRunnable, QThread, QThreadPool, QTimer, QUrl,
+    QObject, QDate, QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, QSettings, QRunnable, QThread, QThreadPool, QTimer, QUrl,
     pyqtSignal,
 )
 from PyQt6.QtGui import (
     QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QImage, QLinearGradient, QPainter, QPalette,
-    QPainterPath, QPen, QPixmap, QRegion,
+    QPainterPath, QPen, QPixmap, QPolygonF, QRegion,
 )
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QLayout, QLayoutItem,
+    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDateEdit, QDialog, QLayout, QLayoutItem,
     QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
     QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QSizeGrip, QSpinBox, QGraphicsDropShadowEffect,
@@ -5867,6 +6167,14 @@ def ui_icon(kind,color=None):
         p.drawEllipse(QRectF(11,11,42,42));line(32,30,32,44);line(31,22,33,22)
     elif kind=="clock":
         p.drawEllipse(QRectF(11,11,42,42));line(32,21,32,33);line(32,33,41,38)
+    elif kind=="tray":
+        # inbox/tray: open box with a lid line and a handle notch.
+        path=QPainterPath();path.moveTo(12,16);path.lineTo(12,46);path.lineTo(52,46);path.lineTo(52,16);p.drawPath(path)
+        line(12,26,52,26)
+        path=QPainterPath();path.moveTo(25,26);path.lineTo(29,34);path.lineTo(35,34);path.lineTo(39,26);p.drawPath(path)
+    elif kind=="power":
+        # power: circle open at the top + a vertical line through the gap.
+        p.drawArc(QRectF(14,18,36,36),45*16,270*16);line(32,8,32,26)
     elif kind=="people":
         p.drawEllipse(QRectF(16,13,15,15));p.drawEllipse(QRectF(37,17,11,11))
         p.drawArc(QRectF(11,33,26,24),0,180*16);p.drawArc(QRectF(35,35,19,18),0,180*16)
@@ -6890,7 +7198,6 @@ class BrowserConnectionsDialog(QDialog):
             # Transparent background keeps the alternating row colour.
             name_label = QLabel(str(name))
             name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            name_label.setToolTip(html.escape(str(name)))
             name_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             self.table.setCellWidget(i, 1, name_label)
             outdated = connector_needs_update(identity or {})
@@ -6921,7 +7228,11 @@ class BrowserConnectionsDialog(QDialog):
             self._action_widgets[cid] = holder
             status = '已停用' if row.get('blocked') else ('在线' if row['online'] else '离线')
             scell = QTableWidgetItem(status); scell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            scell.setToolTip(html.escape(status)); self.table.setItem(i, 4, scell)
+            if status == '在线':
+                scell.setForeground(QColor(THEME_PRESETS.get(getattr(self.owner, "theme_name", "云白"), THEME_PRESETS["云白"])["green"]))
+            elif status == '离线':
+                scell.setForeground(QColor("#EA580C"))
+            self.table.setItem(i, 4, scell)
             self.table.setRowHeight(i, 34)
         self.table.blockSignals(False); self._loading = False
         if self.bridge.error:
@@ -7202,6 +7513,25 @@ CARD_LAYOUTS = (
 )
 CARD_LAYOUT_KEYS = frozenset(k for k, _, _ in CARD_LAYOUTS)
 
+# Sidebar (navigation bar) looks, chosen in 设置 → 外观. First entry is the default.
+NAV_STYLES = (
+    ("capsule", "胶囊分组", "入口分组放进圆角卡片，选中项是实心主色胶囊。"),
+    ("line", "清爽线条", "细字重、浅色底加主色文字，最安静，信息最密。"),
+    ("dark", "深色导航", "导航栏始终是深色，和浅色内容区对比最强。"),
+)
+NAV_STYLE_KEYS = frozenset(k for k, _, _ in NAV_STYLES)
+NAV_DEFAULT_STYLE = "capsule"
+# Colours for the "dark" sidebar, one set per theme (solid hex: no alpha needed).
+NAV_DARK_PALETTES = {
+    "云白": dict(bg="#0F1C3F", border="#24335C", text="#E8ECF8", muted="#A3AECB", accent="#8FB1FF", hover="#1B2A52", active="#27386A", glass="#16254B"),
+    "护眼绿": dict(bg="#0E2A1D", border="#1F4A35", text="#E6F4EB", muted="#9DB8A8", accent="#6EE7A0", hover="#17392A", active="#1F4A35", glass="#13301F"),
+    "曜石黑": dict(bg="#0B0C0F", border="#23242A", text="#ECECEC", muted="#9AA0A6", accent="#7AA2F7", hover="#1A1B20", active="#1E2A44", glass="#131418"),
+}
+
+
+def nav_dark_palette(theme_name):
+    return NAV_DARK_PALETTES.get(theme_name, NAV_DARK_PALETTES["云白"])
+
 
 def paint_progress_button(p, rect, style, frac, current, total, paused, font):
     """Paint the face of a patrol-progress button: icon + text + progress.
@@ -7331,6 +7661,70 @@ class CardLayoutPreview(QWidget):
         p.end()
 
 
+class NavStylePreview(QWidget):
+    """Wireframe miniature of one sidebar look (for the settings picker)."""
+    def __init__(self, style_key, theme_name="云白", parent=None):
+        super().__init__(parent)
+        self._key = style_key
+        self._theme = theme_name
+        self.setFixedHeight(118)
+    def set_theme(self, theme_name):
+        self._theme = theme_name
+        self.update()
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        W, H = self.width(), self.height()
+        def _bar(x, y, w, h, color, alpha=255, r=2):
+            c = QColor(color); c.setAlpha(alpha)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(c)
+            p.drawRoundedRect(QRectF(x, y, w, h), r, r)
+        # window + content area
+        p.setPen(QPen(QColor(BORDER), 1)); p.setBrush(QColor(BG))
+        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 8, 8)
+        sw = 58  # sidebar width in the miniature
+        for _i in range(3):
+            _bar(sw + 14, 12 + _i * 32, W - sw - 26, 24, PANEL_2, 255, 5)
+            _bar(sw + 20, 18 + _i * 32, 26, 4, MUTED, 160)
+            _bar(sw + 20, 26 + _i * 32, 38, 6, TEXT, 200)
+        if self._key == "dark":
+            d = nav_dark_palette(self._theme)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(d["bg"]))
+            p.drawRoundedRect(QRectF(5, 5, sw, H - 10), 6, 6)
+            _bar(11, 11, 14, 14, d["accent"], 255, 4)
+            _bar(29, 14, 24, 5, d["text"], 220)
+            _bar(10, 34, sw - 10, 15, d["active"], 255, 4)
+            _bar(15, 39, 22, 5, d["text"], 240)
+            _bar(15, 56, 26, 5, d["muted"], 200)
+            _bar(15, 70, 22, 5, d["muted"], 200)
+            _bar(10, H - 30, sw - 10, 18, d["glass"], 255, 5)
+        elif self._key == "line":
+            p.setPen(QPen(QColor(BORDER), 1)); p.setBrush(QColor(PANEL))
+            p.drawRoundedRect(QRectF(5, 5, sw, H - 10), 6, 6)
+            _bar(11, 11, 14, 14, ACCENT, 255, 4)
+            _bar(29, 14, 24, 5, TEXT, 200)
+            _bar(10, 34, sw - 10, 15, ACCENT, 40, 4)
+            _bar(10, 36, 2, 11, ACCENT, 255, 1)
+            _bar(15, 39, 22, 5, ACCENT, 255)
+            _bar(15, 56, 26, 5, MUTED, 170)
+            _bar(15, 70, 22, 5, MUTED, 170)
+            _bar(10, H - 28, sw - 10, 14, MUTED, 60, 4)
+        else:  # capsule
+            p.setPen(QPen(QColor(BORDER), 1)); p.setBrush(QColor(BG))
+            p.drawRoundedRect(QRectF(5, 5, sw, H - 10), 6, 6)
+            _bar(11, 11, 14, 14, ACCENT, 255, 4)
+            _bar(29, 14, 24, 5, TEXT, 200)
+            p.setPen(QPen(QColor(BORDER), 1)); p.setBrush(QColor(PANEL))
+            p.drawRoundedRect(QRectF(9, 31, sw - 8, 40), 7, 7)
+            p.drawRoundedRect(QRectF(9, 76, sw - 8, 16), 7, 7)
+            _bar(12, 34, sw - 14, 11, ACCENT, 255, 5)
+            _bar(17, 37, 20, 5, "#FFFFFF", 255)
+            _bar(17, 52, 24, 5, MUTED, 170)
+            _bar(17, 61, 18, 5, MUTED, 170)
+            _bar(17, 82, 20, 5, MUTED, 170)
+        p.end()
+
+
 class OnceProgressOverlay(QWidget):
     """Transparent face over the patrol button while a patrol runs: icon +
     text + progress in the chosen style. Mouse-transparent, so the button
@@ -7353,7 +7747,6 @@ class OnceProgressOverlay(QWidget):
 class BrandMark(QWidget):
     def __init__(self,size=40,parent=None):
         super().__init__(parent);self.setFixedSize(size,size)
-        self.setToolTip("原创监控图形标志")
     def paintEvent(self,event):
         p=QPainter(self);paint_brand(p,QRectF(1,1,self.width()-2,self.height()-2));p.end()
 
@@ -7408,7 +7801,6 @@ def resolve_avatar_path(page_id="", preferred=""):
 
 
 _AVATAR_SOURCE_CACHE = {}
-_RAIL_PIXMAP_CACHE = {}
 
 
 def _avatar_source_pixmap(path):
@@ -7480,7 +7872,7 @@ class AvatarWidget(QWidget):
         if self.image.isNull():
             self.setToolTip("头像与 ID管理共用同一缓存；正常巡检时自动更新。")
         else:
-            self.setToolTip("已缓存的真实主页头像")
+            self.setToolTip("")
         _AVATAR_LOAD_SIGNALS.loaded.connect(self._on_avatar_loaded)
 
     def set_image(self, name, path):
@@ -7495,7 +7887,7 @@ class AvatarWidget(QWidget):
         if _cached is not None:
             self.image = _cached
             self._scaled_cache = None
-            self.setToolTip("已缓存的真实主页头像")
+            self.setToolTip("")
             self.update()
             return
         self.image = QPixmap()
@@ -7522,7 +7914,7 @@ class AvatarWidget(QWidget):
             pass
         self.image = _pm
         self._scaled_cache = None
-        self.setToolTip("已缓存的真实主页头像")
+        self.setToolTip("")
         self.update()
 
     def paintEvent(self, event):
@@ -7640,51 +8032,6 @@ class ChipRow(QWidget):
         policy=self.sizePolicy();policy.setHeightForWidth(True);self.setSizePolicy(policy)
     def heightForWidth(self,width):return self.layout().heightForWidth(width)
     def sizeHint(self):return self.layout().sizeHint()
-
-
-class RailAvatarButton(QPushButton):
-    """One avatar in the sidebar alert rail. Click copies the page ID."""
-    def __init__(self,name,avatar_path,page_id,size,ring_color,on_copy):
-        super().__init__();self.page_id=str(page_id);self._on_copy=on_copy
-        self.setFixedSize(size,size);self.setFlat(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        # No hover tooltip: clicking copies the ID and shows the "已复制 ID"
-        # hint; a hover popup would only repeat what the click already says.
-        self.setIcon(QIcon(self._pixmap(name,avatar_path,size,ring_color)));self.setIconSize(QSize(size,size))
-        self.clicked.connect(self._copy)
-    @staticmethod
-    def _pixmap(name,path,size,ring):
-        try:
-            _st = Path(str(path)).stat() if path else None
-            _key = (str(path or ""), size, ring, (str(name or "P")[:1]).upper(),
-                    int(_st.st_mtime_ns) if _st else 0, int(_st.st_size) if _st else 0)
-        except OSError:
-            _key = None
-        if _key is not None and _key in _RAIL_PIXMAP_CACHE:
-            return _RAIL_PIXMAP_CACHE[_key]
-        pm=QPixmap(size,size);pm.fill(Qt.GlobalColor.transparent)
-        painter=QPainter(pm);painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        clip=QPainterPath();clip.addEllipse(1.5,1.5,size-3,size-3);painter.setClipPath(clip)
-        img=_avatar_source_pixmap(str(path)) if path else QPixmap()
-        if not img.isNull():
-            scaled=img.scaled(size,size,Qt.AspectRatioMode.KeepAspectRatioByExpanding,Qt.TransformationMode.SmoothTransformation)
-            sx=(scaled.width()-size)//2;sy=(scaled.height()-size)//2
-            painter.drawPixmap(0,0,scaled,sx,sy,size,size)
-        else:
-            painter.fillRect(pm.rect(),QColor(ACCENT));painter.setPen(QColor("white"))
-            painter.setFont(QFont("Microsoft YaHei UI",max(11,size//3),QFont.Weight.DemiBold))
-            painter.drawText(pm.rect(),Qt.AlignmentFlag.AlignCenter,(str(name or "P")[:1]).upper())
-        painter.setClipping(False);painter.setPen(QPen(QColor(ring),2.5));painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(QRectF(1.5,1.5,size-3,size-3));painter.end()
-        if _key is not None:
-            if len(_RAIL_PIXMAP_CACHE) > 512:
-                _RAIL_PIXMAP_CACHE.clear()
-            _RAIL_PIXMAP_CACHE[_key] = pm
-        return pm
-    def _copy(self):
-        QApplication.clipboard().setText(self.page_id)
-        show_hint(self,"已复制 ID",kind="success")
-        if self._on_copy:self._on_copy(self.page_id)
 
 
 class MetricCard(QFrame):
@@ -7842,10 +8189,10 @@ class PageCard(QFrame):
         super().__init__();self.row=dict(row);self.setObjectName("PageCard")
         self._layout_key=layout_key if layout_key in CARD_LAYOUT_KEYS else 'oneline'
 
-        self.setMinimumWidth(0);self.setFixedHeight(228)
+        self.setMinimumWidth(0);self.setFixedHeight(216)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         pid=str(row["page_id"]);name=display_name(row);post=row.get("post_view") or post_view(row)
-        layout=QVBoxLayout(self);layout.setContentsMargins(16,12,16,10);layout.setSpacing(8)
+        layout=QVBoxLayout(self);layout.setContentsMargins(16,10,16,8);layout.setSpacing(6)
         header=QHBoxLayout();header.setSpacing(9)
         self._avatar=AvatarWidget(name,row.get("avatar_path",""),60,page_id=pid);header.addWidget(self._avatar,0,Qt.AlignmentFlag.AlignTop)
         identity=QVBoxLayout();identity.setSpacing(2)
@@ -8069,7 +8416,7 @@ class ResponsiveCards(QWidget):
 
     def reflow(self):
         available=max(220,self.width()-4)
-        columns=max(1,min(4,int((available+10)//(290+10))))
+        columns=max(1,min(6,int((available+10)//(255+10))))
         _was_visible=self._last_reflow_visible
         self._last_reflow_visible=self.isVisible()
         if columns==self.columns:return
@@ -8080,8 +8427,8 @@ class ResponsiveCards(QWidget):
             # not a drag: it takes the computed count outright, so the
             # first visible layout can never get stuck one band below a
             # threshold the way a slow drag can.
-            if columns>self.columns and available<(300*columns-10)+30:return
-            if columns<self.columns and available>=(300*self.columns-10)-30:return
+            if columns>self.columns and available<(265*columns-10)+30:return
+            if columns<self.columns and available>=(265*self.columns-10)-30:return
         self.columns=columns
         while self.grid.count():self.grid.takeAt(0)
         for i,w in enumerate(self.cards):
@@ -8104,7 +8451,7 @@ class BatchAddDialog(QDialog):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("QDialog#BatchAddDialog{background:%s;border:1px solid %s;border-radius:16px;}" % (PANEL, BORDER))
-        self.setWindowTitle("添加专业 ID");self.setFixedSize(620,600)
+        self.setWindowTitle("添加专业 ID");self.resize(620,600)
         root=QVBoxLayout(self);root.setContentsMargins(22,20,22,20);root.setSpacing(12)
         title=QLabel("批量添加专业 ID");title.setObjectName("DialogTitle");root.addWidget(title)
         note=QLabel("支持逐行 ID、表格粘贴和带数字 ID 的主页链接。重复 ID 会跳过；已有主页的模块、名称和备注不会被覆盖。")
@@ -8853,6 +9200,7 @@ class DashboardPage(QWidget):
     collect_once=pyqtSignal()
     collect_subset_requested=pyqtSignal(str)
     cancel_patrol_requested=pyqtSignal()
+    grace_cancel_requested=pyqtSignal()
     inspect_page=pyqtSignal(str)
     inspect_requested=pyqtSignal(list)
     sync_page=pyqtSignal(str)
@@ -8888,6 +9236,9 @@ class DashboardPage(QWidget):
         self.once_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.once_btn.customContextMenuRequested.connect(lambda _pos: self._once_menu.popup(self.once_btn.mapToGlobal(QPoint(0, self.once_btn.height()))))
         self.once_btn.clicked.connect(self.collect_once.emit);action_lay.addWidget(self.once_btn)
+        self._grace_remaining=0
+        self._grace_cancel_btn=QPushButton("取消");self._grace_cancel_btn.setObjectName("SecondaryButton");self._grace_cancel_btn.setFixedSize(72,40);self._grace_cancel_btn.setVisible(False)
+        self._grace_cancel_btn.clicked.connect(self.grace_cancel_requested.emit);action_lay.addWidget(self._grace_cancel_btn)
         self._once_overlay=OnceProgressOverlay(self.action_bar)
         self.once_btn.installEventFilter(self);self._sync_once_overlay()
         self.auto_btn=QPushButton("启用自动巡检");self.auto_btn.setObjectName("AutoButton");self.auto_btn.setFixedSize(140,40)
@@ -8937,16 +9288,6 @@ class DashboardPage(QWidget):
         self.cards=ResponsiveCards(settings=self.settings);self.scroll.setWidget(self.cards)
         self.cards.setAutoFillBackground(False);self.scroll.viewport().setAutoFillBackground(False)
         self.scroll.setMinimumHeight(230);split.addWidget(self.scroll,1)
-        rail=QVBoxLayout();rail.setSpacing(10);rail.setContentsMargins(0,0,0,0)
-        alerts_card=QFrame();alerts_card.setObjectName("RailCard")
-        al=QVBoxLayout(alerts_card);al.setContentsMargins(10,10,10,10);al.setSpacing(7)
-        arow=QHBoxLayout();at=QLabel("最近预警");at.setObjectName("PanelTitle");arow.addWidget(at);arow.addStretch()
-        al.addLayout(arow)
-        self.rail_alerts=QVBoxLayout();self.rail_alerts.setSpacing(10);al.addLayout(self.rail_alerts)
-        rail.addWidget(alerts_card)
-        rail.addStretch(1)
-        rail_widget=QWidget();rail_widget.setLayout(rail)
-        self.rail_widget=rail_widget
         root.addLayout(split,1)
         self.status=ElideLabel("就绪");self.status.setMinimumHeight(20);self.status.setObjectName("FooterText")
         self.next_run=QLabel("自动巡检未开启");self.next_run.setObjectName("FooterText")
@@ -9021,16 +9362,11 @@ class DashboardPage(QWidget):
     def _refresh_auto_tooltip(self):
         # Floating tooltip on the auto-inspection button: current settings
         # only, read live from settings so a change in Settings shows up
-        # on the next refresh without reopening anything.
-        minutes,j0,j1,g0,g1=getattr(self,"_timing_values",None) or random_inspection_timing(self.settings)
-        threshold=_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)
-        start_auto="开启" if is_true(self.settings.value("start_auto",0)) else "关闭"
+        # on the next refresh without reopening anything. The jitter range
+        # rides on the interval line itself (no separate line, no title).
+        vals=getattr(self,"_timing_values",None) or random_inspection_timing(self.settings)
         self.auto_btn.setToolTip(
-            f"每轮间隔：{minutes} 分钟\n"
-            f"浮动范围：± {j0}–{j1} 分钟\n"
-            f"主页间隔：{g0}–{g1} 秒\n"
-            f"启动时自动巡检：{start_auto}\n"
-            f"当日增长提醒阈值：{threshold} 粉丝\n"
+            f"每轮间隔：{vals[0]} 分钟（±{vals[1]}–{vals[2]}分钟）\n"
             "如需修改巡检参数，请前往设置中修改。")
 
     def set_timing_values(self,minutes,j0,j1,g0,g1):
@@ -9076,6 +9412,21 @@ class DashboardPage(QWidget):
         if self._active:
             self._once_overlay.set_state(self._prog_style,self._frac(),self._prog_current,self._prog_total,self.paused)
 
+    def set_grace_countdown(self,seconds):
+        """Show the 5s grace countdown on the 立即巡检 button (or clear it)."""
+        if seconds and int(seconds)>0:
+            self._grace_remaining=int(seconds);self._apply_grace_display()
+        else:
+            self._grace_remaining=0;self._grace_cancel_btn.setVisible(False)
+            self.once_btn.setProperty("graceCountdown",False);self.once_btn.style().unpolish(self.once_btn);self.once_btn.style().polish(self.once_btn)
+            if not getattr(self,"_active",False):
+                self.once_btn.setText("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
+
+    def _apply_grace_display(self):
+        self.once_btn.setText(f"⏱ {self._grace_remaining} 秒后巡检");self.once_btn.setIcon(QIcon())
+        self.once_btn.setProperty("graceCountdown",True);self.once_btn.style().unpolish(self.once_btn);self.once_btn.style().polish(self.once_btn)
+        self._grace_cancel_btn.setVisible(True)
+
     def set_running(self,auto,active):
         self._auto=auto;self._active=active
         label="暂停中" if active and self.paused else "巡检中" if active else "自动巡检已开启" if auto else "待巡检"
@@ -9092,7 +9443,8 @@ class DashboardPage(QWidget):
         else:
             if getattr(self,"_once_cancel_action",None) is not None:self._once_cancel_action.setVisible(False)
             self._once_overlay.hide();self.once_btn.setFixedWidth(140)
-            self.once_btn.setText("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
+            if getattr(self,"_grace_remaining",0)>0:self._apply_grace_display()
+            else:self.once_btn.setText("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
             self._prog_current=0;self._prog_total=0
         self.once_btn.setToolTip("暂停在当前主页处理完成后生效；继续不会从头重跑" if active else "巡检所有已选择模块的专业 ID")
         self.auto_btn.setText("暂停自动巡检" if auto else "启用自动巡检")
@@ -9253,52 +9605,6 @@ class DashboardPage(QWidget):
         self.cards.arrange(cards)
         self.scroll.verticalScrollBar().setValue(scroll)
         _tv=random_inspection_timing(self.settings);self.set_timing_values(*_tv)
-        if hasattr(self,"rail_alerts"):
-            while self.rail_alerts.count():
-                _item=self.rail_alerts.takeAt(0)
-                if _item.widget():
-                    _item.widget().hide();_item.widget().deleteLater()
-            entries=self.store.combined_alerts(limit=500,unread_only=True)
-            if not posts_on:entries=[e for e in entries if e["kind"]!="post"]
-            if not entries:
-                _none=QLabel("暂无未读预警");_none.setObjectName("SmallMuted");self.rail_alerts.addWidget(_none)
-            else:
-                _by_page={};_order=[]
-                for _e in entries:
-                    _pid=str(_e.get("page_id") or "")
-                    if _pid not in _by_page:
-                        _by_page[_pid]={"entry":_e,"kinds":set()};_order.append(_pid)
-                    _by_page[_pid]["kinds"].add(str(_e.get("kind") or ""))
-                # Fixed: 4 large avatars, never shrunk; a 5th slot shows the
-                # remainder count ("+N") instead of more avatars.
-                _shown=_order[:4];_extra=len(_order)-len(_shown)
-                _size=34
-                _arow=QHBoxLayout();_arow.setSpacing(5);_arow.setContentsMargins(0,0,0,0)
-                for _pid in _shown:
-                    _info=_by_page[_pid];_entry=_info["entry"]
-                    _kinds=_info["kinds"]
-                    _ring=RED if len(_kinds)>1 else (AMBER if "post" in _kinds else GREEN)
-                    _av=RailAvatarButton(str(_entry.get("page_name") or _entry.get("name") or ""),str(_entry.get("avatar_path") or ""),_pid,_size,_ring,lambda _pid:None)
-                    _arow.addWidget(_av)
-                if _extra>0:
-                    _more=QLabel("+%d" % _extra);_more.setFixedSize(_size,_size);_more.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    _more.setStyleSheet("background:%s;color:%s;border-radius:%dpx;font-size:12px;font-weight:800;" % (PANEL_2,MUTED,_size//2))
-                    _arow.addWidget(_more)
-                _arow.addStretch(1)
-                _awrap=QWidget();_awrap.setLayout(_arow);self.rail_alerts.addWidget(_awrap)
-                # Summary counts match the avatars: distinct pages per kind,
-                # not raw alert entries (one page may hold several entries).
-                _gc=sum(1 for _info in _by_page.values() if "growth" in _info["kinds"])
-                _pc=sum(1 for _info in _by_page.values() if "post" in _info["kinds"])
-                _parts=[]
-                if _pc:_parts.append("发帖超时 %d 个" % _pc)
-                if _gc:_parts.append("粉丝增长超标 %d 个" % _gc)
-                _sum=QLabel(" · ".join(_parts));_sum.setObjectName("SmallMuted");_sum.setWordWrap(True)
-                self.rail_alerts.addWidget(_sum)
-
-
-
-
     def refresh_clock(self):
         """Light time-only refresh. True if any post state changed (full refresh needed)."""
         try:
@@ -9432,6 +9738,591 @@ class AlertsPage(QWidget):
 
 # 1.8: 发帖监控已移入每个专业 ID 的配置。
 
+
+
+
+class RangeCalendar(QWidget):
+    """One-month grid for picking a date range, painted to match the trend
+    mockup: rounded start/end, light band in between, today has a red dot
+    (white when today is the range start/end). Weeks start on Sunday."""
+    picked = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        today = datetime.now().astimezone().date()
+        self._today = today
+        self._year = today.year
+        self._month = today.month
+        self._start = None
+        self._end = None
+        self.setMinimumSize(320, 250)
+        self.setFixedHeight(250)
+
+    def set_month(self, year, month):
+        self._year, self._month = int(year), int(month)
+        self.update()
+
+    def month(self):
+        return (self._year, self._month)
+
+    def set_range(self, start, end):
+        self._start, self._end = start, end
+        anchor = start or end
+        if anchor is not None:
+            self._year, self._month = anchor.year, anchor.month
+        self.update()
+
+    def range(self):
+        return (self._start, self._end)
+
+    def _cells(self):
+        first = date(self._year, self._month, 1)
+        start_col = (first.weekday() + 1) % 7
+        start_day = first - timedelta(days=start_col)
+        out = []
+        for i in range(42):
+            d = start_day + timedelta(days=i)
+            out.append((d, i // 7, i % 7, d.month == self._month))
+        return out
+
+    def _cell_rect(self, row, col):
+        w, h = self.width(), self.height()
+        top = 26
+        cw = w / 7.0
+        ch = (h - top) / 6.0
+        return QRectF(col * cw, top + row * ch, cw, ch)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w = self.width()
+        font = p.font()
+        font.setPointSize(11)
+        font.setBold(True)
+        p.setFont(font)
+        p.setPen(QColor(MUTED))
+        for col, name in enumerate(["日", "一", "二", "三", "四", "五", "六"]):
+            p.drawText(QRectF(col * w / 7.0, 0, w / 7.0, 26),
+                       Qt.AlignmentFlag.AlignCenter, name)
+        font.setBold(False)
+        font.setPointSize(13)
+        p.setFont(font)
+        s, e = self._start, self._end
+        if s is not None and e is not None and e < s:
+            s, e = e, s
+        band = QColor(ACCENT)
+        band.setAlpha(28)
+        for d, row, col, in_month in self._cells():
+            r = self._cell_rect(row, col)
+            cx, cy = r.center().x(), r.center().y()
+            in_range = s is not None and e is not None and s <= d <= e
+            if in_range:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(ACCENT))
+                if s == e:
+                    p.drawRoundedRect(QRectF(cx - 17, cy - 15, 34, 30), 9, 9)
+                elif d == s:
+                    p.drawRoundedRect(QRectF(r.left(), cy - 15, r.width(), 30), 9, 9)
+                    p.drawRect(QRectF(cx, cy - 15, r.right() - cx, 30))
+                elif d == e:
+                    p.drawRoundedRect(QRectF(r.left(), cy - 15, r.width(), 30), 9, 9)
+                    p.drawRect(QRectF(r.left(), cy - 15, cx - r.left(), 30))
+                else:
+                    p.setBrush(band)
+                    p.drawRect(r)
+            if in_range and (d == s or d == e or s == e):
+                p.setPen(QColor("#FFFFFF"))
+            elif in_range:
+                p.setPen(QColor(ACCENT))
+            elif in_month:
+                p.setPen(QColor(TEXT))
+            else:
+                p.setPen(QColor(BORDER))
+            p.drawText(QRectF(r.left(), cy - 10, r.width(), 20),
+                       Qt.AlignmentFlag.AlignCenter, str(d.day))
+            if d == self._today:
+                on_accent = in_range and (d == s or d == e or s == e)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor("#FFFFFF") if on_accent else QColor(RED))
+                p.drawEllipse(QPointF(cx, cy + 12), 2.5, 2.5)
+        p.end()
+
+    def mousePressEvent(self, event):
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        w, h = self.width(), self.height()
+        top = 26
+        col = int(event.position().x() // (w / 7.0))
+        row = int((event.position().y() - top) // ((h - top) / 6.0))
+        if not (0 <= col < 7 and 0 <= row < 6):
+            return
+        d = self._cells()[row * 7 + col][0]
+        if self._start is None or (self._start is not None and self._end is not None):
+            self._start, self._end = d, None
+        elif d < self._start:
+            self._start = d
+        else:
+            self._end = d
+        self.update()
+        self.picked.emit()
+        event.accept()
+
+
+class DateRangePopup(QDialog):
+    """Custom date-range picker matching the trend mockup: rounded white
+    card, blue range, today has a red dot, quick ranges, 取消 / 确定."""
+    def __init__(self, parent, start_day, end_day):
+        super().__init__(parent)
+        self.setWindowTitle("选择日期")
+        self.setModal(True)
+        self.setObjectName("DateRangePopup")
+        self._start = start_day
+        self._end = end_day
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 16, 18, 16)
+        root.setSpacing(12)
+        head = QHBoxLayout()
+        self.prev_btn = QPushButton("‹")
+        self.prev_btn.setObjectName("CalNavButton")
+        self.prev_btn.clicked.connect(self._prev_month)
+        head.addWidget(self.prev_btn)
+        self.month_label = QLabel()
+        self.month_label.setObjectName("CalMonthLabel")
+        self.month_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        head.addWidget(self.month_label, 1)
+        self.next_btn = QPushButton("›")
+        self.next_btn.setObjectName("CalNavButton")
+        self.next_btn.clicked.connect(self._next_month)
+        head.addWidget(self.next_btn)
+        root.addLayout(head)
+        self.cal = RangeCalendar(self)
+        self.cal.set_range(start_day, end_day)
+        root.addWidget(self.cal)
+        self._sync_month_label()
+        quick = QHBoxLayout()
+        quick.setSpacing(8)
+        self._quick_group = QButtonGroup(self)
+        self._quick_group.setExclusive(True)
+        self._quick_btns = {}
+        for label, days in (("昨天 - 今天", 2), ("最近 7 天", 7), ("最近 30 天", 30)):
+            btn = QPushButton(label)
+            btn.setObjectName("CalQuickButton")
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda _=False, n=days: self._quick(n))
+            self._quick_group.addButton(btn)
+            self._quick_btns[days] = btn
+            quick.addWidget(btn)
+        root.addLayout(quick)
+        self.cal.picked.connect(self._sync_quick)
+        self._sync_quick()
+        foot = QHBoxLayout()
+        foot.setSpacing(10)
+        cancel = QPushButton("取消")
+        cancel.setObjectName("SecondaryButton")
+        cancel.clicked.connect(self.reject)
+        foot.addWidget(cancel)
+        ok = QPushButton("确定")
+        ok.setObjectName("PrimaryButton")
+        ok.clicked.connect(self.accept)
+        foot.addWidget(ok)
+        root.addLayout(foot)
+        self.setFixedWidth(360)
+
+    def _sync_month_label(self):
+        y, m = self.cal.month()
+        self.month_label.setText(f"{y} 年 {m} 月")
+
+    def _prev_month(self):
+        y, m = self.cal.month()
+        m -= 1
+        if m < 1:
+            y, m = y - 1, 12
+        self.cal.set_month(y, m)
+        self._sync_month_label()
+
+    def _next_month(self):
+        y, m = self.cal.month()
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+        self.cal.set_month(y, m)
+        self._sync_month_label()
+
+    def _quick(self, days):
+        today = datetime.now().astimezone().date()
+        start = today - timedelta(days=days - 1)
+        self.cal.set_range(start, today)
+        self._sync_month_label()
+        self._sync_quick()
+
+    def _sync_quick(self):
+        """Only the quick range matching the current selection is lit:
+        the range must end today and span 2 / 7 / 30 days. A hand-picked
+        range lights none of the three."""
+        s, e = self.cal.range()
+        today = datetime.now().astimezone().date()
+        days = None
+        if s is not None and e is not None and e == today:
+            n = (e - s).days + 1
+            if n in self._quick_btns:
+                days = n
+        self._quick_group.setExclusive(False)
+        for n, btn in self._quick_btns.items():
+            btn.setChecked(n == days)
+        self._quick_group.setExclusive(True)
+
+    def selected_range(self):
+        s, e = self.cal.range()
+        if s is None and e is None:
+            return (self._start, self._end)
+        if s is None:
+            s = e
+        if e is None:
+            e = s
+        if e < s:
+            s, e = e, s
+        return (s, e)
+
+
+def _nice_axis_top(max_val):
+    """Nice Y-axis top and tick step for a daily-growth chart (1-2-3-5
+    series, ~4 ticks): 351 -> (400, 100), 9 -> (9, 3), 3 -> (3, 1)."""
+    if max_val is None or max_val <= 0:
+        return 3, 1
+    rough = float(max_val) / 4.0
+    mag = 10 ** int(math.floor(math.log10(rough))) if rough >= 1 else 1
+    step = None
+    for mult in (1, 2, 3, 5, 10):
+        _s = mult * mag
+        if _s >= rough:
+            step = _s
+            break
+    if step is None:
+        step = 10 * mag
+    step = max(1, int(step))
+    top = int(step * math.ceil(float(max_val) / step))
+    return top, step
+
+
+class TrendChart(QWidget):
+    """Area chart of daily growth (how many new followers each day).
+    Y starts at 0 and tops out at a nice number above the largest daily
+    gain; the line is a smooth curve through the points; every point
+    carries its value and every selected date sits on the X axis. A day
+    with a recorded gain of 0 is a real point; a day with no data breaks
+    the line. minimal=True is the smaller card chart (same axis, values
+    and dates, just shorter)."""
+    def __init__(self, parent=None, minimal=False):
+        super().__init__(parent)
+        self._minimal = bool(minimal)
+        self._points = {}
+        self._start = None
+        self._end = None
+        self.setMinimumHeight(150 if self._minimal else 240)
+
+    def set_series(self, points, start_day, end_day):
+        self._points = {str(k): int(v) for k, v in (points or {}).items()}
+        self._start = start_day
+        self._end = end_day
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        if not self._points or self._start is None or self._end is None or w < 40 or h < 20:
+            p.setPen(QColor(MUTED))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "暂无数据")
+            p.end()
+            return
+        days = []
+        d = self._start
+        while d <= self._end:
+            days.append(d)
+            d += timedelta(days=1)
+        n = len(days)
+        if n == 0:
+            p.setPen(QColor(MUTED))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "暂无数据")
+            p.end()
+            return
+        vals = list(self._points.values())
+        axis_top, axis_step = _nice_axis_top(max(vals) if vals else 0)
+        y_lo = 0
+        y_hi = axis_top
+        left = 34 if self._minimal else 46
+        right = 12
+        top = 12 if self._minimal else 14
+        bottom = 20 if self._minimal else 24
+        plot_w = max(w - left - right, 1)
+        plot_h = max(h - top - bottom, 1)
+
+        def x_of(i):
+            return left + plot_w / 2 if n == 1 else left + plot_w * i / (n - 1)
+
+        def y_of(v):
+            return top + plot_h * (1 - (v - y_lo) / (y_hi - y_lo))
+
+        font = p.font()
+        font.setPointSize(9 if self._minimal else 10)
+        p.setFont(font)
+        _t = 0
+        while _t <= axis_top:
+            y = y_of(_t)
+            p.setPen(QColor(BORDER))
+            p.drawLine(QPointF(left, y), QPointF(left + plot_w, y))
+            p.setPen(QColor(MUTED))
+            p.drawText(QRectF(0, y - 8, left - 6, 16),
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                       format_compact_count(int(_t)))
+            _t += axis_step
+        step = (max(1, n // 4) if self._minimal else (1 if n <= 14 else max(1, n // 10)))
+        for i, d in enumerate(days):
+            if i % step == 0 or i == n - 1:
+                p.setPen(QColor(MUTED))
+                lx = max(0, min(x_of(i) - 30, w - 60))
+                lbl = str(d.day) if self._minimal else d.strftime("%m-%d")
+                p.drawText(QRectF(lx, top + plot_h + 5, 60, 16),
+                           Qt.AlignmentFlag.AlignCenter, lbl)
+        def _smooth(pts):
+            """Monotone cubic through pts -> QPainterPath: the line flows
+            up and down like the reference curves, but never overshoots
+            past the neighbouring values, so a flat stretch stays flat
+            (Fritsch-Carlson tangents)."""
+            path = QPainterPath()
+            if not pts:
+                return path
+            path.moveTo(pts[0][0], pts[0][1])
+            m = len(pts)
+            if m < 2:
+                return path
+            d = []
+            for i in range(m - 1):
+                dx = pts[i + 1][0] - pts[i][0]
+                d.append((pts[i + 1][1] - pts[i][1]) / dx if dx else 0.0)
+            tan = [0.0] * m
+            tan[0] = d[0]
+            tan[m - 1] = d[m - 2]
+            for i in range(1, m - 1):
+                if d[i - 1] * d[i] <= 0:
+                    tan[i] = 0.0
+                else:
+                    w1 = 2 * (pts[i + 1][0] - pts[i][0]) + (pts[i][0] - pts[i - 1][0])
+                    w2 = (pts[i + 1][0] - pts[i][0]) + 2 * (pts[i][0] - pts[i - 1][0])
+                    tan[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i])
+            for i in range(m - 1):
+                dx = pts[i + 1][0] - pts[i][0]
+                c1 = (pts[i][0] + dx / 3.0, pts[i][1] + tan[i] * dx / 3.0)
+                c2 = (pts[i + 1][0] - dx / 3.0, pts[i + 1][1] - tan[i + 1] * dx / 3.0)
+                path.cubicTo(c1[0], c1[1], c2[0], c2[1], pts[i + 1][0], pts[i + 1][1])
+            return path
+            path.moveTo(pts[0][0], pts[0][1])
+            m = len(pts)
+            for i in range(m - 1):
+                p0 = pts[max(i - 1, 0)]
+                p1 = pts[i]
+                p2 = pts[i + 1]
+                p3 = pts[min(i + 2, m - 1)]
+                c1 = (p1[0] + (p2[0] - p0[0]) / 6.0,
+                      p1[1] + (p2[1] - p0[1]) / 6.0)
+                c2 = (p2[0] - (p3[0] - p1[0]) / 6.0,
+                      p2[1] - (p3[1] - p1[1]) / 6.0)
+                path.cubicTo(c1[0], c1[1], c2[0], c2[1], p2[0], p2[1])
+            return path
+
+        runs = []
+        run = []
+        for i, d in enumerate(days):
+            v = self._points.get(d.isoformat())
+            if v is None:
+                if len(run) >= 2:
+                    runs.append(run)
+                run = []
+            else:
+                run.append((x_of(i), y_of(v)))
+        if len(run) >= 2:
+            runs.append(run)
+        base_y = top + plot_h
+        fill = QColor(ACCENT)
+        fill.setAlpha(31)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(fill)
+        for run in runs:
+            fp = _smooth(run)
+            fp.lineTo(run[-1][0], base_y)
+            fp.lineTo(run[0][0], base_y)
+            fp.closeSubpath()
+            p.drawPath(fp)
+        p.setPen(QPen(QColor(ACCENT), 2.5, Qt.PenStyle.SolidLine,
+                      Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        for run in runs:
+            p.drawPath(_smooth(run))
+        for i, d in enumerate(days):
+            v = self._points.get(d.isoformat())
+            if v is None:
+                continue
+            x, y = x_of(i), y_of(v)
+            p.setBrush(QColor(ACCENT))
+            p.setPen(QColor(PANEL))
+            p.drawEllipse(QPointF(x, y), 4, 4)
+            if n <= 14:
+                p.setPen(QColor(TEXT))
+                lx = max(left, min(x - 34, left + plot_w - 68))
+                ly = max(2, y - 20)
+                p.drawText(QRectF(lx, ly, 68, 14),
+                           Qt.AlignmentFlag.AlignCenter, format_compact_count(int(v)))
+        p.end()
+
+
+class TrendCard(QFrame):
+    """One page in the trend overview grid: avatar, name, period total
+    (+N, no label, no tooltip) and a small daily-growth area chart with
+    its own axis, value labels and dates. View-only."""
+    def __init__(self, store, page, growth, start_day, end_day, parent=None):
+        super().__init__(parent)
+        self._pid = str(page["page_id"])
+        self.setObjectName("TrendCard")
+        name = normalize_name(page.get("custom_name") or page.get("page_name"), self._pid)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setSpacing(8)
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        head.addWidget(AvatarWidget(name, page.get("avatar_path", ""), 36, page_id=self._pid))
+        nm = QLabel(name)
+        nm.setObjectName("TrendCardName")
+        nm.setWordWrap(True)
+        head.addWidget(nm, 1)
+        total = sum(growth.values()) if growth else None
+        tot_txt = format_delta(total) if total is not None else "—"
+        tot = QLabel(f'<b style="color:{RED};font-size:15px">{tot_txt}</b>')
+        tot.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        head.addWidget(tot)
+        lay.addLayout(head)
+        spark = TrendChart(minimal=True)
+        spark.set_series(growth, start_day, end_day)
+        lay.addWidget(spark)
+
+
+class TrendPage(QWidget):
+    """增长趋势：上面是所有专业加起来的总趋势（每天一共长多少、这几天
+    一共长多少、从哪天开始），下面是每个专业的小卡片。日期药丸点开是
+    新做的圆角日历。"""
+    def __init__(self, store, settings=None):
+        super().__init__()
+        self.store = store
+        self.settings = settings
+        self.setObjectName("TrendPage")
+        today = datetime.now().astimezone().date()
+        self._start = today - timedelta(days=1)
+        self._end = today
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 22, 24, 18)
+        root.setSpacing(12)
+        self.total_card = QFrame()
+        self.total_card.setObjectName("TrendChartCard")
+        tl = QVBoxLayout(self.total_card)
+        tl.setContentsMargins(16, 14, 16, 10)
+        tl.setSpacing(6)
+        head = QHBoxLayout()
+        head.setSpacing(10)
+        title_box = QVBoxLayout()
+        title_box.setSpacing(2)
+        title = QLabel("全部专业总计")
+        title.setObjectName("PanelTitle")
+        title_box.addWidget(title)
+        sub = QLabel("每天所有专业加起来")
+        sub.setObjectName("SmallMuted")
+        title_box.addWidget(sub)
+        head.addLayout(title_box)
+        head.addStretch(1)
+        self.date_pill = QPushButton()
+        self.date_pill.setObjectName("DatePill")
+        self.date_pill.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.date_pill.clicked.connect(self._show_date_popup)
+        head.addWidget(self.date_pill)
+        self.grand_total = QLabel()
+        self.grand_total.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        head.addWidget(self.grand_total)
+        tl.addLayout(head)
+        self.chart = TrendChart()
+        tl.addWidget(self.chart)
+        self.chart_note = QLabel()
+        self.chart_note.setObjectName("SmallMuted")
+        self.chart_note.setWordWrap(True)
+        tl.addWidget(self.chart_note)
+        root.addWidget(self.total_card)
+        grid_head = QHBoxLayout()
+        grid_title = QLabel("全部专业")
+        grid_title.setObjectName("PanelTitle")
+        grid_head.addWidget(grid_title)
+        grid_head.addStretch(1)
+        grid_hint = QLabel("每张卡片是这个专业这几天的增长")
+        grid_hint.setObjectName("SmallMuted")
+        grid_head.addWidget(grid_hint)
+        root.addLayout(grid_head)
+        self.grid_scroll = QScrollArea()
+        self.grid_scroll.setObjectName("CardScroll")
+        self.grid_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.grid_scroll.setWidgetResizable(True)
+        self.grid_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.grid_wrap = QWidget()
+        self.grid_lay = QGridLayout(self.grid_wrap)
+        self.grid_lay.setSpacing(10)
+        self.grid_lay.setContentsMargins(0, 0, 0, 0)
+        self.grid_scroll.setWidget(self.grid_wrap)
+        root.addWidget(self.grid_scroll, 1)
+        self._empty = QLabel("尚无匹配主页，先去左侧「ID管理」添加。")
+        self._empty.setObjectName("EmptyHint")
+        self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        root.addWidget(self._empty)
+        self.refresh()
+
+    def _show_date_popup(self):
+        dlg = DateRangePopup(self, self._start, self._end)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            s, e = dlg.selected_range()
+            self._start, self._end = s, e
+            self.refresh()
+
+    def refresh(self):
+        pages = self.store.list_pages()
+        s, e = self._start, self._end
+        if s > e:
+            s, e = e, s
+        self._start, self._end = s, e
+        self.date_pill.setText(f"📅 {s.strftime('%m-%d')} 至 {e.strftime('%m-%d')} ▾")
+        total_series = dict(self.store.daily_total_growth_series(s, e))
+        grand = sum(total_series.values()) if total_series else None
+        grand_txt = format_delta(grand) if grand is not None else "—"
+        self.grand_total.setText(
+            f'<b style="color:{RED};font-size:22px">{grand_txt}</b>')
+        self.chart.set_series(total_series, s, e)
+        if total_series:
+            self.chart_note.setText("")
+            self.chart_note.hide()
+        else:
+            self.chart_note.setText("这几天还没有每天的增长记录，巡检跑起来之后每天会记一个数。")
+            self.chart_note.show()
+        self._rebuild_grid(pages, s, e)
+        self._empty.setVisible(not pages)
+        self.grid_scroll.setVisible(bool(pages))
+
+    def _rebuild_grid(self, pages, s, e):
+        while self.grid_lay.count():
+            item = self.grid_lay.takeAt(0)
+            if item.widget():
+                item.widget().hide()
+                item.widget().deleteLater()
+        if not pages:
+            return
+        cols = 3
+        for i, page in enumerate(pages):
+            pid = str(page["page_id"])
+            growth = dict(self.store.daily_growth_series(pid, s, e))
+            card = TrendCard(self.store, page, growth, s, e)
+            self.grid_lay.addWidget(card, i // cols, i % cols)
 
 
 class PageEditDialog(QDialog):
@@ -9794,6 +10685,7 @@ class SettingsPage(QWidget):
     toast_position_requested=pyqtSignal(str)
     progress_style_requested=pyqtSignal(str)
     card_layout_requested=pyqtSignal(str)
+    nav_style_requested=pyqtSignal(str)
 
     def __init__(self,store:Store,settings:QSettings):
         super().__init__();self.store=store;self.settings=settings
@@ -9826,6 +10718,18 @@ class SettingsPage(QWidget):
     def set_selected_theme(self,name):
         for key,card in getattr(self,"theme_cards",{}).items():
             card.setSelected(key==name)
+        for prev in getattr(self,"nav_style_previews",{}).values():
+            prev.set_theme(name)
+
+    def set_selected_nav_style(self,name):
+        for key,card in getattr(self,"nav_style_cards",{}).items():
+            card.setSelected(key==name)
+
+    def _on_nav_style_picked(self,key):
+        if key not in NAV_STYLE_KEYS:return
+        self._nav_style=key;self.set_selected_nav_style(key)
+        self.settings.setValue("nav_style",key);self.settings.sync()
+        self.nav_style_requested.emit(key)
 
     def set_ui_scale_label(self,scale):
         if hasattr(self,"zoom_label"):self.zoom_label.setText(f"{int(scale)}%")
@@ -9917,6 +10821,18 @@ class SettingsPage(QWidget):
             card.clicked.connect(lambda _=False,n=_name:self.theme_requested.emit(n))
             theme_row.addWidget(card,1);self.theme_cards[_name]=card
         thel.addLayout(theme_row)
+        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");thel.addWidget(_div)
+        _nav_title=QLabel("导航栏样式");_nav_title.setObjectName("SettingsTitle");thel.addWidget(_nav_title)
+        _nav_note=QLabel("左侧导航栏的外观，点一张卡片就选中，立即生效。");_nav_note.setObjectName("SmallMuted");thel.addWidget(_nav_note)
+        _nav_row=QHBoxLayout();_nav_row.setSpacing(12)
+        self.nav_style_cards={};self.nav_style_previews={};self._nav_style=NAV_DEFAULT_STYLE
+        for _key,_name,_desc in NAV_STYLES:
+            _card=OptionCard(_name,_desc)
+            _prev=NavStylePreview(_key,migrate_theme_name(self.settings.value("ui_theme","云白")));_prev.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            _card.layout().insertWidget(0,_prev)
+            _card.clicked.connect(lambda _=False,k=_key:self._on_nav_style_picked(k))
+            _nav_row.addWidget(_card,1);self.nav_style_cards[_key]=_card;self.nav_style_previews[_key]=_prev
+        thel.addLayout(_nav_row)
         _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");thel.addWidget(_div)
         _zoom_title=QLabel("界面缩放");_zoom_title.setObjectName("SettingsTitle");thel.addWidget(_zoom_title)
         _zoom_row=QHBoxLayout();_zoom_row.setSpacing(8)
@@ -10096,6 +11012,9 @@ class SettingsPage(QWidget):
         _cl=str(self.settings.value("card_layout","oneline") or "oneline")
         if _cl not in CARD_LAYOUT_KEYS:_cl="oneline"
         self._card_layout=_cl;self.set_selected_card_layout(_cl)
+        _ns=str(self.settings.value("nav_style",NAV_DEFAULT_STYLE) or NAV_DEFAULT_STYLE)
+        if _ns not in NAV_STYLE_KEYS:_ns=NAV_DEFAULT_STYLE
+        self._nav_style=_ns;self.set_selected_nav_style(_ns)
         self.set_selected_theme(migrate_theme_name(self.settings.value("ui_theme","云白")))
         _pos=str(self.settings.value("toast_position","bottom_center"))
         if _pos in [k for _,k in TOAST_POSITIONS]:self.toast_position_choice.setCurrentData(_pos,emit=False)
@@ -10237,14 +11156,7 @@ class FirstRunDialog(QDialog):
     """Ask once which modules to monitor. Default: follower growth only."""
 
     def __init__(self,parent=None):
-        super().__init__(parent);self.setWindowTitle("第一次运行")
-        # Fixed card like BatchAddDialog: no title bar, no minimise, no resize,
-        # so it can never get shrunk/minimised and strand the tour.
-        self.setObjectName("FirstRunDialog")
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("QDialog#FirstRunDialog{background:%s;border:1px solid %s;border-radius:16px;}" % (PANEL, BORDER))
-        self.setFixedSize(560,500)
+        super().__init__(parent);self.setWindowTitle("第一次运行");self.resize(560,470)
         self.choice="growth"
         root=QVBoxLayout(self);root.setContentsMargins(26,24,26,20);root.setSpacing(12)
         mark=BrandMark(46);root.addWidget(mark)
@@ -10462,6 +11374,8 @@ class DiagLogWindow(QDialog):
     """
     append_requested = pyqtSignal(str)
     reset_tour_requested = pyqtSignal()
+    restore_window_size_requested = pyqtSignal()
+    apply_window_size_requested = pyqtSignal(int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -10496,6 +11410,9 @@ class DiagLogWindow(QDialog):
         reset_btn = QPushButton("重设新手引导")
         reset_btn.clicked.connect(self.reset_tour_requested.emit)
         toolbar.addWidget(reset_btn)
+        restore_btn = QPushButton("还原默认窗口尺寸")
+        restore_btn.clicked.connect(self.restore_window_size_requested.emit)
+        toolbar.addWidget(restore_btn)
         toolbar.addStretch()
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.VLine)
@@ -10510,6 +11427,28 @@ class DiagLogWindow(QDialog):
         toolbar.addWidget(clear_btn)
         toolbar.addWidget(close_btn)
         root.addLayout(toolbar)
+        size_row = QHBoxLayout()
+        size_row.addWidget(QLabel("窗口尺寸："))
+        self._size_w = DirectNumberSpinBox()
+        self._size_w.setRange(320, 3840)
+        self._size_w.setFixedWidth(80)
+        size_row.addWidget(self._size_w)
+        size_row.addWidget(QLabel("×"))
+        self._size_h = DirectNumberSpinBox()
+        self._size_h.setRange(240, 2160)
+        self._size_h.setFixedWidth(80)
+        size_row.addWidget(self._size_h)
+        _apply_size_btn = QPushButton("应用尺寸")
+        _apply_size_btn.clicked.connect(self._apply_size)
+        size_row.addWidget(_apply_size_btn)
+        size_row.addStretch()
+        root.addLayout(size_row)
+        if _parent is not None:
+            self._size_w.setValue(_parent.width())
+            self._size_h.setValue(_parent.height())
+        else:
+            self._size_w.setValue(1230)
+            self._size_h.setValue(720)
         status_row = QHBoxLayout()
         self._status_label = QLabel("共 0 行")
         self._status_label.setStyleSheet("color:#6B7280;")
@@ -10528,6 +11467,9 @@ class DiagLogWindow(QDialog):
         # row decides the width); dragging larger still works, and the
         # bottom-right dock on first show is unchanged.
         self.resize(self.minimumSizeHint())
+
+    def _apply_size(self):
+        self.apply_window_size_requested.emit(self._size_w.value(), self._size_h.value())
 
     def _refresh_status(self):
         self._status_label.setText("共 %d 行" % len(diag_log_snapshot()))
@@ -10648,6 +11590,10 @@ class DiagLogWindow(QDialog):
         super().showEvent(event)
         if not getattr(self, "_placed", False):
             QTimer.singleShot(0, self._place_bottom_right)
+        _pw = self.parentWidget()
+        if _pw is not None:
+            self._size_w.setValue(_pw.width())
+            self._size_h.setValue(_pw.height())
         self.view.setPlainText("\n".join(diag_log_snapshot()))
         self._refresh_status()
         bar = self.view.verticalScrollBar()
@@ -10681,75 +11627,105 @@ def _subtitle(text, indent=0):
 
 
 class CloseChoiceDialog(QDialog):
-    """What closing the window should do. choice: background/wait/stop/None."""
+    """Close-window confirmation, simple card style. One state, 2 cards
+    (最小化到托盘 / 完全退出). A distinct floating window: the dialog
+    itself is translucent and the content sits in an inner card with a
+    2px theme-accent border and a drop shadow. The header is an inset
+    rounded band in the theme's soft tint, with a red circular X
+    button at its top-right. choice: background/stop/None. remember:
+    the "记住我的选择" box."""
 
     def __init__(self,parent=None):
         super().__init__(parent)
-        self.setWindowTitle("关闭窗口");self.setModal(True);self.choice=None
-        self.resize(480,300)
-        root=QVBoxLayout(self);root.setContentsMargins(26,22,26,20);root.setSpacing(10)
-        title=QLabel("关闭窗口");title.setObjectName("DialogTitle");root.addWidget(title)
-        for heading,desc in (("继续后台运行","窗口藏到托盘，巡检和提醒继续。"),
-                             ("等待完成后退出","不再开新任务，本轮巡检结束后自动退出。"),
-                             ("立即停止并退出","马上停止当前巡检并退出。")):
-            h=QLabel(heading);_f=h.font();_f.setBold(True);h.setFont(_f);root.addWidget(h)
-            d=QLabel(desc);d.setObjectName("SmallMuted");d.setWordWrap(True);root.addWidget(d)
-        root.addSpacing(6)
-        actions=QHBoxLayout();actions.setSpacing(10)
-        ok=QPushButton("继续后台运行");ok.setObjectName("PrimaryButton");ok.setFixedHeight(38)
-        ok.clicked.connect(lambda _=False:self._pick("background"));actions.addWidget(ok)
-        wait=QPushButton("等待完成后退出");wait.setObjectName("SecondaryButton");wait.setFixedHeight(38)
-        wait.clicked.connect(lambda _=False:self._pick("wait"));actions.addWidget(wait)
-        stop=QPushButton("立即停止并退出");stop.setFixedHeight(38)
-        stop.setStyleSheet("QPushButton{border:1.5px solid #DC2626;color:#DC2626;border-radius:9px;background:#FFFFFF;}")
-        stop.clicked.connect(lambda _=False:self._pick("stop"));actions.addWidget(stop)
-        root.addLayout(actions)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setModal(True)
+        self.setObjectName("CloseDialog")
+        self.choice=None;self.remember=False
+        preset=THEME_PRESETS.get(getattr(parent,"theme_name","云白"),THEME_PRESETS["云白"])
+        panel=preset["panel"];panel2=preset["panel_2"];border=preset["border"]
+        text=preset["text"];muted=preset["muted"];accent=preset["accent"]
+        accent2=preset.get("accent2",accent);soft=preset["soft"]
+        hover=preset["hover"]
+        self._text=text
+        self.setStyleSheet(
+            "QDialog#CloseDialog{background:transparent;border:0;}"
+            "QFrame#CloseDialogCard{background:%s;border:2px solid %s;border-radius:12px;}"
+            "QFrame#CloseHeadBand{background:%s;border-radius:10px;}"
+            "QLabel#CloseTitle{font-size:20px;font-weight:700;color:%s;}"
+            "QLabel#CloseSub{font-size:14px;color:%s;}"
+            "QPushButton#CloseX{background:#DC2626;border:0;border-radius:14px;color:#FFFFFF;font-size:20px;font-weight:700;padding:0;}"
+            "QPushButton#CloseX:hover{background:#B91C1C;}"
+            "QPushButton#CloseCard{background:%s;border:1px solid %s;border-radius:10px;padding:0;}"
+            "QPushButton#CloseCard:hover{background:%s;border-color:%s;}"
+            "QLabel#CloseTile{background:%s;border-radius:10px;}"
+            "QLabel#CloseCardTitle{font-size:15px;font-weight:600;color:%s;}"
+            "QLabel#CloseCardDesc{font-size:13px;color:%s;}"
+            "QLabel#CloseChevron{color:%s;font-size:16px;}"
+            "QCheckBox#CloseRemember{font-size:13px;color:%s;}"
+            % (panel,accent,soft,text,muted,panel,border,hover,accent,
+               panel2,text,muted,muted,text))
+        # 548px wide: 500px card + 24px margins so the shadow is not clipped.
+        self.setFixedWidth(548)
+        outer=QVBoxLayout(self);outer.setContentsMargins(24,24,24,24)
+        card=QFrame();card.setObjectName("CloseDialogCard")
+        shadow=QGraphicsDropShadowEffect(card)
+        shadow.setBlurRadius(22);shadow.setOffset(0,4);shadow.setColor(QColor(0,0,0,165))
+        card.setGraphicsEffect(shadow)
+        outer.addWidget(card)
+        # Band is inset 16px from the card; the body is inset 8px further
+        # (24px), so the band reads as a slightly wider block.
+        root=QVBoxLayout(card);root.setContentsMargins(16,16,16,24);root.setSpacing(18)
+        band=QFrame();band.setObjectName("CloseHeadBand")
+        band_lay=QHBoxLayout(band);band_lay.setContentsMargins(18,16,18,16);band_lay.setSpacing(16)
+        head_text=QVBoxLayout();head_text.setSpacing(6)
+        title=QLabel("关闭程序");title.setObjectName("CloseTitle")
+        sub=QLabel("请选择关闭窗口后的处理方式");sub.setObjectName("CloseSub")
+        head_text.addWidget(title);head_text.addWidget(sub);band_lay.addLayout(head_text,1)
+        xbtn=QPushButton("×");xbtn.setObjectName("CloseX");xbtn.setFixedSize(28,28)
+        xbtn.setCursor(Qt.CursorShape.PointingHandCursor);xbtn.clicked.connect(self.reject)
+        band_lay.addWidget(xbtn,0,Qt.AlignmentFlag.AlignTop)
+        root.addWidget(band)
+        body=QWidget()
+        body_lay=QVBoxLayout(body);body_lay.setContentsMargins(8,0,8,0);body_lay.setSpacing(10)
+        body_lay.addWidget(self._card("tray","最小化到托盘","窗口收起，程序继续在后台待命","background"))
+        body_lay.addWidget(self._card("power","完全退出","停止任务立即退出","stop"))
+        foot_wrap=QWidget()
+        foot=QHBoxLayout(foot_wrap);foot.setContentsMargins(0,14,0,0)
+        self._remember_box=QCheckBox("记住我的选择，下次不再询问")
+        self._remember_box.setObjectName("CloseRemember");foot.addWidget(self._remember_box)
+        foot.addStretch()
+        body_lay.addWidget(foot_wrap)
+        root.addWidget(body)
+
+    def _card(self,icon,title,desc,choice):
+        btn=QPushButton();btn.setObjectName("CloseCard")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # QPushButton's sizeHint ignores a custom layout (it is based on the
+        # empty button text), so pin a minimum height: 40px tile / two text
+        # lines (~44px) + 14px top/bottom margins = 72px. Without this the
+        # button is 21px tall and the tile/title/desc are clipped to 0.
+        btn.setMinimumHeight(72)
+        lay=QHBoxLayout(btn);lay.setContentsMargins(16,14,16,14);lay.setSpacing(14)
+        tile=QLabel();tile.setObjectName("CloseTile")
+        tile.setFixedSize(40,40);tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tile.setPixmap(ui_icon(icon,self._text).pixmap(QSize(20,20)))
+        lay.addWidget(tile)
+        text_lay=QVBoxLayout();text_lay.setSpacing(3)
+        t=QLabel(title);t.setObjectName("CloseCardTitle");text_lay.addWidget(t)
+        d=QLabel(desc);d.setObjectName("CloseCardDesc");d.setWordWrap(True);text_lay.addWidget(d)
+        lay.addLayout(text_lay,1)
+        chev=QLabel("›");chev.setObjectName("CloseChevron");lay.addWidget(chev)
+        btn.clicked.connect(lambda _=False:self._pick(choice))
+        return btn
 
     def _pick(self,choice):
-        self.choice=choice;self.accept()
+        self.choice=choice;self.remember=self._remember_box.isChecked();self.accept()
 
     def exec_choice(self):
-        self.exec();return self.choice
+        self.exec();return self.choice,self.remember
 
 
-
-
-class _WrapLabel(QLabel):
-    """Word-wrapped label that always reserves enough height for its text.
-    A plain wrapped QLabel inside nested layouts + a scroll area often
-    reports a too-small height (and the scrollbar appearing narrows it
-    further), so the last line(s) get cut off. This recomputes the height
-    from the real width on every resize."""
-    def __init__(self, text="", parent=None):
-        super().__init__(text, parent)
-        self.setWordWrap(True)
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
-        self.setMinimumWidth(1)
-        self._fixing = False
-
-    def _fit(self, w=None):
-        w = self.width() if w is None else w
-        if w <= 1 or self._fixing:
-            return
-        self._fixing = True
-        try:
-            h = self.heightForWidth(w)
-            if h > 0 and self.minimumHeight() != h:
-                self.setMinimumHeight(h)
-        finally:
-            self._fixing = False
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self._fit(e.size().width())
-
-    def setText(self, t):
-        super().setText(t)
-        self._fit()
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self._fit()
 
 
 class UpdateLogPanel(QWidget):
@@ -10774,14 +11750,13 @@ class UpdateLogPanel(QWidget):
         title = QLabel("更新日志")
         tf = title.font(); tf.setBold(True); tf.setPointSize(17); title.setFont(tf)
         titles.addWidget(title)
-        sub = _WrapLabel("当前版本 v%s · 连接器 v%s" % (APP_VERSION, BUNDLED_CONNECTOR_VERSION))
+        sub = QLabel("当前版本 v%s · 连接器 v%s" % (APP_VERSION, BUNDLED_CONNECTOR_VERSION))
         sub.setObjectName("SmallMuted")
         titles.addWidget(sub)
         head_lay.addLayout(titles, 1)
         close_btn = QPushButton("×")
         close_btn.setObjectName("UpdateLogClose")
-        close_btn.setFixedSize(40, 40)
-        close_btn.setToolTip("关闭")
+        close_btn.setFixedSize(32, 32)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.hide)
         head_lay.addWidget(close_btn)
@@ -10792,9 +11767,11 @@ class UpdateLogPanel(QWidget):
         self._note_box = QWidget()
         note_wrap = QVBoxLayout(self._note_box)
         note_wrap.setContentsMargins(20, 14, 20, 0)
-        self._note = _WrapLabel("更新到 v%s 已完成，这次更新了下面这些内容。" % APP_VERSION)
+        self._note = QLabel("更新到 v%s 已完成，这次更新了下面这些内容。" % APP_VERSION)
+        self._note.setWordWrap(True)
         self._note.setStyleSheet("QLabel{background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;color:#92400E;padding:10px 12px;font-size:12.5px;}")
         note_wrap.addWidget(self._note)
+        self._log_wrap_labels = [self._note]
         self._note_box.hide()
         root.addWidget(self._note_box)
         scroll = QScrollArea()
@@ -10829,17 +11806,21 @@ class UpdateLogPanel(QWidget):
                     dot = QLabel("•")
                     dot.setObjectName("UpdateLogDot")
                     row.addWidget(dot, 0, Qt.AlignmentFlag.AlignTop)
-                    lab = _WrapLabel(item)
+                    lab = QLabel(item)
+                    lab.setWordWrap(True)
                     lab.setTextFormat(Qt.TextFormat.PlainText)
                     row.addWidget(lab, 1)
+                    self._log_wrap_labels.append(lab)
                     bl.addLayout(row)
                     bl.addSpacing(5)
             if entry["connector"]:
-                conn = _WrapLabel(entry["connector"])
+                conn = QLabel(entry["connector"])
                 conn.setObjectName("SmallMuted")
+                conn.setWordWrap(True)
                 conn.setTextFormat(Qt.TextFormat.PlainText)
                 bl.addSpacing(10)
                 bl.addWidget(conn)
+                self._log_wrap_labels.append(conn)
             # Clear separation between versions: a divider line.
             if vi < len(CHANGELOG) - 1:
                 bl.addSpacing(16)
@@ -10857,6 +11838,25 @@ class UpdateLogPanel(QWidget):
             self.setGeometry(parent.width() - 400, 0, 400, parent.height())
         self.show()
         self.raise_()
+        self._fit_log_rows()
+        QTimer.singleShot(0, self._fit_log_rows)
+
+    def _fit_log_rows(self):
+        """Pin every word-wrapped log label to the height its wrapped text
+        actually needs at its real width. Qt lays the rows out before the
+        labels know their final width inside the scroll area, so items that
+        wrap to 3 lines only get ~44px instead of 57px and the last line is
+        cut (this hit 1.7.1+ because those entries first grew 3-line items;
+        shorter entries never showed it). Measuring here, after the panel
+        has its width, fixes every version at once."""
+        for lab in getattr(self, "_log_wrap_labels", []):
+            w = lab.width()
+            if w <= 0:
+                continue
+            need = lab.fontMetrics().boundingRect(
+                QRect(0, 0, w, 100000), Qt.TextFlag.TextWordWrap,
+                lab.text()).height()
+            lab.setMinimumHeight(need)
 
 class MainWindow(QMainWindow):
     # Cross-thread jump request: the Windows toast callback runs on a WinRT
@@ -10897,7 +11897,10 @@ class MainWindow(QMainWindow):
         self._closing=False;self._maintenance=False;self._tray_hint_shown=False;self._exit_after_round=False
         self.auto_enabled=False;self.next_run_at=None;self.active_run_id=None
         self.run_started_at=None;self.run_ok=0;self.run_fail=0;self.current_purpose="monitor"
-        self._tick=0;self._popup=None;self._notice_queue=[];self._toast=None;self._diag_window=None;self._fireworks_overlay=None;self._growth_alert_seen=None;self._fireworks_pending=0
+        self._tick=0;self._popup=None;self._notice_queue=[];self._toast=None;self._diag_window=None;self._fireworks_overlay=None;self._growth_alert_seen=None;self._fireworks_pending=0;self._fireworks_queue=0
+        self._grace_timer=QTimer(self);self._grace_timer.setInterval(1000);self._grace_timer.timeout.connect(self._on_grace_tick);self._grace_remaining=0
+        self._badge_show_next=False
+        self._badge_timer=QTimer(self);self._badge_timer.setInterval(20000);self._badge_timer.timeout.connect(self._on_badge_timer)
         self.auto_timer=QTimer(self);self.auto_timer.setSingleShot(True)
         self.auto_timer.timeout.connect(lambda:self.start_collection(False))
         self.count_timer=QTimer(self);self.count_timer.setInterval(1000);self.count_timer.timeout.connect(self.update_countdown)
@@ -10907,7 +11910,7 @@ class MainWindow(QMainWindow):
         app_icon=make_app_icon()
         QApplication.instance().setWindowIcon(app_icon)
         self.setWindowIcon(app_icon);self.setWindowTitle(APP_TITLE+" · "+APP_VERSION)
-        self.resize(1536,1024);self.setMinimumSize(1200,800)
+        self.resize(1230,720);self.setMinimumSize(1024,650)
         self.tray=QSystemTrayIcon(make_app_icon(),self);self.tray.setToolTip(APP_TITLE)
         self.tray_menu=QMenu(self)
         self.tray_menu.addAction("打开软件",self.show_dashboard)
@@ -10996,12 +11999,17 @@ class MainWindow(QMainWindow):
     def build_ui(self):
         root=QWidget();root.setObjectName("Root");self.setCentralWidget(root)
         self._root_layout=QVBoxLayout(root);self._root_layout.setContentsMargins(1,1,1,1);self._root_layout.setSpacing(0)
+        self._version_corner = QLabel("V " + APP_VERSION + " · Windows 版", root)
+        self._version_corner.setObjectName("SmallMuted")
+        self._version_corner.hide()
         shell=QHBoxLayout();shell.setContentsMargins(0,0,0,0);shell.setSpacing(0)
         self.sidebar=QWidget();self.sidebar.setObjectName("Sidebar");self.sidebar.setFixedWidth(240)
         side=QVBoxLayout(self.sidebar);side.setContentsMargins(14,12,14,10);side.setSpacing(0)
-        brand=DraggableHeader();brand.setObjectName("BrandRow")
+        self._sidebar_collapsed=False;self._nav_button_texts={}
+        self._sidebar_auto_collapsed=False;self._last_width=None
+        brand=DraggableHeader();brand.setObjectName("BrandRow");self._brand_row=brand
         brand_lay=QHBoxLayout(brand);brand_lay.setContentsMargins(6,2,6,8);brand_lay.setSpacing(10)
-        self.brand_mark=BrandMark(34);brand_lay.addWidget(self.brand_mark)
+        self.brand_mark=BrandMark(48);brand_lay.addWidget(self.brand_mark)
         brand_text=QVBoxLayout();brand_text.setSpacing(1)
         self.brand_name=QLabel(APP_TITLE);self.brand_name.setObjectName("BrandName")
         self.brand_name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);brand_text.addWidget(self.brand_name)
@@ -11009,11 +12017,14 @@ class MainWindow(QMainWindow):
         tagline.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);brand_text.addWidget(tagline)
         brand_lay.addLayout(brand_text,1);side.addWidget(brand)
         self.brand_caption=tagline
-        nav_label=QLabel("监控");nav_label.setObjectName("NavLabel");side.addWidget(nav_label)
+        self.nav_style=self._read_nav_style();self.sidebar.setProperty("navStyle",self.nav_style)
+        self._nav_group_1=QFrame();self._nav_group_1.setObjectName("NavGroup")
+        _g1=QVBoxLayout(self._nav_group_1);_g1.setContentsMargins(0,0,0,0);_g1.setSpacing(1);side.addWidget(self._nav_group_1)
+        nav_label=QLabel("监控");nav_label.setObjectName("NavLabel");_g1.addWidget(nav_label);self._nav_label_monitor=nav_label
         self.nav_buttons={}
-        for index,kind,text in ((0,"home","监控看板"),(2,"bell","通知"),(3,"pages","ID管理")):
+        for index,kind,text in ((0,"home","监控看板"),(1,"trend","趋势"),(2,"bell","通知"),(3,"pages","ID管理")):
             row=QHBoxLayout();row.setContentsMargins(0,0,0,0);row.setSpacing(0)
-            btn=QPushButton(text);btn.setObjectName("SideNav");btn.setProperty("iconKind",kind)
+            btn=QPushButton(text);btn.setObjectName("SideNav");btn.setProperty("iconKind",kind);self._nav_button_texts[index]=text
             btn.setIcon(ui_icon(kind,MUTED));btn.setIconSize(QSize(22,22));btn.setFixedHeight(40)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _=False,i=index:self.switch_page(i))
@@ -11022,18 +12033,20 @@ class MainWindow(QMainWindow):
                 self.notification_badge=QLabel(btn);self.notification_badge.setObjectName("NotificationBadge")
                 self.notification_badge.setFixedSize(19,17);self.notification_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.notification_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
-            wrap=QWidget();wrap.setLayout(row);side.addWidget(wrap);self.nav_buttons[index]=btn
-            side.addSpacing(1)
-        nav_label2=QLabel("系统");nav_label2.setObjectName("NavLabel");side.addWidget(nav_label2)
-        btn=QPushButton("设置");btn.setObjectName("SideNav");btn.setProperty("iconKind","settings")
+            wrap=QWidget();wrap.setLayout(row);_g1.addWidget(wrap);self.nav_buttons[index]=btn
+        self._nav_gap_w=QWidget();self._nav_gap_w.setFixedHeight(0);side.addWidget(self._nav_gap_w)
+        self._nav_group_2=QFrame();self._nav_group_2.setObjectName("NavGroup")
+        _g2=QVBoxLayout(self._nav_group_2);_g2.setContentsMargins(0,0,0,0);_g2.setSpacing(1);side.addWidget(self._nav_group_2)
+        nav_label2=QLabel("系统");nav_label2.setObjectName("NavLabel");_g2.addWidget(nav_label2);self._nav_label_system=nav_label2
+        btn=QPushButton("设置");btn.setObjectName("SideNav");btn.setProperty("iconKind","settings");self._nav_button_texts[4]="设置"
         btn.setIcon(ui_icon("settings",MUTED));btn.setIconSize(QSize(22,22));btn.setFixedHeight(40)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.clicked.connect(lambda:self.switch_page(4));side.addWidget(btn);self.nav_buttons[4]=btn
+        btn.clicked.connect(lambda:self.switch_page(4));_g2.addWidget(btn);self.nav_buttons[4]=btn
         self.page_nav_buttons=dict(self.nav_buttons)
         side.addStretch(1)
         self.connector_card=ClickableFrame();self.connector_card.setObjectName("ConnCard")
         conn_lay=QVBoxLayout(self.connector_card);conn_lay.setContentsMargins(12,9,12,9);conn_lay.setSpacing(3)
-        title_row=QHBoxLayout();title_row.setSpacing(7)
+        title_row=QHBoxLayout();title_row.setSpacing(7);self._connector_title_row=title_row
         self.connector_dot=QLabel();self.connector_dot.setObjectName("ConnectorDot");self.connector_dot.setFixedSize(10,10)
         self.connector_dot.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         title_row.addWidget(self.connector_dot)
@@ -11041,11 +12054,15 @@ class MainWindow(QMainWindow):
         self.connector_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         conn_lay.addLayout(title_row)
         self.connector_sub=QLabel("连接器 v"+BUNDLED_CONNECTOR_VERSION+" · 点击查看");self.connector_sub.setObjectName("SmallMuted");self.connector_sub.setWordWrap(True);conn_lay.addWidget(self.connector_sub)
+        _collapsed_box=QWidget();_cl=QVBoxLayout(_collapsed_box);_cl.setContentsMargins(0,2,0,2);_cl.setSpacing(2);_cl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._conn_collapsed_icon=QLabel();self._conn_collapsed_icon.setFixedSize(22,22);_cl.addWidget(self._conn_collapsed_icon,0,Qt.AlignmentFlag.AlignCenter)
+        self._conn_collapsed_count=QLabel("0 个");self._conn_collapsed_count.setObjectName("SmallMuted");_cl.addWidget(self._conn_collapsed_count,0,Qt.AlignmentFlag.AlignCenter)
+        conn_lay.addWidget(_collapsed_box);self._conn_collapsed_box=_collapsed_box;_collapsed_box.hide()
         self.connector_sub.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         self.connector_card.clicked.connect(self.open_login_browser);side.addWidget(self.connector_card)
         side.addSpacing(10)
         theme_row=QHBoxLayout();theme_row.setContentsMargins(4,0,4,0)
-        theme_label=QLabel("外观");theme_label.setObjectName("SmallMuted");theme_row.addWidget(theme_label)
+        theme_label=QLabel("外观");theme_label.setObjectName("SmallMuted");theme_row.addWidget(theme_label);self._theme_label=theme_label
         self.theme_name_label=QLabel(self.theme_name);self.theme_name_label.setObjectName("SmallMuted");theme_row.addWidget(self.theme_name_label)
         theme_row.addStretch()
         self.theme_swatches={}
@@ -11054,7 +12071,20 @@ class MainWindow(QMainWindow):
             sw.clicked.connect(lambda _=False,n=name:self.apply_theme(n));theme_row.addWidget(sw);self.theme_swatches[name]=sw
         side.addLayout(theme_row)
         self._refresh_theme_swatches(self.theme_name)
-        foot=QLabel("V "+APP_VERSION+" · Windows 版");foot.setObjectName("SideFoot");side.addWidget(foot)
+        foot=QLabel("V "+APP_VERSION+" · Windows 版");foot.setObjectName("SideFoot");side.addWidget(foot);self._sidebar_foot=foot
+        _collapsed_theme_box=QWidget();_ctb_lay=QHBoxLayout(_collapsed_theme_box);_ctb_lay.setContentsMargins(0,4,0,0);_ctb_lay.setSpacing(4);_ctb_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._collapsed_theme_swatches={}
+        for _name in THEME_PRESETS:
+            _sw=QPushButton();_sw.setFixedSize(14,14);_sw.setCursor(Qt.CursorShape.PointingHandCursor)
+            _sw.clicked.connect(lambda _=False,n=_name:self.apply_theme(n));_ctb_lay.addWidget(_sw);self._collapsed_theme_swatches[_name]=_sw
+        side.addWidget(_collapsed_theme_box);self._collapsed_theme_box=_collapsed_theme_box;_collapsed_theme_box.hide()
+        self._refresh_theme_swatches(self.theme_name)
+        _toggle_row=QHBoxLayout();_toggle_row.setContentsMargins(0,6,0,0);self._toggle_row=_toggle_row
+        self._sidebar_toggle=QPushButton("‹ 收起导航栏");self._sidebar_toggle.setObjectName("SideCollapse");self._sidebar_toggle.setFixedHeight(28);self._sidebar_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sidebar_toggle.setToolTip("收起导航栏");self._sidebar_toggle.clicked.connect(self.toggle_sidebar_collapsed)
+        _toggle_row.addWidget(self._sidebar_toggle);side.addLayout(_toggle_row)
+        self._apply_nav_metrics()
+        if is_true(self.settings.value("sidebar/collapsed",0)):self.set_sidebar_collapsed(True)
         shell.addWidget(self.sidebar)
         center=QWidget();center_layout=QVBoxLayout(center);center_layout.setContentsMargins(0,0,0,0);center_layout.setSpacing(0)
         self.topbar=DraggableHeader();self.topbar.setObjectName("TopBar");self.topbar.setFixedHeight(64)
@@ -11073,19 +12103,11 @@ class MainWindow(QMainWindow):
         center_layout.addWidget(self.topbar)
         self.stack=QStackedWidget();self.stack.setObjectName("MainStack")
         self.dashboard=DashboardPage(self.store,self.settings)
-        reserved_slot=QWidget()
+        self.trend=TrendPage(self.store,self.settings)
         self.alerts=AlertsPage(self.store,self.settings)
         self.page_manager=PageManagementPage(self.store,self.settings)
         self.settings_page=SettingsPage(self.store,self.settings)
-        for page in (self.dashboard,reserved_slot,self.alerts,self.page_manager,self.settings_page):self.stack.addWidget(page)
-        if hasattr(self.dashboard,"rail_widget"):
-            # Fixed in the sidebar: no scroll area of its own, so the recent
-            # alerts / overview cards never scroll away with the main content
-            # and never grow their own scrollbar.
-            self.dashboard.rail_widget.setStyleSheet("background:transparent;")
-            self.dashboard.rail_widget.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed)
-            side.insertWidget(side.indexOf(self.connector_card),self.dashboard.rail_widget)
-            side.insertSpacing(side.indexOf(self.connector_card),12)
+        for page in (self.dashboard,self.trend,self.alerts,self.page_manager,self.settings_page):self.stack.addWidget(page)
         center_layout.addWidget(self.stack,1)
         if hasattr(self.dashboard,"action_bar"):
             bar.insertWidget(2,self.dashboard.action_bar)
@@ -11100,8 +12122,193 @@ class MainWindow(QMainWindow):
         self._root_layout.addLayout(shell,1)
         self.wire_signals();self.switch_page(0);self._update_window_shape()
 
+    def restore_default_window_size(self):
+        """Developer-mode helper: put the main window back to 1536x800."""
+        try:
+            if self.isMaximized():self.showNormal()
+            self.resize(1230,720)
+            diag_log("[窗口] 已还原默认尺寸 1230x720")
+        except Exception as exc:
+            diag_log(f"[窗口] 还原默认尺寸失败：{exc}")
+
+    def apply_window_size(self, width, height):
+        """Developer-mode helper: resize the main window to the given size."""
+        try:
+            if self.isMaximized():self.showNormal()
+            w = max(int(width), self.minimumWidth())
+            h = max(int(height), self.minimumHeight())
+            self.resize(w, h)
+            diag_log(f"[窗口] 已应用尺寸 {w}x{h}")
+        except Exception as exc:
+            diag_log(f"[窗口] 应用尺寸失败：{exc}")
+
+    def toggle_sidebar_collapsed(self):
+        _was=getattr(self,"_sidebar_collapsed",False)
+        self.set_sidebar_collapsed(not _was)
+        # Manual choice from here on: never auto-expand a sidebar the user
+        # collapsed by hand, and never auto-collapse one they expanded.
+        self._sidebar_auto_collapsed=False
+        if _was and not getattr(self,"_sidebar_collapsed",False) and self.width()<1200:
+            # Manual expand in a narrow window: grow the window by the
+            # sidebar width difference so the content area does not shrink.
+            # Clamp to the screen so it never grows off the right edge.
+            _max_w=self.width()+176
+            _scr=QApplication.primaryScreen()
+            if _scr is not None:
+                _avail=_scr.availableGeometry()
+                _max_w=min(_max_w,_avail.right()-self.x()+1)
+            if _max_w>self.width():self.resize(_max_w,self.height())
+
+    def set_sidebar_collapsed(self,collapsed):
+        """Collapse the left nav to a 64px icon-only column (Teams style)."""
+        collapsed=bool(collapsed);self._sidebar_collapsed=collapsed
+        try:self.settings.setValue("sidebar/collapsed",1 if collapsed else 0)
+        except Exception:pass
+        self.sidebar.setFixedWidth(64 if collapsed else 240)
+        _lay=self.sidebar.layout()
+        if collapsed:_lay.setContentsMargins(6,12,6,10)
+        else:_lay.setContentsMargins(14,12,14,10)
+        self.brand_name.setVisible(not collapsed);self.brand_caption.setVisible(not collapsed)
+        self._brand_row.layout().setAlignment(Qt.AlignmentFlag.AlignCenter if collapsed else Qt.AlignmentFlag.AlignLeft)
+        # Collapsed rail is 64px: sidebar margins 6+6 leave 52px, so the
+        # brand row's 6+6 margins clipped the 48px mark (6+48+6=60>52).
+        # 2px margins fit exactly (2+48+2=52) and keep the mark centered.
+        self._brand_row.layout().setContentsMargins(*((2,2,2,8) if collapsed else (6,2,6,8)))
+        self._nav_label_monitor.setVisible(not collapsed);self._nav_label_system.setVisible(not collapsed)
+        for _idx,_btn in self.nav_buttons.items():
+            _txt=self._nav_button_texts.get(_idx,"")
+            if collapsed:_btn.setText("");_btn.setToolTip(_txt)
+            else:_btn.setText(_txt);_btn.setToolTip("")
+        self.connector_title.setVisible(not collapsed);self.connector_sub.setVisible(not collapsed)
+        self.connector_dot.setVisible(not collapsed)
+        if hasattr(self,"_conn_collapsed_box"):self._conn_collapsed_box.setVisible(collapsed)
+        self.connector_card.setToolTip("浏览器连接 v"+BUNDLED_CONNECTOR_VERSION+" · 点击查看" if collapsed else "")
+        self._connector_title_row.setAlignment(Qt.AlignmentFlag.AlignCenter if collapsed else Qt.AlignmentFlag.AlignLeft)
+        self._theme_label.setVisible(not collapsed);self.theme_name_label.setVisible(not collapsed)
+        for _name,_sw in self.theme_swatches.items():_sw.setVisible(not collapsed)
+        self._sidebar_foot.setVisible(not collapsed)
+        if hasattr(self, "_version_corner"):
+            self._version_corner.setVisible(collapsed)
+            if collapsed:
+                self._position_version_corner()
+        if hasattr(self,"_collapsed_theme_box"):self._collapsed_theme_box.setVisible(collapsed)
+        if collapsed:
+            self._sidebar_toggle.setText("›");self._sidebar_toggle.setFixedSize(24,28)
+            self._toggle_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        else:
+            self._sidebar_toggle.setText("‹ 收起导航栏");self._sidebar_toggle.setMinimumSize(0,28);self._sidebar_toggle.setMaximumSize(16777215,28)
+            self._toggle_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self._sidebar_toggle.setToolTip("展开导航栏" if collapsed else "收起导航栏")
+        self._apply_nav_metrics()
+        QTimer.singleShot(0,self._position_notification_badge)
+
+    def _position_version_corner(self):
+        """Keep the collapsed-state version label pinned to the
+        bottom-right corner of the whole window."""
+        lab = getattr(self, "_version_corner", None)
+        if lab is None or not lab.isVisible():
+            return
+        cw = self.centralWidget()
+        if cw is None:
+            return
+        lab.adjustSize()
+        lab.move(max(0, cw.width() - lab.width() - 12),
+                 max(0, cw.height() - lab.height() - 8))
+        lab.raise_()
+
+    # ---- sidebar look (设置 → 外观 → 导航栏样式) -------------------------
+    def _read_nav_style(self):
+        key=str(self.settings.value("nav_style",NAV_DEFAULT_STYLE) or NAV_DEFAULT_STYLE)
+        return key if key in NAV_STYLE_KEYS else NAV_DEFAULT_STYLE
+
+    def _repolish_tree(self,widget):
+        for w in [widget]+widget.findChildren(QWidget):
+            w.style().unpolish(w);w.style().polish(w)
+
+    def _nav_dot_ring(self):
+        """Ring colour of the connector status dot = background of its card."""
+        st=getattr(self,"nav_style","")
+        if st=="dark":return nav_dark_palette(getattr(self,"theme_name","云白"))["glass"]
+        return PANEL if st=="capsule" else (SIDEBAR if st=="line" else BG)
+
+    def _nav_pad(self):
+        """Left padding of a nav button (used to place the unread badge)."""
+        if getattr(self,"_sidebar_collapsed",False):return 10
+        return 14 if getattr(self,"nav_style","")=="capsule" else 10
+
+    def _apply_nav_metrics(self):
+        """Sizes/margins that QSS cannot express, then re-polish the sidebar."""
+        if not hasattr(self,"_nav_group_1") or not hasattr(self,"_nav_group_2"):return
+        st=getattr(self,"nav_style",NAV_DEFAULT_STYLE);col=bool(getattr(self,"_sidebar_collapsed",False))
+        self.sidebar.setProperty("navStyle",st);self.sidebar.setProperty("navCollapsed",col)
+        if st=="capsule":margins=(4,2,4,4) if col else (6,4,6,6);height=42;gap=10
+        else:margins=(0,0,0,0);height=40 if st=="dark" else 38;gap=0
+        for group in (self._nav_group_1,self._nav_group_2):group.layout().setContentsMargins(*margins)
+        self._nav_gap_w.setFixedHeight(gap)
+        for btn in self.nav_buttons.values():btn.setFixedHeight(height)
+        self._repolish_tree(self.sidebar)
+        self._refresh_nav_icons()
+        QTimer.singleShot(0,self._position_notification_badge)
+
+    def _refresh_nav_icons(self,unread=None):
+        """Colour the sidebar icons for the active look and the active page."""
+        if not hasattr(self,"page_nav_buttons"):return
+        if unread is not None:self._nav_unread=int(unread or 0)
+        st=getattr(self,"nav_style",NAV_DEFAULT_STYLE)
+        d=nav_dark_palette(getattr(self,"theme_name","云白"))
+        for btn in self.page_nav_buttons.values():
+            kind=btn.property("iconKind");active=bool(btn.property("active"))
+            if st=="capsule":color="#FFFFFF" if active else MUTED
+            elif st=="dark":color=d["accent"] if active else d["muted"]
+            else:color=ACCENT if active else MUTED
+            if kind=="bell" and getattr(self,"_nav_unread",0)>0 and not (active and st=="capsule"):
+                color="#F87171" if st=="dark" else RED
+            btn.setIcon(ui_icon(kind,color))
+
+    def apply_nav_style(self,key):
+        self.nav_style=key if key in NAV_STYLE_KEYS else NAV_DEFAULT_STYLE
+        self._apply_nav_metrics()
+        self.sidebar.update()
+
+    def _nav_style_sheet(self,hover,soft):
+        d=nav_dark_palette(getattr(self,"theme_name","云白"))
+        c="QWidget#Sidebar[navStyle='capsule']";l="QWidget#Sidebar[navStyle='line']";k="QWidget#Sidebar[navStyle='dark']"
+        return f"""
+            QFrame#NavGroup {{ background:transparent;border:0; }}
+            {c} {{ background:{BG}; }}
+            {c} QFrame#NavGroup {{ background:{PANEL};border:1px solid {BORDER};border-radius:14px; }}
+            {c} QLabel#NavLabel {{ font-size:11px;font-weight:700;padding:6px 10px 4px; }}
+            {c} QPushButton#SideNav {{ border-radius:21px;padding:0 14px;font-size:14px;font-weight:600; }}
+            {c} QPushButton#SideNav:hover {{ background:{hover}; }}
+            {c} QPushButton#SideNav[active='true'] {{ background:{ACCENT};color:#FFFFFF;font-weight:700; }}
+            {c}[navCollapsed='true'] QPushButton#SideNav {{ padding:0px;text-align:center; }}
+            {c} QFrame#ConnCard {{ background:{PANEL};border-radius:18px; }}
+            {c} QPushButton#SideCollapse {{ font-size:13px;font-weight:600;border-radius:14px; }}
+            {l} QLabel#NavLabel {{ font-size:11px;font-weight:600;padding:10px 10px 4px; }}
+            {l} QPushButton#SideNav {{ border-radius:8px;padding:0 10px;font-size:14px;font-weight:500; }}
+            {l} QPushButton#SideNav:hover {{ background:{hover}; }}
+            {l} QPushButton#SideNav[active='true'] {{ background:{soft};color:{ACCENT};font-weight:700;border-left:3px solid {ACCENT};border-top-left-radius:0px;border-bottom-left-radius:0px;padding-left:7px; }}
+            {l}[navCollapsed='true'] QPushButton#SideNav {{ padding:0px;text-align:center; }}
+            {l}[navCollapsed='true'] QPushButton#SideNav[active='true'] {{ border-left:0;border-radius:8px;padding:0px;text-align:center; }}
+            {l} QFrame#ConnCard {{ background:transparent;border-radius:8px; }}
+            {l} QPushButton#SideCollapse {{ font-size:13px;font-weight:600; }}
+            {k} {{ background:{d['bg']};border-right:1px solid {d['border']}; }}
+            {k} QLabel {{ color:{d['text']}; }}
+            {k} QLabel#BrandName, {k} QLabel#ConnTitle, {k} QLabel#NotificationBadge {{ color:#FFFFFF; }}
+            {k} QLabel#BrandSub, {k} QLabel#NavLabel, {k} QLabel#SmallMuted, {k} QLabel#SideFoot {{ color:{d['muted']}; }}
+            {k} QLabel#NavLabel {{ font-size:11px;font-weight:600;padding:10px 10px 4px; }}
+            {k} QPushButton#SideNav {{ border-radius:8px;padding:0 12px;font-size:14px;font-weight:500;color:{d['text']}; }}
+            {k} QPushButton#SideNav:hover {{ background:{d['hover']}; }}
+            {k} QPushButton#SideNav[active='true'] {{ background:{d['active']};color:#FFFFFF;font-weight:700; }}
+            {k}[navCollapsed='true'] QPushButton#SideNav {{ padding:0px;text-align:center; }}
+            {k} QFrame#ConnCard {{ background:{d['glass']};border:1px solid {d['border']};border-radius:12px; }}
+            {k} QFrame#ConnCard:hover {{ border-color:{d['accent']}; }}
+            {k} QPushButton#SideCollapse {{ color:{d['muted']};font-size:13px;font-weight:600; }}
+            {k} QPushButton#SideCollapse:hover {{ color:#FFFFFF;background:{d['hover']}; }}
+        """
+
     def wire_signals(self):
-        d=self.dashboard;d.collect_once.connect(self.dashboard_run_button);d.toggle_auto.connect(self.toggle_auto)
+        d=self.dashboard;d.collect_once.connect(self.dashboard_run_button);d.toggle_auto.connect(self.toggle_auto);d.grace_cancel_requested.connect(self._on_grace_cancel)
         d.view_alerts.connect(lambda:self.switch_page(2));d.open_manager.connect(self.open_manager)
         d.delete_page.connect(lambda pid:self.delete_ids([pid]))
         d.open_page.connect(self.open_page);d.open_settings_requested.connect(lambda:self.switch_page(4))
@@ -11122,6 +12329,7 @@ class MainWindow(QMainWindow):
         settings.toast_position_requested.connect(self.set_toast_position)
         settings.progress_style_requested.connect(self._on_progress_style_changed)
         settings.card_layout_requested.connect(self._on_card_layout_changed)
+        settings.nav_style_requested.connect(self.apply_nav_style)
         settings.export_requested.connect(self.export_csv)
         settings.data_dir_requested.connect(self.move_data_directory)
         settings.dev_mode_requested.connect(self.set_dev_mode)
@@ -11135,6 +12343,19 @@ class MainWindow(QMainWindow):
 
     def _on_card_layout_changed(self, key):
         self.dashboard.set_card_layout(key)
+
+    def _request_fireworks(self,count=1):
+        """Queue `count` firework plays; each plays in turn (one play ~7s)."""
+        if count<=0:return
+        self._fireworks_queue+=int(count);self._drain_fireworks_queue()
+
+    def _drain_fireworks_queue(self):
+        if getattr(self,"_fireworks_queue",0)<=0:return
+        _ov=self._fireworks_overlay
+        if _ov is not None and _ov._timer.isActive():
+            QTimer.singleShot(1000,self._drain_fireworks_queue);return
+        self._fireworks_queue-=1;self.play_fireworks()
+        QTimer.singleShot(7100,self._drain_fireworks_queue)
 
     def play_fireworks(self):
         if self._fireworks_overlay is None:
@@ -11191,18 +12412,40 @@ class MainWindow(QMainWindow):
         if not new:
             return
         if self.stack.currentIndex() == 0 and self.isVisible() and not self.isMinimized():
-            diag_log("[烟花] 本轮新增超标 %d 个，已播放一次" % len(new))
-            self.play_fireworks()
+            diag_log("[烟花] 本轮新增超标 %d 个，逐个播放" % len(new))
+            self._request_fireworks(len(new))
         else:
             diag_log("[烟花] 本轮新增超标 %d 个，切回看板时播放" % len(new))
-            self._fireworks_pending = len(new)
+            self._fireworks_pending += len(new)
 
     def set_dev_mode(self, on):
         on = bool(on)
+        # Developer mode minimum is 1080x560 (user-set test size);
+        # turning it off restores the normal 1024x650.
+        # The sidebar keeps its fixed width; only the centre is allowed to
+        # shrink, so the smaller floor is reachable without the sidebar
+        # being squeezed away.
+        self.setMinimumSize(1080, 560) if on else self.setMinimumSize(1024, 650)
+        _center = self.stack.parentWidget() if hasattr(self, "stack") else None
+        if on:
+            self.sidebar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Ignored)
+            if _center is not None:
+                _center.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        else:
+            self.sidebar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+            if _center is not None:
+                _center.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+            self.set_sidebar_collapsed(getattr(self, "_sidebar_collapsed", False))
+        self.updateGeometry()
+        _lay = self.layout()
+        if _lay is not None:
+            _lay.activate()
         if on:
             if self._diag_window is None:
                 self._diag_window = DiagLogWindow(self)
                 self._diag_window.reset_tour_requested.connect(self.reset_tour)
+                self._diag_window.restore_window_size_requested.connect(self.restore_default_window_size)
+                self._diag_window.apply_window_size_requested.connect(self.apply_window_size)
             self._diag_window.show()
             self._diag_window.raise_()
             self._diag_window.activateWindow()
@@ -11210,7 +12453,7 @@ class MainWindow(QMainWindow):
             self._diag_window.hide()
 
     def switch_page(self,index):
-        if index not in (0,2,3,4):index=0
+        if index not in (0,1,2,3,4):index=0
         self.stack.setCurrentIndex(index)
         if not self._ui_restoring:
             self.settings.setValue("ui/page",index);self.settings.sync()
@@ -11218,9 +12461,10 @@ class MainWindow(QMainWindow):
             _new_active=(idx==index)
             if button.property("active")!=_new_active:
                 button.setProperty("active",_new_active);button.style().unpolish(button);button.style().polish(button)
+        self._refresh_nav_icons()
         if hasattr(self,"dashboard") and hasattr(self.dashboard,"action_bar"):
             self.dashboard.action_bar.setVisible(index==0)
-        titles={0:("监控看板","粉丝与发帖监控 · 数据保存在本地"),2:("通知","未读通知与历史记录"),3:("ID管理","一次添加，多模块共用"),4:("设置","浏览器连接、巡检、提醒与数据")}
+        titles={0:("监控看板","粉丝与发帖监控 · 数据保存在本地"),1:("增长趋势","每天粉丝变化曲线"),2:("通知","未读通知与历史记录"),3:("ID管理","一次添加，多模块共用"),4:("设置","浏览器连接、巡检、提醒与数据")}
         title,sub=titles[index]
         if index==0:
             _posts_on=modules_posts_enabled(self.settings);_growth_on=modules_growth_enabled(self.settings)
@@ -11229,7 +12473,8 @@ class MainWindow(QMainWindow):
         if hasattr(self,"page_title"):self.page_title.setText(title)
         if hasattr(self,"page_sub"):self.page_sub.setText(sub)
         if index==0:self.refresh_dashboard()
-        if index==0 and getattr(self,"_fireworks_pending",0):self._fireworks_pending=0;self.play_fireworks()
+        if index==0 and getattr(self,"_fireworks_pending",0):_n=self._fireworks_pending;self._fireworks_pending=0;self._request_fireworks(_n)
+        elif index==1:self.trend.refresh()
         elif index==2:self.alerts.open_current()
         elif index==3:self.page_manager.refresh()
         elif index==4:self.settings_page.refresh_data_path()
@@ -11242,7 +12487,18 @@ class MainWindow(QMainWindow):
         if not hasattr(self,"notification_badge"):return
         btn=self.nav_buttons.get(2)
         if btn is None:return
-        self.notification_badge.move(max(0,btn.width()-27),(btn.height()-17)//2)
+        # The count hugs the label it belongs to, not the far right edge
+        # of the row: expanded -> top-right of the "通知" text; collapsed
+        # -> top-right of the bell icon. (The old code pinned it to the
+        # row's right edge, which left it far from the word.)
+        _y=2
+        if getattr(self,"_sidebar_collapsed",False):
+            _icon_w=btn.iconSize().width() or 22
+            _x=(btn.width()-_icon_w)//2+_icon_w-3
+        else:
+            _tw=btn.fontMetrics().horizontalAdvance(btn.text() or "通知")
+            _x=self._nav_pad()+btn.iconSize().width()+4+_tw-3
+        self.notification_badge.move(max(0,_x),_y)
 
     def _update_header_icons(self,unread=None):
         if not hasattr(self,"page_nav_buttons"):return
@@ -11259,12 +12515,14 @@ class MainWindow(QMainWindow):
         colors={"pages":CYAN,"browser":GREEN,"theme":ACCENT,"settings":CYAN,"update":MUTED}
         for button in _buttons:
             kind=button.property("iconKind")
+            if button.objectName()=="SideNav":continue  # sidebar icons: see _refresh_nav_icons
             if button.objectName()=="HomePill":color="#FFFFFF"
             elif kind=="bell":color=RED if (unread or 0)>0 else CYAN
             elif kind=="browser":color=GREEN if (hasattr(self,"connector") and self.selected_connectors()) else RED
             elif kind=="update" and getattr(self,"_update_available",False):color=AMBER
             else:color=colors.get(kind,MUTED)
             button.setIcon(ui_icon(kind,color))
+        self._refresh_nav_icons(unread)
 
     def set_update_attention(self,active,version=""):
         self._update_available=bool(active)
@@ -11272,6 +12530,7 @@ class MainWindow(QMainWindow):
 
     def refresh_dashboard(self):
         self.dashboard.refresh();self.dashboard.set_running(self.auto_enabled,self.worker_thread is not None)
+        if self.worker_thread is not None and self.current_purpose=="monitor":self._check_fireworks()
         g,p=self.store.unread_totals();n=g+p
         self.notification_badge.setText(str(n) if n<100 else "99+");self.notification_badge.setVisible(n>0)
         self.page_nav_buttons[2].setToolTip(f"通知 · {n} 条未读")
@@ -11410,6 +12669,7 @@ class MainWindow(QMainWindow):
 
     def start_collection(self,once=True):
         if self._closing or self._maintenance:return
+        if getattr(self,"_grace_remaining",0)>0:self._clear_grace()
         if self.login_thread is not None:
             if once:show_hint(self,"请先关闭登录浏览器，再巡检。",kind="warning")
             elif self.auto_enabled:self.auto_timer.start(30000)
@@ -11560,7 +12820,7 @@ class MainWindow(QMainWindow):
         if self.current_purpose=="monitor" and self.run_ok+self.run_fail>0:
             stamp=now_iso();self.settings.setValue("last_inspection_at",stamp);self.settings.sync()
             self.dashboard._last_inspection_stamp=stamp
-            self.dashboard.run_badge.setText("上次巡检时间："+inspection_stamp_label(stamp))
+            self._refresh_run_badge()
         if "连接器中断" in message and self.auto_enabled:
             self.stop_auto();self.dashboard.status.setText(message+" · 自动巡检已暂停，请恢复浏览器连接后重新开启")
         else:self.dashboard.status.setText(message)
@@ -11602,18 +12862,61 @@ class MainWindow(QMainWindow):
             return
         # Small rounds are trimmed to the available tasks in _start_worker.
         self.auto_enabled=True
+        self._badge_show_next=False;self._refresh_run_badge();self._badge_timer.start()
         # Deliberately do NOT write start_auto or change the startup checkbox.
-        if not self.worker_thread:self.start_collection(False)
+        # 5s grace: show the countdown on 立即巡检; the first round starts
+        # when it runs out, unless the user cancels it first.
+        if not self.worker_thread:
+            self._grace_remaining=5;self.dashboard.set_grace_countdown(5);self._grace_timer.start()
         self.dashboard.set_running(True,self.worker_thread is not None)
 
     def stop_auto(self):
         # This only stops scheduling in this process; explicit startup preference is independent.
+        self._clear_grace()
         self.auto_enabled=False;self.next_run_at=None;self.auto_timer.stop()
+        self._badge_timer.stop();self._badge_show_next=False;self._refresh_run_badge()
         self.dashboard.set_running(False,self.worker_thread is not None)
         self.dashboard.status.setText("已暂停自动巡检；当前任务可用巡检按钮暂停")
 
+    def _clear_grace(self):
+        self._grace_timer.stop();self._grace_remaining=0
+        try:self.dashboard.set_grace_countdown(0)
+        except Exception:pass
+
+    def _on_grace_tick(self):
+        self._grace_remaining-=1
+        if self._grace_remaining<=0:
+            self._clear_grace()
+            if self.auto_enabled and not self.worker_thread:self.start_collection(False)
+            return
+        self.dashboard.set_grace_countdown(self._grace_remaining)
+
+    def _on_grace_cancel(self):
+        """User cancelled the immediate first round: wait for the scheduled time."""
+        self._clear_grace()
+        if self.auto_enabled:self.schedule_next_round()
+
+    def _on_badge_timer(self):
+        """Independent 10s switch: last <-> next, both sides exactly 10s,
+        whatever the patrol is doing. Auto off: no rotation (badge shows
+        last only, see _refresh_run_badge)."""
+        if not self.auto_enabled:return
+        self._badge_show_next=not self._badge_show_next
+        self._refresh_run_badge()
+
+    def _refresh_run_badge(self):
+        """One line, one time, never two. Auto on: alternate every 10s between
+        last patrol time and next patrol time (estimated). Auto off: last only."""
+        _stamp=getattr(self.dashboard,"_last_inspection_stamp",None)
+        _last="上次巡检时间："+inspection_stamp_label(_stamp)
+        if not self.auto_enabled or not self._badge_show_next or not self.next_run_at or self.next_run_at<=time.time():
+            self.dashboard.run_badge.setText(_last);return
+        _when=datetime.fromtimestamp(self.next_run_at).astimezone().strftime("%m/%d %H:%M")
+        self.dashboard.run_badge.setText(f"下次巡检时间，预计 {_when}")
+
     def update_countdown(self):
         self._tick+=1
+        self._refresh_run_badge()
         if self.auto_enabled and self.next_run_at:
             secs=max(0,int(self.next_run_at-time.time()));mm,ss=divmod(secs,60)
             self.dashboard.next_run.setText(f"下次巡检 {mm:02d}:{ss:02d}")
@@ -11739,7 +13042,11 @@ class MainWindow(QMainWindow):
             else:_short='未检测到浏览器'
             self.connector_title.setText(_short)
         if hasattr(self,'connector_dot'):
-            color={'ok':'#26C281','warn':'#F0A43A','error':'#E75768'}[state];self.connector_dot.setStyleSheet(f'background:{color};border:2px solid {BG};border-radius:6px;');self.connector_dot.setToolTip(html.escape(text))
+            color={'ok':'#26C281','warn':'#F0A43A','error':'#E75768'}[state];self.connector_dot.setStyleSheet(f'background:{color};border:2px solid {self._nav_dot_ring()};border-radius:6px;');self.connector_dot.setToolTip(html.escape(text))
+        if hasattr(self,"_conn_collapsed_icon"):
+            self._conn_collapsed_icon.setPixmap(ui_icon("browser",color).pixmap(QSize(22,22)))
+        if hasattr(self,"_conn_collapsed_count"):
+            self._conn_collapsed_count.setText(f"{len(active)} 个")
         if self.auto_enabled and not active:
             if self.worker is not None:self.worker.stop()
             self.stop_auto();self.dashboard.status.setText('所有可用浏览器连接均已中断，自动巡检已暂停')
@@ -11887,8 +13194,27 @@ class MainWindow(QMainWindow):
             self.size_grip.move(self.width()-18,self.height()-18);self.size_grip.setVisible(not self.isMaximized())
         self._layout_resize_handles()
         self._position_notification_badge()
+        self._position_version_corner()
+        # Log the current size once a drag settles, so the user can read
+        # it from the diagnostic log and report it back. Debounced: the
+        # timer restarts on every resize event and only fires after 500ms
+        # with no further resize, so a drag writes exactly one line.
+        if not hasattr(self,"_size_log_timer"):
+            self._size_log_timer=QTimer(self);self._size_log_timer.setSingleShot(True)
+            self._size_log_timer.timeout.connect(lambda:diag_log(f"[窗口] 当前尺寸 {self.width()}x{self.height()}"))
+        self._size_log_timer.start(500)
         if getattr(self,"_update_log_panel",None) is not None and not self._update_log_panel.isHidden():
             self._update_log_panel.setGeometry(self.width()-400,0,400,self.height());self._update_log_panel.raise_()
+        # Auto-collapse / auto-expand on width crossing 1200 while dragging.
+        # Only a crossing counts, so a startup restore to a narrow width
+        # keeps the saved sidebar state instead of overriding it.
+        _w=self.width();_prev=getattr(self,"_last_width",None)
+        if _prev is not None and _w!=_prev:
+            if _prev>=1200 and _w<1200 and not getattr(self,"_sidebar_collapsed",False):
+                self._sidebar_auto_collapsed=True;self.set_sidebar_collapsed(True)
+            elif _prev<1200 and _w>=1200 and getattr(self,"_sidebar_collapsed",False) and getattr(self,"_sidebar_auto_collapsed",False):
+                self._sidebar_auto_collapsed=False;self.set_sidebar_collapsed(False)
+        self._last_width=_w
 
     def paintEvent(self,event):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -12066,6 +13392,21 @@ class MainWindow(QMainWindow):
         self.settings.sync();self.tray.hide();event.accept()
         QTimer.singleShot(0,QApplication.instance().quit)
 
+    def _close_tasks(self):
+        """Running tasks for the close dialog: list of (name, current, total).
+        total is None when there is no progress to show."""
+        tasks=[]
+        if self.worker_thread is not None:
+            cur=int(getattr(self.dashboard,"_prog_current",0) or 0)
+            tot=int(getattr(self.dashboard,"_prog_total",0) or 0)
+            name="同步资料" if getattr(self,"current_purpose","monitor")=="metadata" else "本轮巡检"
+            tasks.append((name,cur,tot if tot>0 else None))
+        if self.login_thread is not None:
+            tasks.append(("浏览器登录",None,None))
+        if self._update_thread is not None:
+            tasks.append(("正在更新",None,None))
+        return tasks
+
     def closeEvent(self,event):
         log_window_event("close_event","closing=%s visible=%s"%(self._closing,self.isVisible()))
         try:
@@ -12077,28 +13418,69 @@ class MainWindow(QMainWindow):
         if self._toast is not None:self._toast.hide()
         if not self._closing:
             event.ignore()
-            if QSystemTrayIcon.isSystemTrayAvailable() and not is_true(self.settings.value("silent_to_tray",1),True):
-                choice=CloseChoiceDialog(self).exec_choice()
-                if choice=="background":
-                    self._exit_after_round=False
-                    self.tray.show();self.hide();return
-                if choice=="wait":
+            tasks=self._close_tasks()
+            # A remembered choice (from the dialog's "记住我的选择") is applied
+            # without asking. "立即退出" is never remembered. The old
+            # silent_to_tray skip is retired: the dialog is the entry point,
+            # and remembering "最小化到托盘" restores the silent behaviour.
+            remembered=str(self.settings.value("close/remembered","") or "")
+            if remembered=="background":
+                self._exit_after_round=False
+                if QSystemTrayIcon.isSystemTrayAvailable():
+                    self.tray.show();self.hide()
+                else:
+                    self.showMinimized()
+                return
+            if remembered=="wait":
+                if tasks:
                     self.auto_enabled=False;self.auto_timer.stop();self.next_run_at=None
                     self._exit_after_round=True
                     if self.worker_thread is None:
                         self._exit_after_round=False
                         self._finish_close(event)
-                    else:
+                    elif QSystemTrayIcon.isSystemTrayAvailable():
                         self.tray.show();self.hide()
-                    return
-                if choice=="stop":
-                    self._finish_close(event);return
+                    else:
+                        self.showMinimized()
+                else:
+                    self._finish_close(event)
                 return
-            if QSystemTrayIcon.isSystemTrayAvailable():
-                self.tray.show();self.hide()
-            else:
-                # Never hide the only recoverable window when the OS has no tray.
-                self.showMinimized()
+            if remembered=="exit":
+                self._finish_close(event);return
+            # The dialog shows whether or not a tray exists: "stop" does
+            # not need one, and "background" without a tray just minimises
+            # instead of hiding (so the window stays recoverable).
+            choice,remember=CloseChoiceDialog(self).exec_choice()
+            if choice is None:
+                return
+            if remember:
+                if choice=="background":
+                    self.settings.setValue("close/remembered","background")
+                    self.settings.setValue("silent_to_tray",1)
+                elif choice=="wait":
+                    self.settings.setValue("close/remembered","wait")
+                elif choice=="stop" and not tasks:
+                    self.settings.setValue("close/remembered","exit")
+            if choice=="background":
+                self._exit_after_round=False
+                if QSystemTrayIcon.isSystemTrayAvailable():
+                    self.tray.show();self.hide()
+                else:
+                    self.showMinimized()
+                return
+            if choice=="wait":
+                self.auto_enabled=False;self.auto_timer.stop();self.next_run_at=None
+                self._exit_after_round=True
+                if self.worker_thread is None:
+                    self._exit_after_round=False
+                    self._finish_close(event)
+                elif QSystemTrayIcon.isSystemTrayAvailable():
+                    self.tray.show();self.hide()
+                else:
+                    self.showMinimized()
+                return
+            if choice=="stop":
+                self._finish_close(event);return
             return
         self._finish_close(event)
 
@@ -12116,6 +13498,9 @@ class MainWindow(QMainWindow):
         for _n,_sw in self.theme_swatches.items():
             _sel=_n==name
             _sw.setStyleSheet(f"background:{_sw_colors.get(_n,'#FFFFFF')};border:{'2px' if _sel else '1px'} solid {ACCENT if _sel else '#C9C9C4'};border-radius:10px;")
+        for _n,_sw in getattr(self,"_collapsed_theme_swatches",{}).items():
+            _sel=_n==name
+            _sw.setStyleSheet(f"background:{_sw_colors.get(_n,'#FFFFFF')};border:{'2px' if _sel else '1px'} solid {ACCENT if _sel else '#C9C9C4'};border-radius:7px;")
         if hasattr(self,"theme_name_label"):self.theme_name_label.setText(name)
 
     def set_ui_scale(self,scale):
@@ -12173,6 +13558,7 @@ class MainWindow(QMainWindow):
         if hasattr(self,"dashboard"):
             self._update_header_icons(sum(self.store.unread_totals()) if hasattr(self,"store") else 0)
             if refresh:self.refresh_all()
+        self._refresh_nav_icons()
         for avatar in self.findChildren(AvatarWidget):avatar.update()
 
 
@@ -12196,11 +13582,12 @@ class MainWindow(QMainWindow):
             QLabel#UpdateLogVersion {{ font-weight:700; font-size:17px; }}
             QLabel#UpdateLogGroup {{ color:{ACCENT}; font-weight:700; font-size:13px; }}
             QLabel#UpdateLogDot {{ color:{ACCENT}; }}
-            QPushButton#UpdateLogClose {{ background:transparent; border:1px solid {BORDER}; border-radius:10px; color:{TEXT}; font-size:26px; font-weight:700; padding:0 0 3px 0; }}
-            QPushButton#UpdateLogClose:hover {{ background:#EF4444; border-color:#EF4444; color:#FFFFFF; }}
+            QPushButton#UpdateLogClose {{ background:transparent; border:1px solid {BORDER}; border-radius:8px; color:{MUTED}; font-size:16px; }}
             QWidget {{ color:{TEXT}; font-size:13px; }}
             QLabel {{ background:transparent; border:0; }}
             QDialog, QMessageBox {{ background:{BG}; }}
+            QPushButton#SideCollapse {{ background:transparent;border:0;color:{MUTED};font-size:16px;font-weight:700;padding:0; }}
+            QPushButton#SideCollapse:hover {{ color:{ACCENT};background:{hover};border-radius:6px; }}
             QWidget#Sidebar {{ background:{SIDEBAR}; border-right:1px solid {BORDER};
                 border-top-left-radius:19px; border-bottom-left-radius:19px; }}
             QWidget#Sidebar[flat='true'] {{ border-radius:0px; }}
@@ -12232,7 +13619,7 @@ class MainWindow(QMainWindow):
             QProgressBar::chunk {{ background:{ACCENT};border-radius:5px; }}
             QPushButton#CloseWindowButton {{ background:transparent;border:0;border-radius:8px;padding:0; }}
             QPushButton#CloseWindowButton:hover {{ background:#E81123; }}
-            QLabel#NotificationBadge {{ background:{RED};color:#FFFFFF;border-radius:8px;font-size:9px;font-weight:800; }}
+            QLabel#NotificationBadge {{ background:#EA580C;color:#FFFFFF;border-radius:8px;font-size:9px;font-weight:800; }}
             QLabel#PageTitle {{ font-size:24px;font-weight:800;color:{TEXT}; }}
             QLabel#DialogTitle {{ font-size:23px;font-weight:800; }}
             QLabel#SectionTitle {{ font-size:17px;font-weight:750; }}
@@ -12244,10 +13631,19 @@ class MainWindow(QMainWindow):
             QLabel#FansValue {{ color:{TEXT};font-size:12px; }}
             QLabel#Eyebrow {{ color:{CYAN};font-size:11px;font-weight:700; }}
             QLabel#RunBadge {{ color:{TEXT};font-size:13px;font-weight:650;padding:7px 8px; }}
-            QFrame#MetricCard, QFrame#PageCard, QFrame#SettingsCard, QFrame#EmptyState, QFrame#DetailStat, QFrame#RailCard {{
+            QFrame#MetricCard, QFrame#PageCard, QFrame#SettingsCard, QFrame#EmptyState, QFrame#DetailStat, QFrame#TrendChartCard, QFrame#TrendCard {{
                 background:{PANEL};border:1px solid {BORDER};border-radius:16px;
             }}
             QFrame#PageCard:hover {{ border:1px solid {ACCENT}; }}
+            QFrame#TrendCard:hover {{ border:1px solid {ACCENT}; }}
+            QLabel#TrendCardName {{ font-size:13px;font-weight:700; }}
+            QPushButton#DatePill {{ background:{PANEL};border:1px solid {BORDER};border-radius:12px;padding:9px 14px;font-size:14px;font-weight:600;color:{TEXT}; }}
+            QPushButton#DatePill:hover {{ border-color:{ACCENT}; }}
+            QLabel#CalMonthLabel {{ font-size:15px;font-weight:750;color:{TEXT}; }}
+            QPushButton#CalNavButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:8px;padding:4px 12px;font-size:15px;font-weight:700; }}
+            QPushButton#CalQuickButton {{ background:{PANEL};border:1px solid {BORDER};border-radius:9px;padding:8px 0;font-size:13px;font-weight:600;color:{TEXT}; }}
+            QPushButton#CalQuickButton:checked {{ background:{ACCENT};border-color:{ACCENT};color:#FFFFFF; }}
+            QDialog#DateRangePopup {{ background:{PANEL};border:1px solid {BORDER};border-radius:14px; }}
             QFrame#AlertRow {{ background:transparent;border-left:2px solid {BORDER}; }}
             QLabel#AlertRowTitle {{ color:{AMBER};font-size:12px;font-weight:650; }}
             QLabel#MetricLabel {{ color:{MUTED};font-size:13px;font-weight:600; }}
@@ -12255,8 +13651,8 @@ class MainWindow(QMainWindow):
             QLabel#MetricValue[tone="history"] {{ color:{RED}; }}
             QLabel#MetricValue[tone="bell"] {{ color:{GREEN}; }}
             QPushButton#MetricBadge {{ background:{RED};color:#FFFFFF;border:0;border-radius:10px;font-size:11px;font-weight:800;padding:0; }}
-            QLabel#ChipBadge {{ background:{RED};color:#FFFFFF;border-radius:8px;font-size:10px;font-weight:800;padding:0; }}
-            QLabel#ChipBadge[tone="good"] {{ background:{GREEN};color:#FFFFFF;border-radius:8px;font-size:10px;font-weight:800;padding:0; }}
+            QLabel#ChipBadge {{ background:#EA580C;color:#FFFFFF;border-radius:8px;font-size:10px;font-weight:800;padding:0; }}
+            QLabel#ChipBadge[tone="good"] {{ background:#EA580C;color:#FFFFFF;border-radius:8px;font-size:10px;font-weight:800;padding:0; }}
             QLabel#CardTitle {{ font-size:16px;font-weight:750;color:{TEXT}; }}
             QLabel#CardId {{ color:{MUTED};font-size:13px; }}
             QLabel#BigNumber {{ color:{TEXT};font-weight:800; }}
@@ -12285,8 +13681,9 @@ class MainWindow(QMainWindow):
             QPushButton:disabled {{ color:{disabled_text};border-color:{BORDER};background:{PANEL}; }}
             QPushButton#PrimaryButton {{ background:{ACCENT};border:1px solid {ACCENT};color:#FFFFFF; }}
             QPushButton#PrimaryButton:hover {{ background:{accent2};border-color:{accent2}; }}
+            QPushButton#PrimaryButton[graceCountdown='true'] {{ background:#FEF3C7;border:1px solid #F59E0B;color:#92400E; }}
             QPushButton#AutoButton {{ background:{PANEL_2};border:1px solid {BORDER}; }}
-            QPushButton#AutoButton[autoEnabled='true'] {{ background:{soft};border-color:{ACCENT}; }}
+            QPushButton#AutoButton[autoEnabled='true'] {{ background:{ACCENT};border-color:{ACCENT};color:#FFFFFF; }}
             QPushButton#DangerButton {{ background:{danger_bg};color:{RED};border:1px solid {danger_border};font-size:14px;font-weight:700; }}
             QPushButton#BatchActionButton {{ font-size:14px;font-weight:700; }}
             QPushButton#LinkButton {{ background:transparent;border:0;color:{ACCENT};padding:4px 8px;font-size:12px;font-weight:600; }}
@@ -12353,6 +13750,7 @@ class MainWindow(QMainWindow):
             QToolTip {{ background:{p["tooltip_bg"]};color:{p["tooltip_text"]};border:1px solid {p["tooltip_border"]};padding:6px 8px;font-size:13px; }}
             QSizeGrip {{ background:transparent; }}
         """
+        _sheet+=self._nav_style_sheet(hover,soft)
         self.setStyleSheet(_scaled_stylesheet(_sheet,ui_scale_percent(self.settings)))
 
 
@@ -12409,10 +13807,12 @@ class MainWindow(QMainWindow):
 
     def startup_update_check(self):
         result_path=DATA_DIR/"updates/helper/install-result.json"
+        failed_version=""
         if result_path.is_file():
             try:
                 result=json.loads(result_path.read_text("utf-8-sig"))
                 if result.get("status")=="failed":
+                    failed_version=str(result.get("version") or "")
                     QMessageBox.warning(self,"上次更新未安装",str(result.get("message") or "系统安装器或签名验证未通过。原数据保留，可重新检查版本。"))
                 else:
                     self.dashboard.status.setText("更新安装已完成 · 当前版本 "+APP_VERSION)
@@ -12422,15 +13822,32 @@ class MainWindow(QMainWindow):
                 result_path.unlink(missing_ok=True)
             except (OSError,ValueError):pass
         pending=DATA_DIR/"updates/pending.json"
+        pending_path=""
         if pending.is_file():
             try:
                 info=json.loads(pending.read_text("utf-8"))
                 if release_version(info.get("version",""))>release_version(APP_VERSION):
+                    pending_path=str(info.get("path") or "")
                     self.set_update_attention(True,info.get("version",""))
-                    self._update_manual=False;self._start_update_task("verify",info);return
+                    self._update_manual=False;self._start_update_task("verify",info)
+                    self._cleanup_old_updates(failed_version,pending_path);return
                 pending.unlink(missing_ok=True)
             except (ValueError,OSError,UpdateError):pass
+        self._cleanup_old_updates(failed_version,pending_path)
         self.check_for_updates(False)
+
+    def _cleanup_old_updates(self,failed_version="",pending_path=""):
+        """Startup cleanup: drop update files from older versions, keeping
+        only the current version (plus a failed install's version so it can
+        be retried, and a pending update's file)."""
+        try:
+            keep={APP_VERSION}
+            if failed_version:keep.add(failed_version)
+            files,dirs,freed=cleanup_old_updates(DATA_DIR/"updates",keep,(pending_path,) if pending_path else ())
+            if files or dirs:
+                diag_log(f"[更新] 已清理旧版本文件：{len(files)} 个安装包、{len(dirs)} 个解压文件夹，共释放约 {freed//(1024*1024)} MB")
+        except Exception:
+            pass
 
     def _start_update_task(self,operation,info=None):
         if self._update_thread is not None:return

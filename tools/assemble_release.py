@@ -93,7 +93,7 @@ def plugin_files():
 def notes(ver):
     t=README.read_text(encoding='utf-8-sig') if README.exists() else ''
 
-    m=re.search(rf'(?ms)^##\s+v?{re.escape(ver)}\b[^\n]*\n(.*?)(?=^##\s+|\Z)',t)
+    m=re.search(rf'(?ms)^###\s+v?{re.escape(ver)}\b[^\n]*\n(.*?)(?=^###\s+|^##\s+|\Z)',t)
 
     body=m.group(1).strip() if m else '本版本更新详见项目说明。'
 
