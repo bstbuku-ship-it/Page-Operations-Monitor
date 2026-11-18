@@ -1,4 +1,4 @@
-/* 专业监控工具连接器 1.4.7 -- automatic local bridge, no codes, no remote code and no cookies. */
+/* 专业监控工具连接器 1.4.8 -- automatic local bridge, no codes, no remote code and no cookies. */
 "use strict";
 importScripts('extractor.js');
 const DEFAULT_PORT = 17831;
@@ -133,12 +133,31 @@ function allowedImage(url) {
       (u.hostname.endsWith('.fbcdn.net') || u.hostname==='fbcdn.net' || u.hostname.endsWith('.fbsbx.com'));
   } catch (_) {return false;}
 }
+// Avatar target: the original picture, up to 1290px (the largest size
+// Facebook serves for these pictures). A small picture is never upscaled:
+// the canvas edge is min(1290, the bitmap's shortest side).
+// __AVATAR_URLS_BEGIN__
+const AVATAR_TARGET_PX=1290;
+const AVATAR_SIZE_STEPS=[1290,960,480];
+function biggerAvatarUrls(url) {
+  const m=String(url||'').match(/\/[ps](\d+)x\d+\//);
+  if(!m)return [String(url)];
+  const cur=parseInt(m[1],10);
+  const out=[];
+  for(const size of AVATAR_SIZE_STEPS) {
+    if(size>cur)out.push(String(url).replace(/\/[ps]\d+x\d+\//,'/p'+size+'x'+size+'/'));
+  }
+  out.push(String(url));
+  return out;
+}
+// __AVATAR_URLS_END__
 async function avatarData(candidates,task) {
   for(const candidate of (candidates||[]).slice(0,3)) {
     check(task);
     if(!allowedImage(candidate.url))continue;
+    for(const url of biggerAvatarUrls(candidate.url)) {
     try {
-      const response=await fetch(candidate.url,{credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(7000)});
+      const response=await fetch(url,{credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(7000)});
       if(!response.ok || !/^image\//i.test(response.headers.get('content-type')||''))continue;
       if(Number(response.headers.get('content-length')||0)>2000000)continue;
       const reader=response.body.getReader();let size=0;const chunks=[];
@@ -147,15 +166,16 @@ async function avatarData(candidates,task) {
       const blob=new Blob(chunks,{type:response.headers.get('content-type')});
       const bitmap=await createImageBitmap(blob);
       if(Math.min(bitmap.width,bitmap.height)<32 || Math.max(bitmap.width,bitmap.height)/Math.min(bitmap.width,bitmap.height)>1.55 || bitmap.width*bitmap.height>24000000){bitmap.close();continue;}
-      const canvas=new OffscreenCanvas(192,192),ctx=canvas.getContext('2d');
-      const edge=Math.min(bitmap.width,bitmap.height);
-      ctx.drawImage(bitmap,(bitmap.width-edge)/2,(bitmap.height-edge)/2,edge,edge,0,0,192,192);bitmap.close();
+      const edge=Math.min(AVATAR_TARGET_PX,bitmap.width,bitmap.height);
+      const canvas=new OffscreenCanvas(edge,edge),ctx=canvas.getContext('2d');
+      ctx.drawImage(bitmap,(bitmap.width-edge)/2,(bitmap.height-edge)/2,edge,edge,0,0,edge,edge);bitmap.close();
       const png=await canvas.convertToBlob({type:'image/png'});
       const bytes=new Uint8Array(await png.arrayBuffer());
       if(bytes.length>200000)continue;
       let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
       return 'data:image/png;base64,'+btoa(binary);
     } catch (_) {}
+    }
   }
   return '';
 }

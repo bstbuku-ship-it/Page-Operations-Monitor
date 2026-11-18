@@ -231,9 +231,55 @@ function extractPageDom(pageId, wantPosts) {
     const r=el.getBoundingClientRect(),sty=getComputedStyle(el);
     if(r.width<2 || r.height<2 || r.top<0 || r.top>1600 || sty.display==='none' || sty.visibility==='hidden')continue;
     const t=clean(el.innerText);
-    if(t.length>250 || !/followers?|\u7c89\u4e1d|\u8ffd\u8e64|\u8ffd\u8e2a|seguidores|pengikut|abonn/i.test(t))continue;
+    if(t.length>250 || !/followers?|\u7c89\u4e1d|\u8ffd\u8e64|\u8ffd\u8e2a|\u5173\u6ce8|\u95dc\u8a3b|seguidores|pengikut|abonn/i.test(t))continue;
     lines.push(t);
   }
+  const _exact_follower_count = (
+    (text) => {
+      // The page header only shows a rounded number ("9.7万" / "97K"):
+      // parse that approximation, then look for the exact integer in the
+      // page's own embedded data (inline JSON in script tags). A candidate
+      // only counts when it sits within 5% of the displayed number, so a
+      // lookalike count from another part of the page is discarded.
+      // Whether the page data really carries an exact number cannot be
+      // checked offscreen; it needs a logged-in Chrome (real-machine check).
+      const m = String(text || '').match(/([0-9][0-9.,\s]*)\s*(万|萬|亿|億|千|K|k|M|m|B|b)?\s*(?:位|名|人)?\s*(?:粉丝|追蹤者|追踪者|关注者|關注者|追蹤|追踪|关注|關注|followers?|pengikut|seguidores|abonn)/i);
+      if (!m) return null;
+      let num = m[1].replace(/[\s,]/g, '');
+      let mult = 1;
+      const unit = (m[2] || '').toLowerCase();
+      if (unit === '万' || unit === '萬') mult = 10000;
+      else if (unit === '亿' || unit === '億') mult = 100000000;
+      else if (unit === '千') mult = 1000;
+      else if (unit === 'k') mult = 1000;
+      else if (unit === 'm') mult = 1000000;
+      else if (unit === 'b') mult = 1000000000;
+      let approx = 0;
+      if (mult === 1) approx = parseInt(num.replace(/\./g, ''), 10);
+      else approx = Math.round(parseFloat(num) * mult);
+      if (!approx || approx <= 0 || approx > 10000000000) return null;
+      const found = new Set();
+      let scanned = 0;
+      for (const el of document.querySelectorAll('script')) {
+        const raw = el.textContent || '';
+        if (!raw) continue;
+        scanned += raw.length;
+        if (scanned > 2000000) break;
+        const re = /["'](?:follower_count|fan_count|followers_count|followerCount|fanCount|followersCount)["']\s*:\s*(\d{1,12})/g;
+        let m2;
+        while ((m2 = re.exec(raw)) !== null) {
+          const v = parseInt(m2[1], 10);
+          if (v > 0) found.add(v);
+        }
+      }
+      let best = null, best_err = Infinity;
+      for (const v of found) {
+        const err = Math.abs(v - approx) / approx;
+        if (err <= 0.05 && err < best_err) { best = v; best_err = err; }
+      }
+      return best;
+    }
+  );
   const follower_text=[...new Set(lines)].slice(0,24).join('\n');
   if(lines.length)for(const r of _near_follower_candidates(document.body,lines[0]))add(r.text,'near-followers');
   for(const el of [...document.querySelectorAll('[role="heading"]')].slice(0,80)) {
@@ -244,8 +290,9 @@ function extractPageDom(pageId, wantPosts) {
   const avatars=_avatar_candidates(name).filter(r => r.score>=48 && /^https:\/\//.test(r.url)).slice(0,6);
   let posts=[];
   if(wantPosts)posts=_post_candidates({pid,name}).slice(0,64);
+  const followers_exact=_exact_follower_count(follower_text);
   return {page_id:pid, observed_url:location.href, name_candidates:candidates.slice(0,100),
-    follower_text, avatar_candidates:avatars, post_candidates:posts, evidence_version:1};
+    follower_text, followers_exact, avatar_candidates:avatars, post_candidates:posts, evidence_version:1};
 }
 /* Hover one permalink and read the exact timestamp Facebook shows in its
    hover card (e.g. "2026年11月3日周二13:48"). Labels alone only give
