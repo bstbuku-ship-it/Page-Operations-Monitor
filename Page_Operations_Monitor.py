@@ -42,14 +42,14 @@ import base64
 import shlex
 
 APP_TITLE = "专业监控工具"
-APP_VERSION = "1.7.3"
-APP_BUILD = "professional-portable-deployer-ui-v173-20261112-rev87"
+APP_VERSION = "1.7.4"
+APP_BUILD = "professional-portable-deployer-ui-v174-20261118-rev116"
 
 # Update log, bundled in the code in Whitaker's wording and grouping:
 # version header "vX.Y.Z (date)", groups 优化/新增/修复 (first release
 # uses 首个版本), connector line on its own after the groups.
 UPDATE_LOG_SHOWN_KEY = "update_log/shown_for"
-CHANGELOG = [{'version': '1.7.3', 'date': '2026-11-12', 'groups': [{'title': '新增', 'items': ['左侧导航栏可以收起来，只留一列图标，点 ‹ 收起、点 › 展开。', '设置 → 外观里可以换导航栏样式：胶囊分组、清爽线条、深色导航三种。', '左侧导航栏新增「趋势」：上面是所有专业汇总趋势图，下面是每个专业的趋势图；点日期药丸可以选几号到几号。']}, {'title': '优化', 'items': ['启用自动巡检后，按钮变成深蓝色；点启用后等 5 秒再开始第一轮，5 秒内点取消就不立即巡检。', '窗口默认 1230×720，最小 1024×650；拉到 1200 以下侧栏自动收起，拖回自动展开；卡片按宽度排，最多 6 列；开发者模式最小 1080×560，开发者日志里可以输入尺寸测试、还原默认尺寸。', '通知、发帖超时、需处理、粉丝增长超标的数字，三个主题统一成正红色。', '更新完旧的安装包会自动清理，只留当前版本。', '浏览器连接窗口里，在线绿色、离线红色；状态和备注不再弹重复提示。', '关闭窗口改成新确认框，只有最小化到托盘和完全退出两个选项。', '左侧导航栏的「最近预警」板块删掉了。', '更新前会验证发布者的签名，签名不对就不会安装。']}, {'title': '修复', 'items': ['趋势日历下面三个快捷日期，现在只有点中的那一个有颜色；手动在日历上选日期后，三个都不亮了。', '头像不会再误抓成贴文里的图片。', '粉丝增长超标时，每录到一个就立刻放一次烟花。']}], 'connector': '浏览器连接器保持 1.4.7，已安装的无需重新安装。'}, {'version': '1.7.2', 'date': '2026-11-06', 'groups': [{'title': '新增', 'items': ['第一次打开会弹新手引导，带你走一遍装连接器、加主页、设自动巡检时间、跑巡检、看提醒；老用户也会弹一次，确认过就不再弹。', '自动巡检间隔设到 180 分钟以下时，设置里会出现提示，提醒你太短容易被 Facebook 临时限制。', '巡检跑起来之后，右键点「立即巡检」可以取消当前这一轮。']}, {'title': '优化', 'items': ['设置 → 巡检与提醒里的「巡检设置」改名「自动巡检设置」。']}, {'title': '修复', 'items': ['昨天超标、今天没超标的主页，不再一直留在「粉丝增长超标」里。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.1', 'date': '2026-11-06', 'groups': [{'title': '优化', 'items': ['主页小卡片改版：数值显示为「昨日新增 / 今日新增 / 距上次发帖」三列，当前粉丝单独一行（仅开启粉丝监控时显示）。', '昨日新增以红色、今日新增以绿色显示，无数据时为灰色；数值达 10000 以上以 W 为单位显示。', '点击「仅巡检本主页」后立即排入队列，无需等待上一轮结束；多个浏览器并行执行。', '发帖状态区分为「未见贴文」「读取不到」「待获取」三种。', '设置页重新整理：说明文字移至控件下方，「巡检与提醒」拆分为三节，粉丝增长提醒与发帖超时提醒可分别开关。', '精简设置项，移除「启动自动巡检」「静默收起到托盘」「备份数据库」。', '托盘右键菜单精简为「打开软件」「完全退出」。']}, {'title': '新增', 'items': ['筛选胶囊支持右键直接巡检该类主页。', '关闭窗口时可选择继续后台运行、等待本轮结束后退出或立即退出。']}, {'title': '修复', 'items': ['主页名称本轮未读取到时，不再判定为异常。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.0', 'date': '2026-11-04', 'groups': [{'title': '新增', 'items': ['浏览器连接器升级至 1.4.7（需手动更新），工具栏图标以角标显示离线 / 空闲 / 执行中状态。', '粉丝增长达标时播放烟花提示。', '自动复检：对仍无法确认的主页最多复检 5 遍，并优先更换浏览器重试。', '新增界面缩放（80%–130%）与消息提示位置设置。', '新增诊断日志窗口。']}, {'title': '优化', 'items': ['优化预警分类规则：粉丝增长超标、发帖超时、需处理三个维度独立统计。', '排序精简为三项，默认「增长预警优先」。', '卡片数值达 1000 以上以 k 为单位显示，悬停可查看精确值。', '设置页改为 5 个横向标签页。', '巡检间隔默认值调整为 240 分钟。', '通知历史支持清空已读记录。', '统一各类提示的显示样式。', '重写浏览器连接窗口，支持筛选、停用、删除与重新检测。', '并行巡检自动识别新上线的浏览器，不再限制数量。']}], 'connector': ''}, {'version': '1.6.2', 'date': '', 'groups': [{'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.1', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['Windows 版改用标准安装程序，提供简体中文安装向导，可自选安装路径。', '新增绿色便携版，解压即用，数据保存在软件文件夹内。']}, {'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.0', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['新增三套主题：云白（默认）、护眼绿、曜石黑。', '新增监控模块开关，首次运行时可选择启用的模块。', '支持静默升级：后台下载并校验新版本，空闲时自动安装并重启，可在「设置 → 更新」中关闭。', '提示气泡按类型区分图标：成功、警告、普通提示。', '主页卡片支持通过三点菜单删除。', '左侧栏新增预警头像行。', '接入 Windows 系统通知。']}, {'title': '优化', 'items': ['界面改为圆角风格，并新增左侧边栏。', '提示气泡按主题配色，宽度随内容自适应。', '主页不可用时直接给出判断。', 'ID 管理列表按专业名称排序。', '精简通知文案，不再显示 ID。']}, {'title': '修复', 'items': ['修复提示气泡偶尔被裁掉最后一个字的问题。']}], 'connector': '浏览器连接器保持 1.4.1，无需重新安装。'}, {'version': '1.5.0', 'date': '', 'groups': [{'title': '优化', 'items': ['软件名称统一为「专业监控工具」。', '「设置中心」更名为「设置」，移除「恢复默认巡检参数」「打开运行日志」「重置窗口布局」。', '专业 ID 管理入口统一为「FB专业ID管理」。', '更新提示改为「升级 / 以后再说」，下载并校验完成后再次确认安装。']}, {'title': '新增', 'items': ['设置新增「智能清理缓存」，扫描后经确认再清理，不影响 ID、通知、头像、设置、数据库及浏览器连接记录。']}], 'connector': ''}, {'version': '1.4.0', 'date': '2026-10-15', 'groups': [{'title': '新增', 'items': ['首页新增「昨日新增」指标。', '点击「查看通知」可直达通知界面并高亮对应预警。']}, {'title': '优化', 'items': ['通知界面默认仅显示未读及今日通知，较早的已读记录移至「历史记录」。', '预警弹窗头像与主页卡片保持一致。', '首页巡检参数布局更紧凑。', '数字输入框改为点击即选中、输入即保存。', '顶部图标按主题分层配色，有未读通知时显示红色。', '浏览器按钮增加状态灯：绿色可用、黄色部分连接、红色无连接。', '浏览器连接窗口简化；多个连接器可并行巡检，最多 10 个。', '浏览器连接器改为紧凑弹窗，可直接填写浏览器备注。']}], 'connector': ''}, {'version': '1.3.0', 'date': '2026-10-14', 'groups': [{'title': '新增', 'items': ['浏览器连接器改为同机自动发现、自动连接，无需手动输入配对码。', '检测到多个 Chrome 配置时可选择巡检所用浏览器，并记住上次选择。', '专业 ID 的粉丝监控与发帖监控可独立启用，支持批量管理。', '首页显示上次巡检时间，支持随机巡检间隔与随机主页间隔。', '关闭窗口后可留在系统托盘运行，再次启动时自动唤回已有窗口。', '最近预警增加主页头像。', '支持通过 GitHub Releases 检查并更新软件。']}], 'connector': ''}, {'version': '1.0.0', 'date': '2026-10-12', 'groups': [{'title': '首个版本', 'items': ['支持批量导入主页 ID，可直接粘贴谷歌表格内容并自动清洗。', '登录监控账号后，逐页采集粉丝数、主页名称与头像。', '首页展示当前粉丝与今日新增。', '支持粉丝增长桌面提醒。', '支持发帖时间监控与超时判断。', '提供专业 ID 管理：添加、编辑、批量设置、批量删除、导出清单。', '支持立即巡检与自动巡检。', '支持系统托盘、数据导出、数据目录迁移与数据库备份。', '支持检查新版本。']}], 'connector': ''}]
+CHANGELOG = [{'version': '1.7.4', 'date': '2026-11-17', 'groups': [{'title': '新增', 'items': ['ID 管理的搜索框可以直接粘贴多行 ID，一次查出多个主页，查到的可以直接批量设置或批量删除。', '新增圣诞主题：整体墨绿底色配金色点缀，侧栏有雪花和小书本装饰。', '监控看板的搜索框也可以直接粘贴多行 ID，一次查出多个主页。']}, {'title': '优化', 'items': ['左侧导航栏默认宽度修改了。', '删除了一个导航栏样式。', '左侧导航栏底部的“外观”文字删掉了，只剩四个主题圆点。', '整个页面四角的圆角改小了。', '界面缩放功能移除了，界面固定为 100% 显示。', '浏览器连接窗口打开时背景变暗、点不了别的，只能关掉后再操作。', 'ID 管理的搜索框加长了，最小窗口下也能完整显示。', '固定窗口的图钉图标换成新样式（未置顶斜钉、已置顶竖钉，颜色跟随主题）。', '监控看板副标题改成粉丝与发帖监控。', '两个搜索框都加宽了一点，主界面搜索框里写明了可粘贴多行 ID。', '侧栏和趋势页标题里的“趋势”改成“粉丝趋势”。']}, {'title': '修复', 'items': ['巡检时筛选胶囊右上角的数字徽标会被压住一半，现在能完整显示了。', '巡检进度选角标样式时，“继续巡检”按钮右上角的数字会被压住一半，现在能完整显示了。', '最小窗口下上次巡检时间显示不全，现在能完整显示了。', '没有连接器时点“仅巡检本主页”不再提示已在队列中，会直接提示连接器未连接。', '过了零点还没巡检时，昨日新增不再显示横杠，改按昨天和前天的最后一次读数计算；今日新增没巡检时仍显示横杠。']}], 'connector': '浏览器连接器升级至 1.4.8（需手动更新）。'}, {'version': '1.7.3', 'date': '2026-11-12', 'groups': [{'title': '新增', 'items': ['左侧导航栏可以收起来，只留一列图标，点 ‹ 收起、点 › 展开。', '设置 → 外观里可以换导航栏样式：胶囊分组、清爽线条、深色导航三种。', '左侧导航栏新增「趋势」：上面是所有专业汇总趋势图，下面是每个专业的趋势图；点日期药丸可以选几号到几号。']}, {'title': '优化', 'items': ['启用自动巡检后，按钮变成深蓝色；点启用后等 5 秒再开始第一轮，5 秒内点取消就不立即巡检。', '窗口默认 1230×720，最小 1024×650；拉到 1200 以下侧栏自动收起，拖回自动展开；卡片按宽度排，最多 6 列；开发者模式最小 1080×560，开发者日志里可以输入尺寸测试、还原默认尺寸。', '通知、发帖超时、需处理、粉丝增长超标的数字，三个主题统一成正红色。', '更新完旧的安装包会自动清理，只留当前版本。', '浏览器连接窗口里，在线绿色、离线红色；状态和备注不再弹重复提示。', '关闭窗口改成新确认框，只有最小化到托盘和完全退出两个选项。', '左侧导航栏的「最近预警」板块删掉了。', '更新前会验证发布者的签名，签名不对就不会安装。']}, {'title': '修复', 'items': ['趋势日历下面三个快捷日期，现在只有点中的那一个有颜色；手动在日历上选日期后，三个都不亮了。', '头像不会再误抓成贴文里的图片。', '粉丝增长超标时，每录到一个就立刻放一次烟花。']}], 'connector': '浏览器连接器保持 1.4.7，已安装的无需重新安装。'}, {'version': '1.7.2', 'date': '2026-11-06', 'groups': [{'title': '新增', 'items': ['第一次打开会弹新手引导，带你走一遍装连接器、加主页、设自动巡检时间、跑巡检、看提醒；老用户也会弹一次，确认过就不再弹。', '自动巡检间隔设到 180 分钟以下时，设置里会出现提示，提醒你太短容易被 Facebook 临时限制。', '巡检跑起来之后，右键点「立即巡检」可以取消当前这一轮。']}, {'title': '优化', 'items': ['设置 → 巡检与提醒里的「巡检设置」改名「自动巡检设置」。']}, {'title': '修复', 'items': ['昨天超标、今天没超标的主页，不再一直留在「粉丝增长超标」里。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.1', 'date': '2026-11-06', 'groups': [{'title': '优化', 'items': ['主页小卡片改版：数值显示为「昨日新增 / 今日新增 / 距上次发帖」三列，当前粉丝单独一行（仅开启粉丝监控时显示）。', '昨日新增以红色、今日新增以绿色显示，无数据时为灰色；数值达 10000 以上以 W 为单位显示。', '点击「仅巡检本主页」后立即排入队列，无需等待上一轮结束；多个浏览器并行执行。', '发帖状态区分为「未见贴文」「读取不到」「待获取」三种。', '设置页重新整理：说明文字移至控件下方，「巡检与提醒」拆分为三节，粉丝增长提醒与发帖超时提醒可分别开关。', '精简设置项，移除「启动自动巡检」「静默收起到托盘」「备份数据库」。', '托盘右键菜单精简为「打开软件」「完全退出」。']}, {'title': '新增', 'items': ['筛选胶囊支持右键直接巡检该类主页。', '关闭窗口时可选择继续后台运行、等待本轮结束后退出或立即退出。']}, {'title': '修复', 'items': ['主页名称本轮未读取到时，不再判定为异常。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.0', 'date': '2026-11-04', 'groups': [{'title': '新增', 'items': ['浏览器连接器升级至 1.4.7（需手动更新），工具栏图标以角标显示离线 / 空闲 / 执行中状态。', '粉丝增长达标时播放烟花提示。', '自动复检：对仍无法确认的主页最多复检 5 遍，并优先更换浏览器重试。', '新增界面缩放（80%–130%）与消息提示位置设置。', '新增诊断日志窗口。']}, {'title': '优化', 'items': ['优化预警分类规则：粉丝增长超标、发帖超时、需处理三个维度独立统计。', '排序精简为三项，默认「增长预警优先」。', '卡片数值达 1000 以上以 k 为单位显示，悬停可查看精确值。', '设置页改为 5 个横向标签页。', '巡检间隔默认值调整为 240 分钟。', '通知历史支持清空已读记录。', '统一各类提示的显示样式。', '重写浏览器连接窗口，支持筛选、停用、删除与重新检测。', '并行巡检自动识别新上线的浏览器，不再限制数量。']}], 'connector': ''}, {'version': '1.6.2', 'date': '', 'groups': [{'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.1', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['Windows 版改用标准安装程序，提供简体中文安装向导，可自选安装路径。', '新增绿色便携版，解压即用，数据保存在软件文件夹内。']}, {'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.0', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['新增三套主题：云白（默认）、护眼绿、曜石黑。', '新增监控模块开关，首次运行时可选择启用的模块。', '支持静默升级：后台下载并校验新版本，空闲时自动安装并重启，可在「设置 → 更新」中关闭。', '提示气泡按类型区分图标：成功、警告、普通提示。', '主页卡片支持通过三点菜单删除。', '左侧栏新增预警头像行。', '接入 Windows 系统通知。']}, {'title': '优化', 'items': ['界面改为圆角风格，并新增左侧边栏。', '提示气泡按主题配色，宽度随内容自适应。', '主页不可用时直接给出判断。', 'ID 管理列表按专业名称排序。', '精简通知文案，不再显示 ID。']}, {'title': '修复', 'items': ['修复提示气泡偶尔被裁掉最后一个字的问题。']}], 'connector': '浏览器连接器保持 1.4.1，无需重新安装。'}, {'version': '1.5.0', 'date': '', 'groups': [{'title': '优化', 'items': ['软件名称统一为「专业监控工具」。', '「设置中心」更名为「设置」，移除「恢复默认巡检参数」「打开运行日志」「重置窗口布局」。', '专业 ID 管理入口统一为「FB专业ID管理」。', '更新提示改为「升级 / 以后再说」，下载并校验完成后再次确认安装。']}, {'title': '新增', 'items': ['设置新增「智能清理缓存」，扫描后经确认再清理，不影响 ID、通知、头像、设置、数据库及浏览器连接记录。']}], 'connector': ''}, {'version': '1.4.0', 'date': '2026-10-15', 'groups': [{'title': '新增', 'items': ['首页新增「昨日新增」指标。', '点击「查看通知」可直达通知界面并高亮对应预警。']}, {'title': '优化', 'items': ['通知界面默认仅显示未读及今日通知，较早的已读记录移至「历史记录」。', '预警弹窗头像与主页卡片保持一致。', '首页巡检参数布局更紧凑。', '数字输入框改为点击即选中、输入即保存。', '顶部图标按主题分层配色，有未读通知时显示红色。', '浏览器按钮增加状态灯：绿色可用、黄色部分连接、红色无连接。', '浏览器连接窗口简化；多个连接器可并行巡检，最多 10 个。', '浏览器连接器改为紧凑弹窗，可直接填写浏览器备注。']}], 'connector': ''}, {'version': '1.3.0', 'date': '2026-10-14', 'groups': [{'title': '新增', 'items': ['浏览器连接器改为同机自动发现、自动连接，无需手动输入配对码。', '检测到多个 Chrome 配置时可选择巡检所用浏览器，并记住上次选择。', '专业 ID 的粉丝监控与发帖监控可独立启用，支持批量管理。', '首页显示上次巡检时间，支持随机巡检间隔与随机主页间隔。', '关闭窗口后可留在系统托盘运行，再次启动时自动唤回已有窗口。', '最近预警增加主页头像。', '支持通过 GitHub Releases 检查并更新软件。']}], 'connector': ''}, {'version': '1.0.0', 'date': '2026-10-12', 'groups': [{'title': '首个版本', 'items': ['支持批量导入主页 ID，可直接粘贴谷歌表格内容并自动清洗。', '登录监控账号后，逐页采集粉丝数、主页名称与头像。', '首页展示当前粉丝与今日新增。', '支持粉丝增长桌面提醒。', '支持发帖时间监控与超时判断。', '提供专业 ID 管理：添加、编辑、批量设置、批量删除、导出清单。', '支持立即巡检与自动巡检。', '支持系统托盘、数据导出、数据目录迁移与数据库备份。', '支持检查新版本。']}], 'connector': ''}]
 DEFAULT_INTERVAL_MINUTES = 240
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -148,6 +148,11 @@ DATA_DIR = app_data_dir()
 DB_PATH = DATA_DIR / "fb_growth_radar_v1.db"
 BROWSER_PROFILE_DIR = DATA_DIR / "browser_profile"
 AVATAR_DIR = DATA_DIR / "avatars"
+# rev106: the rev105 split (avatars_v2 / avatars_old) is withdrawn.
+# These two paths are only the move-back targets of
+# _migrate_avatar_cache_back_once; lookups use avatars/ only.
+AVATAR_DIR_V2 = AVATAR_DIR / "avatars_v2"
+AVATAR_ARCHIVE_DIR = AVATAR_DIR / "avatars_old"
 TOAST_AVATAR_SIZE = 96
 TOAST_AVATAR_MAX_BYTES = 200000
 
@@ -330,6 +335,22 @@ def _hours_1dp(seconds):
     return text[:-2] if text.endswith(".0") else text
 
 
+def _dpi_px(value, scale_pct):
+    """Scale one fixed pixel dimension by the UI zoom (DPI-style whole scaling).
+
+    Used for window sizes, fixed control sizes and icon sizes that the
+    stylesheet scaler cannot reach. The zoom value is the ui_scale setting
+    (80-130, default 100); 100 returns the value unchanged.
+    """
+    return max(1, round(int(value) * scale_pct / 100))
+
+
+# Stylesheet selectors whose font-size must NOT follow the UI zoom: the
+# logo title/subtitle and the main page title/subtitle stay prominent at
+# every zoom level (Whitaker's call: they must not shrink).
+_EXEMPT_FONT_SELECTORS = ("#BrandName", "#BrandSub", "#PageTitleTop", "#Subtitle")
+
+
 def _scaled_stylesheet(sheet, scale_pct):
     """Scale font-size, padding and margin in a stylesheet by the UI zoom.
 
@@ -337,20 +358,44 @@ def _scaled_stylesheet(sheet, scale_pct):
     "padding:10px 20px" scales both). Font sizes keep an 8px floor;
     padding/margin keep a 1px floor so a 1px gap never collapses to 0.
     Border widths and radii are untouched.
+
+    Rules whose selector targets the logo title/subtitle or the main page
+    title/subtitle keep their font-size; a multi-selector rule is split so
+    only the exempt selectors stay unscaled (the rest still scale).
     """
     if scale_pct == 100:
         return sheet
 
-    def _decl(m):
-        prop = m.group(1)
-        floor = 8 if prop == "font-size" else 1
+    def _scale_decls(decls, skip_font):
+        def _decl(m):
+            prop = m.group(1)
+            if skip_font and prop == "font-size":
+                return m.group(0)
+            floor = 8 if prop == "font-size" else 1
 
-        def _num(n):
-            return "%spx" % max(floor, round(float(n.group(1)) * scale_pct / 100))
+            def _num(n):
+                return "%spx" % max(floor, round(float(n.group(1)) * scale_pct / 100))
 
-        return prop + ":" + re.sub(r"(\d+(?:\.\d+)?)px", _num, m.group(2))
+            return prop + ":" + re.sub(r"(\d+(?:\.\d+)?)px", _num, m.group(2))
 
-    return re.sub(r"(font-size|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?)\s*:\s*([^;{}]+)", _decl, sheet)
+        return re.sub(r"(font-size|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?)\s*:\s*([^;{}]+)", _decl, decls)
+
+    def _is_exempt(selector):
+        return any(tag in selector for tag in _EXEMPT_FONT_SELECTORS)
+
+    def _rule(m):
+        selectors = [s.strip() for s in m.group(1).split(",")]
+        exempt = [s for s in selectors if _is_exempt(s)]
+        rest = [s for s in selectors if not _is_exempt(s)]
+        decls = m.group(2)
+        parts = []
+        if exempt:
+            parts.append(", ".join(exempt) + " {" + _scale_decls(decls, True) + "}")
+        if rest:
+            parts.append(", ".join(rest) + " {" + _scale_decls(decls, False) + "}")
+        return "\n".join(parts)
+
+    return re.sub(r"([^{}]+)\{([^{}]*)\}", _rule, sheet)
 
 
 def _normalize_legacy_hours(text):
@@ -704,6 +749,14 @@ def format_compact_count(v) -> str:
     return text + "W"
 
 
+def format_fans_display(v, approx):
+    """Card fans number: exact counts show in full; abbreviated counts keep
+    the compact W form."""
+    if v is None:
+        return "—"
+    return format_compact_count(v) if approx else format_count(v)
+
+
 def format_delta(v) -> str:
     return "—" if v is None else (f"+{int(v):,}" if v > 0 else f"{int(v):,}")
 
@@ -943,6 +996,18 @@ def extract_followers_from_text(text: str):
     # are tentative; the UI shows approximations explicitly.
     candidates.sort(key=lambda x: x[0])
     return candidates[0][1], candidates[0][2], candidates[0][3]
+
+
+def _valid_exact_followers(exact, approx_count):
+    """An embedded exact follower count is trusted only when it is a plain
+    int in range and sits within 5% of the displayed approximation."""
+    if isinstance(exact, bool) or not isinstance(exact, int):
+        return False
+    if not 0 < exact <= 10_000_000_000:
+        return False
+    if not approx_count or approx_count <= 0:
+        return False
+    return abs(exact - approx_count) <= max(1, approx_count * 0.05)
 
 
 def clean_page_name(raw):
@@ -1649,7 +1714,6 @@ def post_view(row, now=None, interval_seconds=DEFAULT_INTERVAL_MINUTES*60):
     timestamp = datetime.fromtimestamp(ts).astimezone().strftime("%Y-%m-%d %H:%M:%S")
     checked_text = datetime.fromtimestamp(checked).astimezone().strftime("%m-%d %H:%M") if checked else "未核实"
     tooltip = f"贴文时间：{'约 ' if approximate else ''}{timestamp}\n检测时间：{checked_text}"
-    tooltip += "\n来源：" + str(row.get("post_source") or "历史记录")
     age = max(0, now - ts)
     limit = max(1, int(row.get("post_limit_hours") or 24)) * 3600
     if not valid:
@@ -1821,6 +1885,35 @@ def diag_log(line):
             pass
 
 
+# 开发者窗口只显示错误／失败行（rev100 收窄：正常运行不显示，用户改定）。
+# 新的失败类诊断行要包含下面任一标记，否则窗口里看不到它。
+_DIAG_ERROR_MARKERS = ("[报错]", "[复检]", "失败", "failed", "出错", "错误", "异常",
+                       "未发送", "未能", "走老路", "错误码", "超出范围", "error")
+
+
+def _diag_line_is_error(text):
+    """True when a diagnostic line reports an error/failure (shown in the
+    developer window); pure success/info lines stay in the log only."""
+    return any(m in str(text) for m in _DIAG_ERROR_MARKERS)
+
+
+def _report_error_to_diag(exc_type, exc, tb):
+    """One [报错] line for the developer log from an uncaught exception:
+    exception name + one line + the deepest file:line. Never raises:
+    the error hook must not crash while reporting a crash."""
+    try:
+        _tb = tb
+        while _tb is not None and _tb.tb_next is not None:
+            _tb = _tb.tb_next
+        _loc = ""
+        if _tb is not None:
+            _loc = "(%s:%d)" % (os.path.basename(str(_tb.tb_frame.f_code.co_filename)), _tb.tb_lineno)
+        _first = str(exc).strip().splitlines()
+        diag_log("[报错] %s：%s%s" % (exc_type.__name__, (_first[0][:120] if _first else "无描述"), _loc))
+    except Exception:
+        pass
+
+
 def _post_diag_candidates(diag):
     """How many post candidates the last check saw, or None if unknown.
 
@@ -1953,7 +2046,8 @@ class Store:
                 "post_source":"TEXT NOT NULL DEFAULT ''","post_precision_seconds":"INTEGER NOT NULL DEFAULT 1","post_diag":"TEXT NOT NULL DEFAULT ''",
                 "post_alert_key":"TEXT NOT NULL DEFAULT ''","growth_error":"TEXT NOT NULL DEFAULT ''",
                 "name_error":"TEXT NOT NULL DEFAULT ''",
-                "diagnosis_code":"TEXT NOT NULL DEFAULT ''","diagnosis_detail":"TEXT NOT NULL DEFAULT ''"}
+                "diagnosis_code":"TEXT NOT NULL DEFAULT ''","diagnosis_detail":"TEXT NOT NULL DEFAULT ''",
+                "follower_source":"TEXT NOT NULL DEFAULT ''"}
             for name,typ in columns.items():
                 if name not in previous:c.execute(f"ALTER TABLE pages ADD COLUMN {name} {typ}")
             follower_columns=self._columns(c,"follower_state")
@@ -2272,11 +2366,43 @@ class Store:
         return {"delta":int(row["yesterday_delta"]),"partial":bool(row["yesterday_partial"]),
                 "approx":bool(row["yesterday_approx"]),"note":note}
 
+    def _yesterday_from_state_with_history(self,row,now):
+        """Yesterday's delta, with a daily_followers fallback.
+
+        The rolled-up yesterday_* fields are only written by
+        record_followers, i.e. only once a patrol runs on the
+        new day. Before that first patrol after midnight they
+        still describe the day before yesterday, so
+        _yesterday_from_state returns None and the dashboard
+        shows "—" for 昨日新增 even though yesterday's numbers
+        are already in daily_followers. Fall back to the
+        end-of-day comparison followers(yesterday) minus
+        followers(day before) when both days have a row -- the
+        same definition daily_growth_series already uses. The
+        rolled-up value still wins when it exists, so cases
+        that already worked do not change; only when either
+        day has no row does it stay "—".
+        """
+        base=self._yesterday_from_state(dict(row) if row else None,now)
+        if base["delta"] is not None or not row:
+            return base
+        yesterday=(datetime.fromtimestamp(float(now)).astimezone().date()-timedelta(days=1))
+        day_before=yesterday-timedelta(days=1)
+        with self.lock,self._connect() as c:
+            _rows=c.execute("SELECT day,followers,approx FROM daily_followers WHERE page_id=? AND day IN (?,?)",
+                          (str(row["page_id"]),yesterday.isoformat(),day_before.isoformat())).fetchall()
+        _by_day={str(_r["day"]):_r for _r in _rows}
+        if yesterday.isoformat() not in _by_day or day_before.isoformat() not in _by_day:
+            return base
+        _cur=_by_day[yesterday.isoformat()];_prev=_by_day[day_before.isoformat()]
+        return {"delta":int(_cur["followers"])-int(_prev["followers"]),"partial":False,
+                "approx":bool(_cur["approx"] or _prev["approx"]),"note":"按每天最后一次读数计算"}
+
     def yesterday_change(self,pid,now=None):
         now=time.time() if now is None else float(now)
         with self.lock,self._connect() as c:
-            row=c.execute("SELECT yesterday_date,yesterday_delta,yesterday_partial,yesterday_approx FROM follower_state WHERE page_id=?",(pid,)).fetchone()
-        return self._yesterday_from_state(dict(row) if row else None,now)
+            row=c.execute("SELECT * FROM follower_state WHERE page_id=?",(pid,)).fetchone()
+        return self._yesterday_from_state_with_history(dict(row) if row else None,now)
 
 
     def record_posts(self,pid,result,now=None,notify=True):
@@ -2350,7 +2476,10 @@ class Store:
                              result.get("diagnosis_code") or "",result.get("diagnosis_detail") or "")
         _fail_parts=[]
         if row["monitor_growth"] and not result.get("growth_ok"):_fail_parts.append("粉丝")
-        if _fail_parts:diag_log(f"[采集] {pid} " + "／".join(_fail_parts) + "失败：" + str(result.get("growth_error") or "")[:80])
+        if _fail_parts:
+            _cerr = str(result.get("growth_error") or "")[:80]
+            _czh = _zh_connector_error(_cerr)
+            diag_log(f"[采集] {pid} " + "／".join(_fail_parts) + "失败：" + _cerr + (f"（{_czh}）" if _czh else ""))
         if purpose=="metadata":
             return {"ignored":False,"success":bool(name or result.get("avatar_fresh")),
                     "alerts":[],"error":result.get("name_error") or result.get("error") or ""}
@@ -2548,9 +2677,9 @@ class Store:
                  int(prior["approx"]) if prior else None,day,base_ts,base,base_approx,partial,
                  y_date,y_delta,y_partial,y_approx))
             name=normalize_name(result.get("page_name"),pid)
-            c.execute("""UPDATE pages SET last_followers=?,previous_followers=?,last_collected_at=?,approx=?,
+            c.execute("""UPDATE pages SET last_followers=?,previous_followers=?,last_collected_at=?,approx=?,follower_source=?,
                 page_name=CASE WHEN ?<>'' THEN ? ELSE page_name END,status='正常',updated_at=? WHERE page_id=?""",
-                (count,prior["count"] if prior else None,stamp,approx,name,name,now_iso(),pid))
+                (count,prior["count"] if prior else None,stamp,approx,str(result.get("follower_source") or "text"),name,name,now_iso(),pid))
             c.execute("INSERT OR REPLACE INTO daily_followers(page_id,day,followers,approx) VALUES(?,?,?,?)",
                       (pid,day,count,approx))
         return prior
@@ -2695,7 +2824,7 @@ def prepare_data_migration(store,target):
         except (ValueError,TypeError,OSError):pass
     # Refuse automatic recursive deletion if an old directory contains unrelated top-level files.
     known={"avatars","browser_profile","monitor_accounts","public_avatar_profile","backups","error.log",
-           "settings.ini","connector_registry.json","updates","location.json",".fbpm-owned","fb_growth_radar_v1.db","fb_growth_radar_v1.db-wal","fb_growth_radar_v1.db-shm"}
+           "settings.ini","connector_registry.json","updates","location.json",".fbpm-owned","fb_growth_radar_v1.db","fb_growth_radar_v1.db-wal","fb_growth_radar_v1.db-shm","check-glyph.png"}
     unrelated=[p.name for p in old.iterdir() if p.name not in known]
     return {"old":old,"target":target,"database":new_db,"can_delete":not unrelated,"unrelated":unrelated,"files":len(manifest)}
 
@@ -2719,18 +2848,22 @@ def log_exception(text):
     except OSError:pass
 
 
+AVATAR_TARGET_PX = 1290
+
+
 def _bigger_avatar_url(url):
     """Ask Facebook's CDN for a bigger avatar: rewrite a /p168x168/ or
-    /s160x160/ path segment to /p480x480/; otherwise bump width=/height=
-    query params to 480. No size marker -> return the URL unchanged."""
+    /s160x160/ path segment to the target size; otherwise bump
+    width=/height= query params to AVATAR_TARGET_PX. No size marker
+    -> return the URL unchanged."""
     u = str(url or "")
     if not u:
         return u
-    bigger = re.sub(r"/[ps]\d+x\d+/", "/p480x480/", u, count=1)
+    bigger = re.sub(r"/[ps]\d+x\d+/", f"/p{AVATAR_TARGET_PX}x{AVATAR_TARGET_PX}/", u, count=1)
     if bigger != u:
         return bigger
     if "width=" in u or "height=" in u:
-        bigger = re.sub(r"([?&](?:width|height)=)\d+", r"\g<1>480", u)
+        bigger = re.sub(r"([?&](?:width|height)=)\d+", r"\g<1>" + str(AVATAR_TARGET_PX), u)
         if bigger != u:
             return bigger
     return u
@@ -2976,9 +3109,10 @@ class BrowserCollector:
             ratio=max(im.width,im.height)/min(im.width,im.height)
             if ratio>1.55:
                 raise ValueError('图片更像横幅或封面，不作为头像保存')
-            # Keep the downloaded size (up to 480): a 640px original stays
-            # sharp at 480, a 168px original is stored as-is, never upscaled.
-            side=min(480,max(im.width,im.height))
+            # Keep the downloaded size (up to AVATAR_TARGET_PX): a bigger
+            # original stays sharp at the target size, a smaller original
+            # is stored as-is, never upscaled.
+            side=min(AVATAR_TARGET_PX,max(im.width,im.height))
             avatar=ImageOps.fit(im.convert('RGB'),(side,side),method=Image.Resampling.LANCZOS)
         ensure_private_directory(AVATAR_DIR)
         target=AVATAR_DIR / f'{pid}.png'
@@ -2991,14 +3125,15 @@ class BrowserCollector:
         old=Path(previous) if previous else None
         old_valid=bool(old and old.is_file() and old.stat().st_size>200)
         if old_valid and not force and time.time()-old.stat().st_mtime<5*86400:
-            # Legacy 192x192 caches were upscaled from small thumbnails:
-            # treat them as expired once so they get re-downloaded bigger.
-            # A failed re-download still falls back to the old file below.
+            # Caches smaller than the target size were upscaled from small
+            # thumbnails: treat them as expired once so they get
+            # re-downloaded bigger. A failed re-download still falls back
+            # to the old file below.
             _legacy=False
             try:
                 from PIL import Image as _PilImage
                 with _PilImage.open(old) as _im:
-                    _legacy=(_im.width==192 and _im.height==192)
+                    _legacy=(min(_im.width,_im.height)<AVATAR_TARGET_PX)
             except Exception:
                 _legacy=False
             if not _legacy:
@@ -3008,6 +3143,10 @@ class BrowserCollector:
         except ImportError:
             return str(old) if old_valid else ''
         deadline=time.monotonic()+10.0
+        # Direct picture candidate by page ID, tried first (public
+        # picture endpoint, no token; see rev98 note above).
+        if re.fullmatch(r"[0-9]{5,25}",pid):
+            candidates=[{"url":f"https://graph.facebook.com/{pid}/picture?width={AVATAR_TARGET_PX}&height={AVATAR_TARGET_PX}","avatar_signal":True,"score":999,"selector":"","index":-1}]+list(candidates or [])
         for candidate in candidates[:9]:
             remaining=deadline-time.monotonic()
             if remaining<0.25:
@@ -3050,6 +3189,19 @@ class BrowserCollector:
                 remaining=deadline-time.monotonic()
                 if remaining<0.25:break
                 image_bytes=locator.screenshot(timeout=min(3800,max(350,int(remaining*1000))))
+                if old_valid:
+                    # A small element screenshot must not clobber a better
+                    # cache: only overwrite when the shot beats the cached size.
+                    try:
+                        from PIL import Image as _PilImage
+                        with _PilImage.open(io.BytesIO(image_bytes)) as _sim:
+                            _shot_min=min(_sim.width,_sim.height)
+                        with _PilImage.open(old) as _oim:
+                            _old_min=min(_oim.width,_oim.height)
+                        if _shot_min<=_old_min:
+                            continue
+                    except Exception:
+                        pass
                 return self._save_avatar_bytes(pid,image_bytes)
             except Exception:
                 continue
@@ -4097,7 +4249,7 @@ import queue
 from dataclasses import dataclass, field
 from pathlib import PureWindowsPath
 
-CONNECTOR_VERSION = '1.4.7'
+CONNECTOR_VERSION = '1.4.8'
 CONNECTOR_PROTOCOL = 1
 CONNECTOR_PORT = 17831
 CONNECTOR_EXTENSION_ID = 'lpjmbcclokpbgfogjhjepmnpoplgheoh'
@@ -4106,658 +4258,679 @@ CONNECTOR_ORIGIN = 'chrome-extension://' + CONNECTOR_EXTENSION_ID
 # BEGIN BUNDLED CONNECTOR PACKAGE
 # IMPORTANT: Connector version is independent from the desktop app version.
 # Do not change this package/version unless the browser connector itself is intentionally updated.
-BUNDLED_CONNECTOR_VERSION = '1.4.7'
-BUNDLED_CONNECTOR_FILENAME = '专业监控工具-浏览器连接器-1.4.7.zip'
-BUNDLED_CONNECTOR_SHA256 = '111802b2c60aae4580a1fedc0bc2fb89cc354a8988947c6c20a67b05cbc551fb'
+BUNDLED_CONNECTOR_VERSION = '1.4.8'
+BUNDLED_CONNECTOR_FILENAME = '专业监控工具-浏览器连接器-1.4.8.zip'
+BUNDLED_CONNECTOR_SHA256 = '659318fcd47663515dc9174e571f02f18b9583589af69213e6277fbc552a7a86'
 BUNDLED_CONNECTOR_ZIP_B64 = (
-    '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'
+    'UEsDBBQAAAAIAAAAIQCznFi5RwMAADEGAAANAAAAbWFuaWZlc3QuanNvbo1VW4/aRhR+31+BeIm0'
     'JAabm3fzZAMGs/auYQkGqgr5Mr5ge8Y7YzBstI9VpT5EqvrURupb1Kh/IHmo1D+TTfPWv9Axl7Ak'
     'K1JZsjzf5fj4nDPjlye5XD4yoO8AkkwXABMfwfx5rvw0I6ARAbrIf3j/y4f3v/3z+uePr/64f/fm'
-    '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'
+    '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'
 )
 # END BUNDLED CONNECTOR PACKAGE
 
@@ -4789,6 +4962,15 @@ def connector_needs_update(identity):
     current = connector_version_tuple((identity or {}).get('extension_version'))
     bundled = connector_version_tuple(BUNDLED_CONNECTOR_VERSION)
     return bool(current and bundled and current < bundled)
+
+
+def connector_same_version(identity):
+    """True when the installed connector reports exactly the bundled
+    version. Old and new 1.4.8 builds share the number, so a version
+    comparison alone can never tell them apart (see the reinstall prompt)."""
+    current = connector_version_tuple((identity or {}).get('extension_version'))
+    bundled = connector_version_tuple(BUNDLED_CONNECTOR_VERSION)
+    return bool(current and bundled and current == bundled)
 
 
 def save_bundled_connector(parent):
@@ -5783,16 +5965,31 @@ def connector_record(row, payload, purpose='monitor'):
             raw=base64.b64decode(image.split(',',1)[1],validate=True)
             from PIL import Image,ImageOps
             with Image.open(io.BytesIO(raw),formats=("PNG",)) as im:
-                if im.format!='PNG' or im.width!=192 or im.height!=192:
-                    raise ValueError('Connector avatar must be a 192px PNG')
+                if im.format!='PNG' or im.width!=im.height or not (96<=im.width<=2048):
+                    raise ValueError('Connector avatar must be a square PNG 96-2048px')
                 # Only the first PNG frame is used, as before; no frame iterator
                 # is exposed to data returned by the connector.
-                im.load();im=ImageOps.fit(im.convert('RGB'),(192,192))
+                im.load();im=ImageOps.fit(im.convert('RGB'),(min(AVATAR_TARGET_PX,im.width),min(AVATAR_TARGET_PX,im.width)))
             ensure_private_directory(AVATAR_DIR)
             target=AVATAR_DIR/(pid+'.png')
-            output=io.BytesIO();im.save(output,format='PNG')
-            _atomic_write_bytes(target,output.getvalue(),mode=0o600,private_parent=True)
-            result['avatar_path']=str(target);result['avatar_fresh']=True
+            # Never let a smaller connector avatar clobber a bigger cached
+            # file (e.g. a target-size file from the direct picture
+            # endpoint): the extension may still send a smaller picture
+            # (e.g. when only a small source exists), so without this guard
+            # a patrol could downgrade it.
+            _keep_old=False
+            try:
+                from PIL import Image as _PilImage2
+                with _PilImage2.open(target) as _oim:
+                    _keep_old=min(_oim.width,_oim.height)>im.width
+            except Exception:
+                _keep_old=False
+            if _keep_old:
+                result['avatar_path']=str(target);result['avatar_fresh']=False
+            else:
+                output=io.BytesIO();im.save(output,format='PNG')
+                _atomic_write_bytes(target,output.getvalue(),mode=0o600,private_parent=True)
+                result['avatar_path']=str(target);result['avatar_fresh']=True
         except Exception as exc:
             result['avatar_error']=str(exc)[:120]
     result['metadata_ok']=bool(result['page_name'] or result['avatar_fresh'])
@@ -5804,6 +6001,12 @@ def connector_record(row, payload, purpose='monitor'):
             if parsed:
                 count,approx,matched=parsed
                 result.update(growth_ok=True,followers_count=count,approx=approx,matched_text=matched)
+                exact=payload.get('followers_exact')
+                if _valid_exact_followers(exact,count):
+                    result.update(followers_count=int(exact),approx=False,follower_source='embedded')
+                    diag_log(f"[采集] {pid} 粉丝数 {int(exact):,}（内嵌数据精确值）")
+                else:
+                    result['follower_source']='text'
             else:raise ValueError('No follower statistic')
         except Exception:
             result['growth_error']=error or '\u672a\u8bfb\u5230\u53ef\u786e\u8ba4\u7684\u7c89\u4e1d\u6570\uff0c\u4e0d\u4f1a\u5199\u5165 0'
@@ -5924,7 +6127,7 @@ def merge_recheck_record(first, second, row, purpose='monitor'):
     # recheck must never overwrite a successful first sample. (1.5.0
     # always copied the first pass, so a growth recheck could never fix
     # a growth failure.)
-    _growth_keys=('growth_ok','followers_count','approx','matched_text','growth_error')
+    _growth_keys=('growth_ok','followers_count','approx','matched_text','growth_error','follower_source')
     if first.get('growth_ok'):
         for key in _growth_keys:
             if key in first:out[key]=first[key]
@@ -6044,16 +6247,25 @@ THEME_PRESETS = {
         pill="#5B8DEF",pill_hover="#7AA2F7",green="#7BC98F",
         red="#F0A3A3",amber="#E5B567",cyan="#67B7D6",input="#1E1F24",hover="#24252B",soft="#1E2A44",light=False,
         tooltip_bg="#232429",tooltip_text="#F2F2F2",tooltip_border="#5B8DEF"),
+    "圣诞": dict(bg="#173D2B",sidebar="#102B1E",panel="#274B3A",panel_2="#2E5543",
+        border="#686E42",text="#F2ECD8",muted="#A9C6B6",accent="#C9A227",accent2="#D4AF37",
+        pill="#A8861B",pill_hover="#8A6D15",green="#8FE0A0",
+        red="#F0A3A3",amber="#E5B567",cyan="#7FBFA8",input="#21493A",hover="#2A5543",soft="#1E4433",light=False,
+        tooltip_bg="#1E3A2C",tooltip_text="#F2ECD8",tooltip_border="#C9A227",
+        side_text="#F2F7F3",side_muted="#A9C6B6",nav_bg="#0B3D2E",
+        highlight_text="#1C1C1C"),
 }
 TOAST_POSITIONS = (("下居中", "bottom_center"), ("右上", "top_right"),
                    ("左下角", "bottom_left"), ("右下", "bottom_right"))
 
 
 def ui_scale_percent(settings):
-    """UI zoom percentage from settings: 80-130, default 100."""
-    if settings is None:
-        return 100
-    return _bounded_int(settings.value("ui_scale", 100), 100, 80, 130)
+    """UI scale, fixed at 100. The zoom feature was removed in
+    rev115 (user decision): Settings no longer offers it, and
+    the stored "ui_scale" value is ignored -- every _dpi_px(),
+    font-size and stylesheet scaling call is identity now.
+    """
+    return 100
 
 
 THEME_MIGRATION = {
@@ -6130,6 +6342,113 @@ def paint_brand(p, rect):
     p.restore()
 
 
+# QCheckBox 勾选框的白色勾：样式表画 indicator 时不会自己画勾，金底上
+# 的勾肉眼看不见，所以这里内嵌一张 17x17 的白勾 PNG，checked 时贴上。
+# 注意：样式表不支持 data: URI、也不认 file://（离屏实测都画不出来），
+# 要用裸文件路径（带引号，Windows 下是 C:/... 这种斜杠路径）。
+_CHECK_GLYPH_B64 = "iVBORw0KGgoAAAANSUhEUgAAABEAAAARCAYAAAA7bUf6AAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAoklEQVQ4jeXPPQ4BQRiAYRsJhUqn2USy1fYO4BwicQC9hsQBnMAZnMABHECtVYjoJSJ5FEYsWX+rEm8535dnZkql/w4Reuh8g/SdO6BSBGjjGJBpEaCJXQAWqOYtxRgjyZnVsAzAGo1HN43D0gZp5jzCLMz2aD17bhKAGwhD17rv/Du9gwYZYPISeABdmqP8NpKBtgFYof4RkIESjBAXAn63E7xZ6HMsWgHdAAAAAElFTkSuQmCC"
+
+
+def _check_glyph_path():
+    """Plain filesystem path of the white-check glyph PNG for the
+    stylesheet (quoted in the rule). Written to DATA_DIR once."""
+    import base64
+    try:
+        target = DATA_DIR / "check-glyph.png"
+        raw = base64.b64decode(_CHECK_GLYPH_B64)
+        if not target.is_file() or target.read_bytes() != raw:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+        return target.as_posix()
+    except Exception:
+        return ""
+
+
+try:
+    from PyQt6.QtSvg import QSvgRenderer as _QSvgRenderer
+    _HAVE_QTSVG = True
+except Exception:
+    _QSvgRenderer = None
+    _HAVE_QTSVG = False
+
+
+# 图钉图标（rev109）：用户给的两个 SVG 原文，只换描边色。
+# 未置顶是斜放的钉，描边色用各主题 muted；已置顶是竖直的钉，描边色
+# 用各主题 accent（两个深色主题用 accent2，亮一号）。
+PIN_SVG_OFF = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#5F5E5A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4.5l-4 4l-4 1.5l-1.5 1.5l7 7l1.5-1.5l1.5-4l4-4"/><path d="M9 15l-4.5 4.5"/><path d="M14.5 4l5.5 5.5"/></svg>'
+PIN_SVG_ON = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#185FA5" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v6l-2 4v2h10v-2l-2-4v-6"/><path d="M12 16v5"/><path d="M8 4h8"/></svg>'
+
+
+def _pin_svg(on, color):
+    """One of the two pin SVGs with only the stroke colour swapped."""
+    _svg = PIN_SVG_ON if on else PIN_SVG_OFF
+    return re.sub(r'stroke="#[0-9A-Fa-f]{6}"', 'stroke="%s"' % color, _svg, count=1)
+
+
+def _svg_path_to_qpath(d):
+    """SVG path data (M/L/H/V/Z, absolute and relative) -> QPainterPath.
+    Fallback only: the two pin SVGs use M, l, v and h. Coordinates stay in
+    the 24-unit viewBox space; the caller scales the painter."""
+    _toks = re.findall(r'[MLHVZmlhvz]|[-+]?(?:\d+\.?\d*|\.\d+)', d)
+    _path = QPainterPath(); _x = _y = 0.0; _sx = _sy = 0.0; _i = 0; _cmd = ""
+    def _num():
+        nonlocal _i
+        _v = float(_toks[_i]); _i += 1; return _v
+    while _i < len(_toks):
+        _t = _toks[_i]
+        if _t.isalpha():
+            _cmd = _t; _i += 1
+            if _cmd in "Zz":
+                _path.closeSubpath(); _x, _y = _sx, _sy; _cmd = ""; continue
+            continue
+        if _cmd in "Mm":
+            _x = _num() if _cmd == "M" else _x + _num()
+            _y = _num() if _cmd == "M" else _y + _num()
+            _path.moveTo(_x, _y); _sx, _sy = _x, _y
+            _cmd = "L" if _cmd == "M" else "l"
+        elif _cmd in "Ll":
+            _x = _num() if _cmd == "L" else _x + _num()
+            _y = _num() if _cmd == "L" else _y + _num()
+            _path.lineTo(_x, _y)
+        elif _cmd in "Hh":
+            _x = _num() if _cmd == "H" else _x + _num(); _path.lineTo(_x, _y)
+        elif _cmd in "Vv":
+            _y = _num() if _cmd == "V" else _y + _num(); _path.lineTo(_x, _y)
+        else:
+            _i += 1
+    return _path
+
+
+def _svg_pixmap(svg_text, px):
+    """Render an SVG string to a transparent px*px pixmap.
+    QSvgRenderer first; if QtSvg is unavailable, redraw the path data with
+    QPainterPath in the 24-unit space (same coordinates, 1.75 stroke)."""
+    if _HAVE_QTSVG:
+        from PyQt6.QtCore import QByteArray
+        _r = _QSvgRenderer(QByteArray(svg_text.encode("utf-8")))
+        _pm = QPixmap(px, px); _pm.fill(Qt.GlobalColor.transparent)
+        _p = QPainter(_pm); _r.render(_p, QRectF(0, 0, px, px)); _p.end()
+        return _pm
+    _m = re.search(r'stroke="(#[0-9A-Fa-f]{6})"', svg_text)
+    _color = _m.group(1) if _m else "#000000"
+    _pm = QPixmap(px, px); _pm.fill(Qt.GlobalColor.transparent)
+    _p = QPainter(_pm); _p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    _p.scale(px / 24.0, px / 24.0)
+    _p.setPen(QPen(QColor(_color), 1.75, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    _p.setBrush(Qt.BrushStyle.NoBrush)
+    for _d in re.findall(r'<path[^>]*d="([^"]+)"', svg_text):
+        _p.drawPath(_svg_path_to_qpath(_d))
+    _p.end()
+    return _pm
+
+
+def render_pin_icon(on, color):
+    """Pin-to-top button icon from the user's two SVGs (see PIN_SVG_OFF/ON).
+    Rendered at 64px like the other ui_icon glyphs; Qt scales it down to
+    the 20px button icon."""
+    return QIcon(_svg_pixmap(_pin_svg(on, color), 64))
+
+
 def ui_icon(kind,color=None):
     color=color or MUTED
     pm=QPixmap(64,64);pm.fill(Qt.GlobalColor.transparent)
@@ -6158,9 +6477,15 @@ def ui_icon(kind,color=None):
     elif kind=="theme":
         p.drawEllipse(QRectF(12,12,40,40));p.drawEllipse(QRectF(22,20,7,7));p.drawEllipse(QRectF(34,18,7,7));p.drawEllipse(QRectF(40,31,7,7));line(24,43,33,43)
     elif kind=="settings":
-        p.drawEllipse(QRectF(21,21,22,22));p.drawEllipse(QRectF(29,29,6,6))
+        # 真齿轮：中间一个圆圈，外面一圈矩形齿轮齿。
+        p.setBrush(QColor(color));p.setPen(Qt.PenStyle.NoPen)
         for angle in range(0,360,45):
-            a=math.radians(angle);line(32+15*math.cos(a),32+15*math.sin(a),32+23*math.cos(a),32+23*math.sin(a))
+            p.save();p.translate(32,32);p.rotate(angle)
+            p.drawRect(QRectF(-3.5,-23,7,9))
+            p.restore()
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(color),3.1,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
+        p.drawEllipse(QRectF(18,18,28,28));p.drawEllipse(QRectF(27,27,10,10))
     elif kind=="update":
         p.drawArc(QRectF(13,13,38,38),30*16,290*16);line(48,9,51,25);line(51,25,36,22)
     elif kind=="info":
@@ -6188,15 +6513,59 @@ def ui_icon(kind,color=None):
     elif kind=="close":line(20,20,44,44);line(44,20,20,44)
     elif kind=="min":line(19,33,45,33)
     elif kind=="max":p.drawRoundedRect(QRectF(18,18,28,28),2,2)
+    elif kind=="pin":
+        # 图钉（rev109：用户给的两个 SVG 原文，只换描边色）。
+        # ui_icon("pin") 只画未置顶那枚斜钉；已置顶的竖钉由
+        # render_pin_icon(True, ...) 出，见 _refresh_pin_button。
+        # 旧的竖直扁头线稿钉已删（rev108 那版真机上看着像棒棒糖）。
+        p.drawPixmap(0,0,_svg_pixmap(_pin_svg(False,color),64))
+    elif kind=="popout":
+        # 移出主窗口：左下小窗口 + 右上向外指的箭头（和图钉不是一种图标）。
+        p.drawRoundedRect(QRectF(12,28,28,26),4,4)
+        line(12,36,40,36)
+        path=QPainterPath();path.moveTo(34,42);path.lineTo(52,24);p.drawPath(path)
+        path=QPainterPath();path.moveTo(44,24);path.lineTo(52,24);path.lineTo(52,32);p.drawPath(path)
+    elif kind=="xmas_tree":
+        # 圣诞树 + 雪花（rev100：收起侧栏时融进连接器按钮，替代电脑图标）。
+        p.setPen(QPen(QColor("#14532D"),1.2,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
+        p.setBrush(QColor("#1E7A4C"))
+        for _ay,_by,_hw in ((8,20,9),(17,31,13),(27,45,17)):
+            _tri=QPainterPath();_tri.moveTo(32,_ay);_tri.lineTo(32-_hw,_by);_tri.lineTo(32+_hw,_by);_tri.closeSubpath();p.drawPath(_tri)
+        p.setPen(Qt.PenStyle.NoPen);p.setBrush(QColor("#8B5A2B"))
+        p.drawRect(QRectF(29,45,6,8))
+        p.setBrush(QColor("#DC2626"))
+        _hat=QPolygonF([QPointF(27,8),QPointF(35,2),QPointF(39,6),QPointF(35,9)]);p.drawPolygon(_hat)
+        p.setPen(QPen(QColor("#FFFFFF"),2.0,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
+        p.drawLine(QPointF(26,8),QPointF(36,8))
+        p.setPen(Qt.PenStyle.NoPen);p.setBrush(QColor("#D4AF37"))
+        p.drawEllipse(QPointF(25,34),2.0,2.0);p.drawEllipse(QPointF(40,40),2.0,2.0)
+        p.setPen(QPen(QColor(255,255,255,235),1.4,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
+        for _fx,_fy in ((12,12),(52,14)):
+            for _ang in (0,60,120):
+                _rad=math.radians(_ang);_dx=3.0*math.cos(_rad);_dy=3.0*math.sin(_rad)
+                p.drawLine(QPointF(_fx-_dx,_fy-_dy),QPointF(_fx+_dx,_fy+_dy))
     else:
         p.drawRoundedRect(QRectF(14,12,36,42),6,6)
         line(23,24,41,24);line(23,33,41,33);line(23,42,35,42)
     p.end();return QIcon(pm)
 
 
-def icon_button(kind,tip,parent=None,size=40):
+def _icon_button_scale(parent):
+    """UI zoom for an icon button: nearest ancestor widget with settings."""
+    _p=parent
+    while _p is not None:
+        _s=getattr(_p,"settings",None)
+        if _s is not None:
+            try:return ui_scale_percent(_s)
+            except Exception:return 100
+        _p=_p.parent()
+    return 100
+
+
+def icon_button(kind,tip,parent=None,size=40,icon_size=21):
     b=QPushButton(parent);b.setObjectName("TopIconButton")
-    b.setIcon(ui_icon(kind));b.setIconSize(QSize(21,21));b.setFixedSize(size,size)
+    _scale=_icon_button_scale(parent)
+    b.setIcon(ui_icon(kind));b.setIconSize(QSize(_dpi_px(icon_size,_scale),_dpi_px(icon_size,_scale)));b.setFixedSize(_dpi_px(size,_scale),_dpi_px(size,_scale))
     b.setCursor(Qt.CursorShape.PointingHandCursor);b.setToolTip(tip)
     b.setAccessibleName(tip);b.setProperty("iconKind",kind)
     return b
@@ -6250,11 +6619,29 @@ class DirectNumberSpinBox(QSpinBox):
         self.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.setKeyboardTracking(True)
         self.lineEdit().setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # 输入框只留字：背景透明、无边框，只留 spinbox 自己的框。
+        self.lineEdit().setStyleSheet("background:transparent;border:0;")
+        # 数字上下被裁的根治：高度写死 30px，本地样式把全局的
+        # 7px 纵向内边距压到 2px，输入区不再被样式表挤扁。
+        self.setFixedHeight(30)
+        self.setStyleSheet("QSpinBox{padding:2px 6px;}")
     def focusInEvent(self,event):
         super().focusInEvent(event);QTimer.singleShot(0,self.selectAll)
     def mousePressEvent(self,event):
         super().mousePressEvent(event)
         if event.button()==Qt.MouseButton.LeftButton:QTimer.singleShot(0,self.selectAll)
+    def _fix_line_edit(self):
+        # 输入框占满 spinbox，只留 2px 边。
+        _le=self.lineEdit()
+        _le.setGeometry(2,2,max(10,self.width()-4),max(10,self.height()-4))
+    def showEvent(self,event):
+        # 样式可能在显示后重排输入框，这里再摆正一次。
+        super().showEvent(event);self._fix_line_edit()
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        # 样式表会把无按钮 spinbox 的输入区算成 1px 宽（文字看不见），
+        # 这里强制摆正：输入框占满 spinbox，只留 2px 边。
+        self._fix_line_edit()
 
 
 class CheckDelegate(QStyledItemDelegate):
@@ -6549,6 +6936,8 @@ TOAST_THEME_STYLES = {
                    warn="#B45309", warn_glyph="#FFFFFF"),
     "曜石黑": dict(bg="#232429", border="#3A3B42", text="#F2F2F2", icon="#5B8DEF",
                    warn="#E5B567", warn_glyph="#101114"),
+    "圣诞": dict(bg="#FFFDF6", border="#E3D9B8", text="#1C1C1C", icon="#A8861B",
+                 warn="#B45309", warn_glyph="#FFFFFF"),
 }
 
 
@@ -6622,7 +7011,7 @@ class ToastNotice(QFrame):
         # use the font that is actually painted (measuring first clipped the
         # last character). +80 covers margins + icon + spacing + overshoot.
         self.setStyleSheet(
-            "QFrame#ToastNotice {background:" + style["bg"] + ";border:1px solid " + style["border"] + ";border-radius:14px;}"
+            "QFrame#ToastNotice {background:" + style["bg"] + ";border:1px solid " + style["border"] + ";border-radius:8px;}"
             "QLabel#ToastMessage {color:" + style["text"] + ";font-size:14px;font-weight:650;background:transparent;border:0;}"
             "QLabel {background:transparent;border:0;}")
         # Palette fallback as well as the stylesheet: the text must stay
@@ -7072,13 +7461,14 @@ class BrowserConnectionsDialog(QDialog):
 
     def __init__(self, owner):
         super().__init__(owner); self.owner = owner; self.bridge = owner.connector
-        self.setWindowTitle('浏览器连接'); self.setFixedSize(560, 450)
+        self.setObjectName("BrowserConnectionsDialog"); self.setWindowTitle('浏览器连接'); self.setModal(True); self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog); self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True); self.setStyleSheet("QDialog#BrowserConnectionsDialog{background:%s;border:1px solid %s;border-radius:8px;} QPushButton#CloseX{background:#DC2626;border:0;border-radius:14px;color:#FFFFFF;font-size:20px;font-weight:700;padding:0;} QPushButton#CloseX:hover{background:#B91C1C;}" % (PANEL, BORDER)); self.setFixedSize(560, 450)
         layout = QVBoxLayout(self); layout.setContentsMargins(16, 14, 16, 14); layout.setSpacing(8)
         title_row = QHBoxLayout(); title_row.setSpacing(8)
         title = QLabel('浏览器连接'); title.setObjectName('DialogTitle'); title_row.addWidget(title)
         title_row.addStretch()
         self.retry_button = QPushButton('重新检测'); self.retry_button.clicked.connect(self.retry)
         title_row.addWidget(self.retry_button)
+        close_btn = QPushButton('×'); close_btn.setObjectName('CloseX'); close_btn.setFixedSize(28, 28); close_btn.setCursor(Qt.CursorShape.PointingHandCursor); close_btn.clicked.connect(self.reject); title_row.addWidget(close_btn)
         layout.addLayout(title_row)
         self.chips_box = QHBoxLayout(); self.chips_box.setSpacing(0); layout.addLayout(self.chips_box)
         self.chips = None; self._filter = "all"; self._chip_counts = None; self._growth_alert_ids = set()
@@ -7515,17 +7905,17 @@ CARD_LAYOUT_KEYS = frozenset(k for k, _, _ in CARD_LAYOUTS)
 
 # Sidebar (navigation bar) looks, chosen in 设置 → 外观. First entry is the default.
 NAV_STYLES = (
-    ("capsule", "胶囊分组", "入口分组放进圆角卡片，选中项是实心主色胶囊。"),
     ("line", "清爽线条", "细字重、浅色底加主色文字，最安静，信息最密。"),
     ("dark", "深色导航", "导航栏始终是深色，和浅色内容区对比最强。"),
 )
 NAV_STYLE_KEYS = frozenset(k for k, _, _ in NAV_STYLES)
-NAV_DEFAULT_STYLE = "capsule"
+NAV_DEFAULT_STYLE = "line"
 # Colours for the "dark" sidebar, one set per theme (solid hex: no alpha needed).
 NAV_DARK_PALETTES = {
     "云白": dict(bg="#0F1C3F", border="#24335C", text="#E8ECF8", muted="#A3AECB", accent="#8FB1FF", hover="#1B2A52", active="#27386A", glass="#16254B"),
     "护眼绿": dict(bg="#0E2A1D", border="#1F4A35", text="#E6F4EB", muted="#9DB8A8", accent="#6EE7A0", hover="#17392A", active="#1F4A35", glass="#13301F"),
     "曜石黑": dict(bg="#0B0C0F", border="#23242A", text="#ECECEC", muted="#9AA0A6", accent="#7AA2F7", hover="#1A1B20", active="#1E2A44", glass="#131418"),
+    "圣诞": dict(bg="#072A1F", border="#1D4A3A", text="#EAF6EE", muted="#9DB8A8", accent="#D4AF37", hover="#123B2D", active="#1D4A3A", glass="#0E3325"),
 }
 
 
@@ -7709,19 +8099,6 @@ class NavStylePreview(QWidget):
             _bar(15, 56, 26, 5, MUTED, 170)
             _bar(15, 70, 22, 5, MUTED, 170)
             _bar(10, H - 28, sw - 10, 14, MUTED, 60, 4)
-        else:  # capsule
-            p.setPen(QPen(QColor(BORDER), 1)); p.setBrush(QColor(BG))
-            p.drawRoundedRect(QRectF(5, 5, sw, H - 10), 6, 6)
-            _bar(11, 11, 14, 14, ACCENT, 255, 4)
-            _bar(29, 14, 24, 5, TEXT, 200)
-            p.setPen(QPen(QColor(BORDER), 1)); p.setBrush(QColor(PANEL))
-            p.drawRoundedRect(QRectF(9, 31, sw - 8, 40), 7, 7)
-            p.drawRoundedRect(QRectF(9, 76, sw - 8, 16), 7, 7)
-            _bar(12, 34, sw - 14, 11, ACCENT, 255, 5)
-            _bar(17, 37, 20, 5, "#FFFFFF", 255)
-            _bar(17, 52, 24, 5, MUTED, 170)
-            _bar(17, 61, 18, 5, MUTED, 170)
-            _bar(17, 82, 20, 5, MUTED, 170)
         p.end()
 
 
@@ -7781,6 +8158,71 @@ class DraggableHeader(QFrame):
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
+
+
+def _migrate_avatar_cache_back_once(settings):
+    """rev106 one-time move-back: rev105 split the avatar cache into
+    avatars/avatars_v2 (new) and avatars/avatars_old/<WxH>/ (archived).
+    The split is withdrawn -- avatars live in avatars/ again, one folder.
+    Move any file in the two subfolders back to avatars/<pid>.png (keep
+    the bigger copy when both exist), then remove the empty subfolders.
+    Files that cannot be moved stay where they are. Runs once (settings
+    flag avatar/cache_back_migrated); per-file failures are skipped and
+    logged, never break startup. No avatar file is deleted outright:
+    a clash keeps the bigger copy, the smaller one is the only file
+    removed."""
+    try:
+        if is_true(settings.value("avatar/cache_back_migrated", 0)):
+            return
+    except Exception:
+        return
+    _moved = 0
+    _skipped = []
+    try:
+        for _sub in (AVATAR_DIR_V2, AVATAR_ARCHIVE_DIR):
+            try:
+                _files = sorted(_sub.rglob("*.png"), key=lambda p: str(p))
+            except OSError:
+                continue
+            for _src in _files:
+                if not _src.is_file():
+                    continue
+                if not re.fullmatch(r"[0-9]{5,25}", _src.stem):
+                    continue
+                _dest = AVATAR_DIR / _src.name
+                try:
+                    if _dest.is_file():
+                        # Same page in both places: keep the bigger file.
+                        if _src.stat().st_size > _dest.stat().st_size:
+                            _src.replace(_dest)
+                        else:
+                            _src.unlink()
+                    else:
+                        ensure_private_directory(AVATAR_DIR)
+                        shutil.move(str(_src), str(_dest))
+                    _moved += 1
+                except OSError:
+                    _skipped.append(_src.name)
+        # Remove the subfolders when they are empty now (deepest first).
+        for _sub in (AVATAR_DIR_V2, AVATAR_ARCHIVE_DIR):
+            try:
+                for _d in sorted(_sub.rglob("*"), key=lambda p: len(str(p)), reverse=True):
+                    if _d.is_dir():
+                        _d.rmdir()
+                _sub.rmdir()
+            except OSError:
+                pass
+    except Exception as exc:
+        _skipped.append(str(exc)[:80])
+    try:
+        settings.setValue("avatar/cache_back_migrated", 1)
+        settings.sync()
+    except Exception:
+        pass
+    if _skipped:
+        diag_log(f"[头像] 旧头像搬回失败：{len(_skipped)} 个已跳过：{','.join(_skipped[:5])}")
+    elif _moved:
+        diag_log(f"[头像] 头像已搬回 avatars/：{_moved} 个")
 
 
 def resolve_avatar_path(page_id="", preferred=""):
@@ -7960,7 +8402,7 @@ class BadgeButton(QPushButton):
     def resizeEvent(self,event):
         super().resizeEvent(event);self._place_badge()
     def _place_badge(self):
-        self.badge.move(max(0,self.width()-16),0)
+        self.badge.move(max(0,self.width()-17),2)
 
 
 class FlowLayout(QLayout):
@@ -8034,10 +8476,129 @@ class ChipRow(QWidget):
     def sizeHint(self):return self.layout().sizeHint()
 
 
+class MetricXmasDeco(QWidget):
+    """看板四个大模块的圣诞装饰：中等大小的圣诞树 + 大雪花在右上角。
+
+    只在圣诞主题下显示。纯手绘，不依赖字体里的 emoji；鼠标穿透，
+    不挡数字和文字；是 MetricCard 的子控件，不占布局，不改卡片尺寸。
+    60 宽：窄卡片上树的最左像素也要落在备注文字的省略点之外，备注
+    行由 MetricCard._update_note_cap 在树前省略显示，数字绝不省略。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(60, 56)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.hide()
+
+    def _flake(self, p, cx, cy, r):
+        p.setPen(QPen(QColor(255, 255, 255, 225), 1.6,
+                      Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        for ang in (0, 60, 120):
+            rad = math.radians(ang)
+            dx, dy = r * math.cos(rad), r * math.sin(rad)
+            p.drawLine(QPointF(cx - dx, cy - dy), QPointF(cx + dx, cy + dy))
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # 圣诞树：分层绿三角 + 树干 + 树顶小红帽（中等大小）
+        p.setPen(QPen(QColor("#14532D"), 1.2))
+        p.setBrush(QColor("#1E7A4C"))
+        for _ay, _by, _hw in ((12, 22, 7), (20, 32, 10), (29, 42, 13)):
+            _tri = QPolygonF([QPointF(30, _ay), QPointF(30 - _hw, _by),
+                              QPointF(30 + _hw, _by)])
+            p.drawPolygon(_tri)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#8B5A2B"))
+        p.drawRect(QRectF(26, 42, 8, 6))
+        # 树顶小红帽
+        p.setBrush(QColor("#DC2626"))
+        _hat = QPolygonF([QPointF(22, 12), QPointF(31, 5),
+                          QPointF(38, 10), QPointF(35, 13)])
+        p.drawPolygon(_hat)
+        p.setPen(QPen(QColor("#FFFFFF"), 3.0, Qt.PenStyle.SolidLine,
+                      Qt.PenCapStyle.RoundCap))
+        p.drawLine(QPointF(21, 13), QPointF(37, 13))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#FFFFFF"))
+        p.drawEllipse(QPointF(38, 10), 3, 3)
+        # 树身两颗小彩球
+        p.setBrush(QColor("#DC2626"))
+        p.drawEllipse(QPointF(26, 26), 2.5, 2.5)
+        p.setBrush(QColor("#D4AF37"))
+        p.drawEllipse(QPointF(36, 34), 2.5, 2.5)
+        # 大雪花在右上角
+        self._flake(p, 50, 10, 5)
+        self._flake(p, 42, 20, 3.5)
+        self._flake(p, 53, 22, 3)
+        p.end()
+
+
+DEFAULT_METRIC_CARD_HEIGHT = 100
+PAGE_CARD_HEIGHT_DEFAULTS = {"oneline": 200, "standard": 212, "nofans": 200, "hero": 212}
+METRIC_CARD_HEIGHT_MIN = 88
+METRIC_CARD_HEIGHT_MAX = 160
+PAGE_CARD_HEIGHT_MIN = 180
+PAGE_CARD_HEIGHT_MAX = 300
+
+
+def _card_height_setting(settings, key, default, lo, hi):
+    """One stored card height (unscaled base px); bad values fall back to the default, out-of-range values clamp to the range."""
+    try:
+        _v = int(settings.value(key, default))
+    except Exception:
+        return default
+    return max(lo, min(hi, _v))
+
+
+def metric_card_base_height(settings):
+    """Stored height of the four top metric cards; default 100, fixed in every environment.
+
+    A stored 112 is the rev111 default, never a deliberate choice
+    in practice, so it is treated as the new default 100.
+    """
+    try:
+        _raw = settings.value("ui/metric_card_height", None)
+        if _raw is None:
+            return DEFAULT_METRIC_CARD_HEIGHT
+        _v = int(_raw)
+    except Exception:
+        return DEFAULT_METRIC_CARD_HEIGHT
+    if _v == 112:
+        return DEFAULT_METRIC_CARD_HEIGHT
+    return max(METRIC_CARD_HEIGHT_MIN, min(METRIC_CARD_HEIGHT_MAX, _v))
+
+
+def page_card_default_height(layout_key="oneline"):
+    """Default page-card height for one card layout: 212 for 三列带粉丝 / 大粉丝数, 200 for 一行四列 / 三列无粉丝."""
+    return PAGE_CARD_HEIGHT_DEFAULTS.get(layout_key if layout_key in PAGE_CARD_HEIGHT_DEFAULTS else "oneline", 200)
+
+
+def page_card_height_value(settings, layout_key="oneline"):
+    """Stored height of the per-page cards for one layout.
+
+    Per-layout key ui/page_card_height/<key> only; otherwise
+    that layout's own default. The rev111 single key
+    ui/page_card_height is deliberately NOT read any more:
+    it shadowed every layout's default, so switching layouts
+    never changed the height (rev113 bug).
+    """
+    _key = layout_key if layout_key in PAGE_CARD_HEIGHT_DEFAULTS else "oneline"
+    _default = page_card_default_height(_key)
+    try:
+        _raw = settings.value("ui/page_card_height/" + _key, None)
+        if _raw is None:
+            return _default
+        _v = int(_raw)
+    except Exception:
+        return _default
+    return max(PAGE_CARD_HEIGHT_MIN, min(PAGE_CARD_HEIGHT_MAX, _v))
+
+
 class MetricCard(QFrame):
     badge_clicked=pyqtSignal()
     def __init__(self,title,accent=None,kind="pages"):
-        super().__init__();self.setObjectName("MetricCard");self.setProperty("tone",kind);self.setMinimumWidth(0);self.setFixedHeight(112)
+        super().__init__();self.setObjectName("MetricCard");self.setProperty("tone",kind);self.setMinimumWidth(0);self.setFixedHeight(DEFAULT_METRIC_CARD_HEIGHT)
         layout=QVBoxLayout(self);layout.setContentsMargins(16,13,16,12);layout.setSpacing(1)
         self.kind=kind;self.accent=accent or ACCENT
         self.label=ElideLabel(title);self.label.setObjectName("MetricLabel");self.label.setMinimumHeight(22)
@@ -8050,6 +8611,24 @@ class MetricCard(QFrame):
         self.value.setProperty("tone",kind)
         self.note=ElideLabel("");self.note.setObjectName("SmallMuted");self.note.setMinimumHeight(19)
         layout.addLayout(header);layout.addWidget(self.value);layout.addWidget(self.note)
+        self._xmas_deco=MetricXmasDeco(self);self._xmas_deco.hide()
+    def set_card_height(self,height):
+        """Set the card height; below 108px the inner rows shrink so the text still fits.
+
+        At the default 100 the inside is label 22 + value 40 + note 19
+        + margins 13/12 + spacing, so anything below 108 would clip
+        without this: tight mode uses margins 6/6, value 32, note 17.
+        """
+        _h=max(METRIC_CARD_HEIGHT_MIN,min(METRIC_CARD_HEIGHT_MAX,int(height)))
+        self.setFixedHeight(_h)
+        _tight=_h<108
+        _lay=self.layout()
+        if _lay is not None:
+            _lay.setContentsMargins(16,6 if _tight else 13,16,6 if _tight else 12)
+        self.value.setMinimumHeight(32 if _tight else 40)
+        self.note.setMinimumHeight(17 if _tight else 19)
+        self.update()
+
     def set_badge(self,count):
         if count and int(count)>0:
             self.badge.setText(str(count) if int(count)<100 else "99+");self.badge.show()
@@ -8064,6 +8643,29 @@ class MetricCard(QFrame):
         if self.value.property("tone")!=_tone:
             self.value.setProperty("tone",_tone)
             self.value.style().unpolish(self.value);self.value.style().polish(self.value)
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        _deco=getattr(self,"_xmas_deco",None)
+        if _deco is not None:_deco.move(max(0,self.width()-64),max(0,self.height()-60))
+        self._update_note_cap()
+
+    def refresh_xmas_deco(self):
+        """看板模块右下角的圣诞装饰：只在圣诞主题下显示。"""
+        _w=self.window()
+        _xmas=getattr(_w,"theme_name","云白")=="圣诞"
+        _deco=getattr(self,"_xmas_deco",None)
+        if _deco is not None:_deco.setVisible(_xmas)
+        self._update_note_cap()
+
+    def _update_note_cap(self):
+        """备注行在圣诞主题下要在装饰的树之前省略显示，别让文字跑到树底下；
+        其他主题没有装饰，备注不限宽。数字行绝不省略。"""
+        _deco=getattr(self,"_xmas_deco",None)
+        if _deco is not None and _deco.isVisible():
+            self.note.setMaximumWidth(max(40,self.width()-60))
+        else:
+            self.note.setMaximumWidth(16777215)
 
 
 
@@ -8091,23 +8693,16 @@ def _page_card_specs(row, post):
     """(label, text, objectname, tip) columns; mirrors PageCard.__init__."""
     today = row.get("today") or {"delta": None, "partial": True, "note": "暂无记录"}
     yesterday = row.get("yesterday") or {"delta": None, "partial": True, "note": "暂无记录"}
-    _delta_y_full = format_delta(yesterday["delta"])
+    # rev99: the yesterday/today number tooltips are removed.
     _delta_y_compact = format_delta_compact(yesterday["delta"])
-    _delta_y_tip = yesterday.get("note", "")
-    if row.get("monitor_growth") and _delta_y_compact != _delta_y_full:
-        _delta_y_tip = "实际昨日新增：" + _delta_y_full + (("\n" + _delta_y_tip) if _delta_y_tip else "")
-    _delta_full = format_delta(today["delta"])
     _delta_compact = format_delta_compact(today["delta"])
-    _delta_tip = today.get("note", "")
-    if row.get("monitor_growth") and _delta_compact != _delta_full:
-        _delta_tip = "实际今日新增：" + _delta_full + (("\n" + _delta_tip) if _delta_tip else "")
     specs = [
         ("昨日新增", ("未监控" if not row.get("monitor_growth") else
           (("≈" if yesterday.get("approx") else "") + _delta_y_compact)),
-         _growth_delta_objectname(row, yesterday.get("delta"), False), _delta_y_tip),
+         _growth_delta_objectname(row, yesterday.get("delta"), False), ""),
         ("今日新增", ("未监控" if not row.get("monitor_growth") else
           (("≈" if today.get("approx") else "") + _delta_compact)),
-         _growth_delta_objectname(row, today.get("delta"), True), _delta_tip),
+         _growth_delta_objectname(row, today.get("delta"), True), ""),
         ("距上次发帖", post.get("elapsed_short", post["elapsed"]),
          "GrowthDown" if post["state"] == "overdue" else "GrowthSoon" if post["state"] in ("soon", "unknown", "unverified")
          else "GrowthUp" if post["state"] == "ok" else "GrowthFlat", post["tooltip"]),
@@ -8167,13 +8762,39 @@ def _diag_stripe_severity(badges):
     return "plain"
 
 
+_CONNECTOR_ERROR_ZH = {
+    "Open a normal window in this Chrome Profile before inspecting": "这个 Chrome 账号里没有打开普通窗口，请先打开一个 Chrome 普通窗口再巡检",
+    "Connector already has an active task": "连接器正在执行另一个任务，请稍后再试",
+    "Task cancelled or connector disconnected": "任务已取消或连接器已断开",
+    "Facebook task exceeded its time limit": "浏览器任务超时，页面可能尚未加载完成",
+    "Page extraction returned an invalid identity": "页面读取结果异常，请重试",
+    "Selected browser is offline": "所选浏览器已离线",
+    "Selected browser is busy": "所选浏览器正忙",
+}
+
+
+def _zh_connector_error(text):
+    """Map a connector's English error to Chinese; None if unknown."""
+    _s = str(text or "")
+    for _en, _zh in _CONNECTOR_ERROR_ZH.items():
+        if _en in _s:
+            return _zh
+    return None
+
+
+def _display_connector_error(text):
+    """Card display: Chinese when the error is known, original otherwise."""
+    _zh = _zh_connector_error(text)
+    return _zh if _zh is not None else str(text or "")
+
+
 def _page_card_diag_text(row):
     """Diagnosis line; mirrors PageCard.__init__."""
     diag_parts = []
     if row.get("monitor_growth") and row.get("growth_error"):
-        diag_parts.append("粉丝：" + str(row.get("growth_error"))[:90])
+        diag_parts.append("粉丝：" + _display_connector_error(row.get("growth_error"))[:90])
     if row.get("monitor_posts") and row.get("post_error"):
-        diag_parts.append("发帖：" + str(row.get("post_error"))[:90])
+        diag_parts.append("发帖：" + _display_connector_error(row.get("post_error"))[:90])
     if not diag_parts and row.get("diagnosis_detail") and row.get("diagnosis_code") not in ("", "ok"):
         diag_parts.append("诊断：" + str(row.get("diagnosis_detail"))[:110])
     return (row.get("diagnosis_detail") or PAGE_UNAVAILABLE_DETAIL) if row.get("diagnosis_code") == "page_unavailable" else " · ".join(diag_parts)
@@ -8185,11 +8806,11 @@ class PageCard(QFrame):
     inspect_requested=pyqtSignal(str)
     sync_requested=pyqtSignal(str)
     delete_requested=pyqtSignal(str)
-    def __init__(self,row,rank=0,window_label="",layout_key="oneline"):
+    def __init__(self,row,rank=0,window_label="",layout_key="oneline",height=200):
         super().__init__();self.row=dict(row);self.setObjectName("PageCard")
         self._layout_key=layout_key if layout_key in CARD_LAYOUT_KEYS else 'oneline'
 
-        self.setMinimumWidth(0);self.setFixedHeight(216)
+        self.setMinimumWidth(0);self.setFixedHeight(max(PAGE_CARD_HEIGHT_MIN,min(PAGE_CARD_HEIGHT_MAX,int(height or 200))))
         self.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         pid=str(row["page_id"]);name=display_name(row);post=row.get("post_view") or post_view(row)
         layout=QVBoxLayout(self);layout.setContentsMargins(16,10,16,8);layout.setSpacing(6)
@@ -8197,22 +8818,22 @@ class PageCard(QFrame):
         self._avatar=AvatarWidget(name,row.get("avatar_path",""),60,page_id=pid);header.addWidget(self._avatar,0,Qt.AlignmentFlag.AlignTop)
         identity=QVBoxLayout();identity.setSpacing(2)
         title=CopyLabel(name);title.setObjectName("CardTitle");title.setMinimumHeight(22);self._title=title
-        title.setToolTip(html.escape("专业名称："+(normalize_name(row.get("page_name"),pid) or name or "尚未获取"))+"\n点击复制名称")
+        title.setToolTip("点击复制名称")
         ident=CopyLabel("ID  "+pid,pid);ident.setObjectName("CardId");ident.setMinimumHeight(18)
-        ident.setToolTip("公共主页编号："+pid+"\n点击复制完整 ID")
+        ident.setToolTip("点击复制完整 ID")
         identity.addWidget(title);identity.addWidget(ident);header.addLayout(identity,1)
-        menu=icon_button("more","主页操作",self,26);menu.setIconSize(QSize(18,18));menu.clicked.connect(self.show_menu)
+        menu=icon_button("more","主页操作",self,26,18);menu.clicked.connect(self.show_menu)
         header.addWidget(menu,0,Qt.AlignmentFlag.AlignTop);layout.addLayout(header)
 
         self._build_numbers(row,post,layout)
         diag_parts=[]
-        if row.get("monitor_growth") and row.get("growth_error"):diag_parts.append("粉丝："+str(row.get("growth_error"))[:90])
-        if row.get("monitor_posts") and row.get("post_error"):diag_parts.append("发帖："+str(row.get("post_error"))[:90])
+        if row.get("monitor_growth") and row.get("growth_error"):diag_parts.append("粉丝："+_display_connector_error(row.get("growth_error"))[:90])
+        if row.get("monitor_posts") and row.get("post_error"):diag_parts.append("发帖："+_display_connector_error(row.get("post_error"))[:90])
         if not diag_parts and row.get("diagnosis_detail") and row.get("diagnosis_code") not in ("","ok"):
             diag_parts.append("诊断："+str(row.get("diagnosis_detail"))[:110])
         diag_text=(row.get("diagnosis_detail") or PAGE_UNAVAILABLE_DETAIL) if row.get("diagnosis_code")=="page_unavailable" else " · ".join(diag_parts)
         diag_label=QLineEdit(diag_text);diag_label.setObjectName("DiagLine");diag_label.setReadOnly(True);diag_label.setFrame(False);diag_label.setMinimumHeight(18);diag_label.setCursor(Qt.CursorShape.IBeamCursor);diag_label.setCursorPosition(0);self._diag_label=diag_label
-        diag_label.setToolTip(html.escape(diag_text))
+        diag_label.setToolTip("")
         # Parent first, show second: setVisible(True) on a still-parentless
         # label opens it as its own tiny top-level window (the title-bar-only flash).
         diag_row=QWidget();diag_row_layout=QHBoxLayout(diag_row);diag_row_layout.setContentsMargins(0,0,0,0);diag_row_layout.setSpacing(8)
@@ -8225,7 +8846,7 @@ class PageCard(QFrame):
         footer=QHBoxLayout();footer.setSpacing(4);self._footer=footer
         checked=row.get("last_inspected_at") or row.get("last_collected_at") or ""
         label=ElideLabel("最近检查 "+local_time_label(checked,False));label.setMinimumHeight(22)
-        label.setToolTip(local_time_label(checked));label.setObjectName("SmallMuted");footer.addWidget(label,1);self._checked_label=label
+        label.setObjectName("SmallMuted");footer.addWidget(label,1);self._checked_label=label
         # Card badges: the post status and the growth status are independent,
         # so both show when both apply (e.g. overdue + over-threshold), and
         # the page belongs to both filter categories as well. "主页不可用" stays alone: with no
@@ -8256,8 +8877,7 @@ class PageCard(QFrame):
         specs=_page_card_specs(row,post)
         self._spec_heads=[];self._spec_values=[];self._post_value=None;self._post_state=post["state"]
         self._fans_value=None;self._fans_holder=None;self._shows_fans=False
-        _fans_text=format_compact_count(row.get("last_followers"))
-        _fans_tip="实际粉丝数："+format_count(row.get("last_followers"))+("（约值）" if row.get("approx") else "")
+        _fans_text=format_fans_display(row.get("last_followers"),row.get("approx"))
         def _cell(label,text,objectname,tip,large=22,head_name="SmallMuted",value_min=28):
             cell=QWidget();col=QVBoxLayout(cell);col.setContentsMargins(0,0,0,0);col.setSpacing(1)
             heading=ElideLabel(label);heading.setMinimumHeight(17);heading.setObjectName(head_name)
@@ -8274,7 +8894,7 @@ class PageCard(QFrame):
         if _key=="oneline":
             numbers=QHBoxLayout();numbers.setSpacing(8)
             if row.get("monitor_growth"):
-                _fc,_fh,_fv=_cell("当前粉丝",_fans_text,"FansValue",_fans_tip,22,"CardHeadSmall")
+                _fc,_fh,_fv=_cell("当前粉丝",_fans_text,"FansValue","",22,"CardHeadSmall")
                 self._fans_value=_fv;self._fans_holder=_fc;self._shows_fans=True
                 numbers.addWidget(_fc,1)
             _specs_into(numbers,22,"CardHeadSmall")
@@ -8287,7 +8907,7 @@ class PageCard(QFrame):
             box=QWidget();box_lay=QVBoxLayout(box);box_lay.setContentsMargins(0,0,0,0);box_lay.setSpacing(4)
             fans_line=QWidget();fans_lay=QHBoxLayout(fans_line);fans_lay.setContentsMargins(0,0,0,0);fans_lay.setSpacing(4)
             fans_label=QLabel("当前粉丝");fans_label.setObjectName("SmallMuted");fans_label.setMinimumHeight(22)
-            fans_value=ValueLabel(_fans_text,28);fans_value.setObjectName("FansValue");fans_value.setToolTip(_fans_tip)
+            fans_value=ValueLabel(_fans_text,28);fans_value.setObjectName("FansValue");fans_value.setToolTip("")
             fans_lay.addWidget(fans_label);fans_lay.addWidget(fans_value,1)
             self._fans_value=fans_value;self._fans_holder=fans_line;self._shows_fans=True
             box_lay.addWidget(fans_line)
@@ -8302,7 +8922,7 @@ class PageCard(QFrame):
             fans_row=QWidget();fans_layout=QHBoxLayout(fans_row);fans_layout.setContentsMargins(0,0,0,0);fans_layout.setSpacing(4)
             fans_label=QLabel("当前粉丝");fans_label.setObjectName("SmallMuted");fans_label.setMinimumHeight(22)
             fans_value=QLabel(_fans_text);fans_value.setObjectName("FansValue");fans_value.setMinimumHeight(22)
-            fans_value.setToolTip(_fans_tip)
+            fans_value.setToolTip("")
             fans_layout.addWidget(fans_label);fans_layout.addWidget(fans_value,1)
             self._fans_value=fans_value;self._fans_holder=fans_row;self._shows_fans=True
             card_layout.addWidget(fans_row);fans_row.setVisible(bool(row.get("monitor_growth")))
@@ -8320,7 +8940,7 @@ class PageCard(QFrame):
         if self._avatar is not None:
             self._avatar.set_image(name, row.get("avatar_path", ""))
         self._title.setText(name)
-        self._title.setToolTip(html.escape("专业名称：" + (normalize_name(row.get("page_name"), pid) or name or "尚未获取")) + "\n点击复制名称")
+        self._title.setToolTip("点击复制名称")
         for (_label, _text, _obj, _tip), _head, _val in zip(_page_card_specs(row, post), self._spec_heads, self._spec_values):
             _head.setText(_label)
             _val.setText(_text)
@@ -8330,18 +8950,17 @@ class PageCard(QFrame):
                 _val.style().polish(_val)
             _val.setToolTip(_tip)
         if self._fans_value is not None:
-            self._fans_value.setText(format_compact_count(row.get("last_followers")))
-            self._fans_value.setToolTip("实际粉丝数：" + format_count(row.get("last_followers")) + ("（约值）" if row.get("approx") else ""))
+            self._fans_value.setText(format_fans_display(row.get("last_followers"),row.get("approx")))
+            self._fans_value.setToolTip("")
         if self._fans_holder is not None:
             self._fans_holder.setVisible(bool(row.get("monitor_growth")) and self._shows_fans)
         _diag = _page_card_diag_text(row)
         self._diag_label.setText(_diag)
         self._diag_label.setCursorPosition(0)
-        self._diag_label.setToolTip(html.escape(_diag))
+        self._diag_label.setToolTip("")
         self._diag_row.setVisible(bool(_diag))
         checked = row.get("last_inspected_at") or row.get("last_collected_at") or ""
         self._checked_label.setText("最近检查 " + local_time_label(checked, False))
-        self._checked_label.setToolTip(local_time_label(checked))
         for _b in self._badges:
             _b.hide()
             _b.deleteLater()
@@ -8450,7 +9069,7 @@ class BatchAddDialog(QDialog):
         self.setObjectName("BatchAddDialog")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("QDialog#BatchAddDialog{background:%s;border:1px solid %s;border-radius:16px;}" % (PANEL, BORDER))
+        self.setStyleSheet("QDialog#BatchAddDialog{background:%s;border:1px solid %s;border-radius:8px;}" % (PANEL, BORDER))
         self.setWindowTitle("添加专业 ID");self.resize(620,600)
         root=QVBoxLayout(self);root.setContentsMargins(22,20,22,20);root.setSpacing(12)
         title=QLabel("批量添加专业 ID");title.setObjectName("DialogTitle");root.addWidget(title)
@@ -8585,7 +9204,7 @@ class TourWelcomeCard(QWidget):
         # Scope the card style to the card itself only (#id selector):
         # an unscoped background/border would leak onto every child
         # label and button and turn each of them into a white pill.
-        self.setStyleSheet("#TourWelcomeCard{background:#FFFFFF;border:1px solid #E8E8E3;border-radius:16px;}")
+        # 卡片样式走主样式表的 #TourWelcomeCard 规则，跟当前主题走。
         root = QVBoxLayout(self)
         root.setContentsMargins(26, 24, 26, 24)
         root.setSpacing(12)
@@ -8673,24 +9292,25 @@ class TourOverlay(QWidget):
         self._ring = None
         self._welcome = TourWelcomeCard(self, main)
         self._bubble = QWidget(self)
-        self._bubble.setStyleSheet("background:#FFFFFF;border:1px solid #E8E8E3;border-radius:12px;")
+        self._bubble.setObjectName("TourBubble")
+        self._bubble.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         bl = QVBoxLayout(self._bubble)
         bl.setContentsMargins(16, 14, 16, 14)
         bl.setSpacing(6)
         self._step_lab = QLabel()
-        self._step_lab.setStyleSheet("color:#1D4ED8;font-size:11.5px;font-weight:bold;border:none;")
+        self._step_lab.setObjectName("TourStepLabel")
         bl.addWidget(self._step_lab)
         self._title_lab = QLabel()
-        self._title_lab.setStyleSheet("font-size:15.5px;font-weight:bold;border:none;")
+        self._title_lab.setObjectName("TourTitleLabel")
         bl.addWidget(self._title_lab)
         self._body_lab = QLabel()
         self._body_lab.setWordWrap(True)
-        self._body_lab.setStyleSheet("font-size:13px;color:#3A3A3A;border:none;")
+        self._body_lab.setObjectName("TourBodyLabel")
         bl.addWidget(self._body_lab)
         btns = QHBoxLayout()
         btns.setSpacing(8)
         self._skip_btn = QPushButton("跳过引导")
-        self._skip_btn.setStyleSheet("color:#6E6E6E;border:none;font-size:12.5px;")
+        self._skip_btn.setObjectName("TourSkipButton")
         self._skip_btn.clicked.connect(self.skip_requested.emit)
         btns.addWidget(self._skip_btn)
         btns.addStretch()
@@ -8698,7 +9318,7 @@ class TourOverlay(QWidget):
         self._prev_btn.clicked.connect(self.prev_requested.emit)
         btns.addWidget(self._prev_btn)
         self._next_btn = QPushButton("下一步")
-        self._next_btn.setStyleSheet("background:#1D4ED8;color:#FFFFFF;border:none;border-radius:8px;padding:8px 16px;font-size:13px;")
+        self._next_btn.setObjectName("TourNextButton")
         self._next_btn.clicked.connect(self._on_next_clicked)
         btns.addWidget(self._next_btn)
         bl.addLayout(btns)
@@ -9219,12 +9839,45 @@ class DashboardPage(QWidget):
         _cl=str(self.settings.value("card_layout","oneline") or "oneline")
         self._card_layout=_cl if _cl in CARD_LAYOUT_KEYS else 'oneline'
 
-        self.build_ui();self.refresh()
+        self.build_ui();self._apply_scaled_sizes();self.refresh()
+
+    def _metric_card_base_height(self):
+        return metric_card_base_height(self.settings)
+
+    def _metric_card_screen_height(self):
+        return self._metric_card_base_height()
+
+    def _page_card_height(self):
+        return page_card_height_value(self.settings,self._card_layout)
+
+    def _page_card_layout_info(self):
+        """(layout display name, default height) for the current card layout."""
+        _name = dict((k, n) for k, n, _d in CARD_LAYOUTS).get(self._card_layout, "一行四列")
+        return _name, page_card_default_height(self._card_layout)
+
+    def _apply_scaled_sizes(self):
+        """Re-apply the dashboard's fixed pixel sizes for the current zoom."""
+        scale=ui_scale_percent(self.settings)
+        self.once_btn.setFixedSize(_dpi_px(140,scale),_dpi_px(40,scale))
+        self.once_btn.setIconSize(QSize(_dpi_px(16,scale),_dpi_px(16,scale)))
+        self._grace_cancel_btn.setFixedSize(_dpi_px(72,scale),_dpi_px(40,scale))
+        self.auto_btn.setFixedSize(_dpi_px(140,scale),_dpi_px(40,scale))
+        self.search.setMinimumWidth(_dpi_px(280,scale));self.search.setMaximumWidth(_dpi_px(360,scale));self.search.setFixedHeight(_dpi_px(36,scale))
+        self.sort_box.setFixedWidth(_dpi_px(140,scale))
+        for _mode,_chip in self._filter_chips.items():
+            _chip.setFixedHeight(_dpi_px(30,scale))
+            if _mode in ("needs","post_overdue","growth_alert"):
+                _chip.setMinimumWidth(_chip.sizeHint().width()+20)
+        for _m in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_today):
+            _m.set_card_height(self._metric_card_base_height())
+        self.scroll.setMinimumHeight(_dpi_px(230,scale))
+        if getattr(self,"_active",False):
+            self.once_btn.setFixedWidth(_dpi_px(PROGRESS_BUTTON_WIDTHS.get(self._prog_style,140),scale))
 
     def build_ui(self):
         root=QVBoxLayout(self);root.setContentsMargins(20,16,20,10);root.setSpacing(12)
         self.action_bar=QWidget();action_lay=QHBoxLayout(self.action_bar);action_lay.setContentsMargins(0,0,0,0);action_lay.setSpacing(10)
-        self.run_badge=QLabel("上次巡检时间：—");self.run_badge.setObjectName("RunBadge");action_lay.addWidget(self.run_badge)
+        self.run_badge=QLabel("上次巡检时间：—");self.run_badge.setObjectName("RunBadge");self.run_badge.setSizePolicy(QSizePolicy.Policy.Minimum,QSizePolicy.Policy.Preferred);action_lay.addWidget(self.run_badge)
         self.once_btn=QPushButton("立即巡检");self.once_btn.setIcon(ui_icon("play","#FFFFFF"))
         self.once_btn.setIconSize(QSize(16,16));self.once_btn.setObjectName("PrimaryButton");self.once_btn.setFixedSize(140,40)
         self._once_menu=QMenu(self.once_btn)
@@ -9240,6 +9893,7 @@ class DashboardPage(QWidget):
         self._grace_cancel_btn=QPushButton("取消");self._grace_cancel_btn.setObjectName("SecondaryButton");self._grace_cancel_btn.setFixedSize(72,40);self._grace_cancel_btn.setVisible(False)
         self._grace_cancel_btn.clicked.connect(self.grace_cancel_requested.emit);action_lay.addWidget(self._grace_cancel_btn)
         self._once_overlay=OnceProgressOverlay(self.action_bar)
+        self.action_bar.installEventFilter(self)
         self.once_btn.installEventFilter(self);self._sync_once_overlay()
         self.auto_btn=QPushButton("启用自动巡检");self.auto_btn.setObjectName("AutoButton");self.auto_btn.setFixedSize(140,40)
         self.auto_btn.clicked.connect(self.toggle_auto.emit);action_lay.addWidget(self.auto_btn)
@@ -9257,8 +9911,8 @@ class DashboardPage(QWidget):
         for metric in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_today):metrics.addWidget(metric,1)
         root.addLayout(metrics)
         toolbar=QHBoxLayout();toolbar.setSpacing(8)
-        self.search=QLineEdit();self.search.setPlaceholderText("搜索名称 / 专业 ID");self.search.setClearButtonEnabled(True)
-        self.search.setMinimumWidth(150);self.search.setMaximumWidth(300);self.search.setFixedHeight(36)
+        self.search=MultiIdSearchLineEdit();self.search.setPlaceholderText("搜索名称 / 专业 ID（可粘贴多行 ID）");self.search.setClearButtonEnabled(True)
+        self.search.setMinimumWidth(280);self.search.setMaximumWidth(360);self.search.setFixedHeight(36)
         self.search.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         self.search.textChanged.connect(lambda _:self._on_search_changed())
         toolbar.addWidget(self.search,0,Qt.AlignmentFlag.AlignTop)
@@ -9291,13 +9945,10 @@ class DashboardPage(QWidget):
         root.addLayout(split,1)
         self.status=ElideLabel("就绪");self.status.setMinimumHeight(20);self.status.setObjectName("FooterText")
         self.next_run=QLabel("自动巡检未开启");self.next_run.setObjectName("FooterText")
-        stored=str(self.settings.value("dashboard/filter","all"))
-        if stored=="overdue":stored="post_overdue"
-        elif stored=="unknown":stored="needs"
-        elif stored=="unavailable":stored="needs"
-        elif stored=="off":stored="all"
-        if stored not in ("all","growth","posts","needs","post_overdue","growth_alert"):stored="all"
-        self._filter_mode=stored
+        # rev97：每次新打开主界面，筛选胶囊一律默认“全部”，不再恢复上次
+        # 选的筛选（dashboard/filter 仍由 _remember_view 照常保存，只启动时
+        # 不读它）。使用中点胶囊切换不变。
+        self._filter_mode="all"
         self.search.blockSignals(True);self.search.setText(str(self.settings.value("dashboard/search","")));self.search.blockSignals(False)
         self.search.textChanged.connect(self._remember_view)
         self._apply_filter_chips()
@@ -9321,13 +9972,14 @@ class DashboardPage(QWidget):
         _all_dual=getattr(self,"_all_pages_dual",False)
         if getattr(self,"_filter_mode","all")=="needs" and _counts.get("needs",1)==0:self._filter_mode="all"
         if getattr(self,"_filter_mode","all")=="growth_alert" and _counts.get("growth_alert",1)==0:self._filter_mode="all"
+        if getattr(self,"_filter_mode","all")=="post_overdue" and _counts.get("post_overdue",1)==0:self._filter_mode="all"
         if not posts_on and getattr(self,"_filter_mode","all") in ("posts","post_overdue"):self._filter_mode="all"
         if not growth_on and getattr(self,"_filter_mode","all")=="growth_alert":self._filter_mode="all"
         if _all_dual and getattr(self,"_filter_mode","all") in ("growth","posts"):self._filter_mode="all"
         for mode,chip in self._filter_chips.items():
             if mode=="growth":visible=not _all_dual
             elif mode=="posts":visible=posts_on and not _all_dual
-            elif mode=="post_overdue":visible=posts_on
+            elif mode=="post_overdue":visible=posts_on and _counts.get("post_overdue",1)>0
             elif mode=="growth_alert":visible=growth_on and _counts.get("growth_alert",1)>0
             elif mode=="needs":visible=_counts.get("needs",1)>0
             else:visible=True
@@ -9383,12 +10035,23 @@ class DashboardPage(QWidget):
     def eventFilter(self,obj,event):
         if obj is self.once_btn and event.type() in (QEvent.Type.Move,QEvent.Type.Resize,QEvent.Type.Show):
             self._sync_once_overlay()
+        elif obj is getattr(self,"action_bar",None) and event.type() in (QEvent.Type.Move,QEvent.Type.Resize):
+            # rev108: the overlay no longer moves with action_bar (it lives
+            # on the topbar), so a bar move (e.g. window resize) must
+            # re-sync it too, or it would stay at the old position.
+            self._sync_once_overlay()
         return super().eventFilter(obj,event)
 
     def _sync_once_overlay(self):
+        # rev108: the overlay now lives on the topbar (see build_ui below),
+        # so the button position must be mapped into the overlay parent's
+        # coordinates -- the button's geometry() is in action_bar coords.
         if not hasattr(self,"_once_overlay"):return
+        _parent=self._once_overlay.parent()
+        if _parent is None:return
+        _pos=self.once_btn.mapTo(_parent,QPoint(0,0))
         g=self.once_btn.geometry()
-        self._once_overlay.setGeometry(g.x(),g.y()-12,g.width(),g.height()+12)
+        self._once_overlay.setGeometry(_pos.x(),_pos.y()-12,g.width(),g.height()+12)
 
     def _frac(self):
         return (self._prog_current/self._prog_total) if self._prog_total>0 else 0.0
@@ -9439,7 +10102,11 @@ class DashboardPage(QWidget):
             self.once_btn.setFixedWidth(PROGRESS_BUTTON_WIDTHS.get(self._prog_style,140))
             self._sync_once_overlay()
             self._once_overlay.set_state(self._prog_style,self._frac(),self._prog_current,self._prog_total,self.paused)
-            self._once_overlay.show();self._once_overlay.raise_()
+            # rev108: the overlay lives on the topbar now, so it no
+            # longer hides together with action_bar -- do not show it while
+            # another page is current (switch_page re-shows it on return).
+            if self.isVisible():
+                self._once_overlay.show();self._once_overlay.raise_()
         else:
             if getattr(self,"_once_cancel_action",None) is not None:self._once_cancel_action.setVisible(False)
             self._once_overlay.hide();self.once_btn.setFixedWidth(140)
@@ -9490,7 +10157,7 @@ class DashboardPage(QWidget):
             if row["monitor_growth"]:
                 _st=states.get(row["page_id"])
                 row["today"]=self.store._today_from_state(_st,now,interval)
-                row["yesterday"]=self.store._yesterday_from_state(_st,now)
+                row["yesterday"]=self.store._yesterday_from_state_with_history(_st,now)
                 if row["today"]["delta"] is not None:
                     today_sum+=row["today"]["delta"];covered+=1
                     partial+=int(row["today"]["partial"])
@@ -9526,19 +10193,25 @@ class DashboardPage(QWidget):
             ((f"可比较 {covered} 个"+(f" · {partial} 个为部分日" if partial else "")) if covered else "今日暂无可比较记录"))
         self.metric_today.set_badge(unavailable)
         self._unavailable_count=unavailable
+        for _m in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_today):_m.refresh_xmas_deco()
         _needs_count=sum(1 for r in rows if r.get("needs_attention"))
         _growth_count=sum(1 for r in rows if r.get("cat_growth"))
         _overdue_count=sum(1 for r in rows if r.get("is_post_overdue"))
-        self._chip_counts={"needs":_needs_count,"growth_alert":_growth_count}
+        self._chip_counts={"needs":_needs_count,"growth_alert":_growth_count,"post_overdue":_overdue_count}
         self._growth_alert_ids={r["page_id"] for r in rows if r.get("cat_growth")}
         for _mode,_count in (("needs",_needs_count),("growth_alert",_growth_count),("post_overdue",_overdue_count)):
             _chip=self._filter_chips.get(_mode)
             if _chip is not None and hasattr(_chip,"set_badge"):_chip.set_badge(_count)
         self._apply_filter_chips()
-        needle=self.search.text().strip().casefold();mode=self.filter_mode()
+        _parsed=normalize_page_ids(self.search.text())
+        _ids=_parsed.ids
+        _id_set=set(_ids)
+        needle=self.search.text().strip().casefold() if not _ids else _ids[0].casefold();mode=self.filter_mode()
         filtered=[]
         for r in rows:
-            if needle and needle not in (display_name(r)+" "+r["page_id"]+" "+r.get("notes","")).casefold():continue
+            if len(_ids)>=2:
+                if r["page_id"] not in _id_set:continue
+            elif needle and needle not in (display_name(r)+" "+r["page_id"]+" "+r.get("notes","")).casefold():continue
             if mode=="growth" and not r["monitor_growth"]:continue
             if mode=="posts" and not r["monitor_posts"]:continue
             if mode=="needs" and not r.get("needs_attention"):continue
@@ -9557,14 +10230,13 @@ class DashboardPage(QWidget):
             filtered.sort(key=lambda r:(0 if r.get("is_post_overdue") else 1,0 if r.get("cat_growth") else 1,float(r.get("last_post_ts") or 0),int(r.get("sort_order") or 0),str(r["page_id"])))
         else:
             filtered.sort(key=lambda r:(int(r.get("sort_order") or 0),str(r["page_id"])))
-        self.search.setToolTip("匹配 %s 个，共 %s 个主页" % (len(filtered),len(rows)))
         cards=[]
         for r in filtered:
             _pid=str(r["page_id"]);_card=self._card_cache.get(_pid)
             _key=(bool(r.get("monitor_growth")),bool(r.get("monitor_posts")),self._card_layout)
             if _card is None or _card.structure_key!=_key:
                 if _card is not None:_card.hide();_card.deleteLater()
-                _card=PageCard(r,layout_key=self._card_layout)
+                _card=PageCard(r,layout_key=self._card_layout,height=self._page_card_height())
                 _card.open_requested.connect(self.open_page.emit)
                 _card.manage_requested.connect(self.open_manager.emit)
                 _card.inspect_requested.connect(self.inspect_page.emit)
@@ -10019,7 +10691,7 @@ class TrendChart(QWidget):
         self._points = {}
         self._start = None
         self._end = None
-        self.setMinimumHeight(150 if self._minimal else 240)
+        self.setMinimumHeight(150 if self._minimal else 160)
 
     def set_series(self, points, start_day, end_day):
         self._points = {str(k): int(v) for k, v in (points or {}).items()}
@@ -10206,7 +10878,7 @@ class TrendCard(QFrame):
 
 
 class TrendPage(QWidget):
-    """增长趋势：上面是所有专业加起来的总趋势（每天一共长多少、这几天
+    """粉丝趋势：上面是所有专业加起来的总趋势（每天一共长多少、这几天
     一共长多少、从哪天开始），下面是每个专业的小卡片。日期药丸点开是
     新做的圆角日历。"""
     def __init__(self, store, settings=None):
@@ -10215,7 +10887,7 @@ class TrendPage(QWidget):
         self.settings = settings
         self.setObjectName("TrendPage")
         today = datetime.now().astimezone().date()
-        self._start = today - timedelta(days=1)
+        self._start = today - timedelta(days=6)
         self._end = today
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 22, 24, 18)
@@ -10360,6 +11032,33 @@ class PageEditDialog(QDialog):
                     sort_order=int(self.row["sort_order"]),notes=self.notes.toPlainText().strip())
 
 
+class MultiIdSearchLineEdit(QLineEdit):
+    """ID 管理搜索框：外观、尺寸与普通单行搜索框完全一致，但粘贴多行
+    内容时把每一行用“ | ”连起来放进框里，不让多个 ID 粘成一个长数字，
+    这样每行原来是什么、哪行格式不对都还能分得清。"""
+    def insertFromMimeData(self, source):
+        if source is not None and source.hasText():
+            raw = source.text()
+            if "\n" in raw or "\r" in raw or "\t" in raw:
+                parts = [p.strip() for p in re.split(r"[\r\n\t|;；]+", raw) if p.strip()]
+                self.insert(" | ".join(parts))
+                return
+            self.insert(raw)
+            return
+        super().insertFromMimeData(source)
+
+    def setText(self, text):
+        super().setText(text)
+        self.refresh_clear_button()
+
+    def refresh_clear_button(self):
+        """Qt 只在 textChanged 信号里刷新清空叉叉的可见性；程序恢复
+        文本时信号被屏蔽，叉叉就一直藏着。这里显式刷新一次：有内容
+        就显示叉叉，没内容就藏起来。"""
+        self.setClearButtonEnabled(False)
+        self.setClearButtonEnabled(True)
+
+
 class PageManagementPage(QWidget):
     add_requested=pyqtSignal()
     delete_requested=pyqtSignal(list)
@@ -10368,7 +11067,14 @@ class PageManagementPage(QWidget):
     open_settings_requested=pyqtSignal()
     def __init__(self,store,settings):
         super().__init__();self.store=store;self.settings=settings;self._loading=False;self._busy=False
-        self.setObjectName("ManagerPage");self.build_ui();self.refresh()
+        self.setObjectName("ManagerPage");self.build_ui();self._apply_scaled_sizes();self.refresh()
+
+    def _apply_scaled_sizes(self):
+        """Re-apply the ID manager's fixed pixel sizes for the current zoom."""
+        scale=ui_scale_percent(self.settings)
+        self.search.setMinimumWidth(_dpi_px(240,scale));self.search.setMaximumWidth(_dpi_px(440,scale))
+        for _btn in (self.add_btn,self.batch_btn,self.delete_btn):
+            _btn.setFixedHeight(_dpi_px(38,scale))
 
     def build_ui(self):
         root=QVBoxLayout(self);root.setContentsMargins(24,20,24,16);root.setSpacing(13)
@@ -10383,12 +11089,12 @@ class PageManagementPage(QWidget):
         tools=QHBoxLayout();tools.setSpacing(10)
         self.select_all=QCheckBox("全选当前结果");self.select_all.toggled.connect(self.select_visible);tools.addWidget(self.select_all)
         self.summary=QLabel();self.summary.setObjectName("SmallMuted");tools.addWidget(self.summary);tools.addStretch()
-        self.filter=MenuButton((("全部模块","all"),("粉丝监控","growth"),("发帖监控","posts"),("两者都关闭","off")),"all")
-        self.filter.changed.connect(lambda:self.refresh());tools.addWidget(self.filter)
-        self.search=QLineEdit();self.search.setPlaceholderText("搜索名称、ID 或备注");self.search.setClearButtonEnabled(True)
-        self.search.setMinimumWidth(150);self.search.setMaximumWidth(270)
+        self.filter=MenuButton((("全部模块","all"),("粉丝监控","growth"),("发帖监控","posts")),"all")
+        self.filter.changed.connect(lambda:self.refresh());tools.addWidget(self.filter);tools.addSpacing(8)
+        self.search=MultiIdSearchLineEdit();self.search.setPlaceholderText("搜索名称、ID 或备注（可粘贴多行 ID）");self.search.setClearButtonEnabled(True)
+        self.search.setMinimumWidth(240);self.search.setMaximumWidth(440)
         self.search.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
-        self.search.textChanged.connect(lambda _:self.refresh());tools.addWidget(self.search)
+        self.search.textChanged.connect(lambda _:self.refresh());tools.addWidget(self.search,1)
         root.addLayout(tools)
         self.module_banner=QFrame();self.module_banner.setObjectName("SettingsCard")
         banner_lay=QHBoxLayout(self.module_banner);banner_lay.setContentsMargins(14,9,14,9);banner_lay.setSpacing(8)
@@ -10421,7 +11127,9 @@ class PageManagementPage(QWidget):
         hint=QLabel("点击“专业名称”表头可按名称升序 / 降序切换排序。名称和头像会在正常巡检时自动更新；未获取资料不会伪造。")
         hint.setObjectName("SmallMuted");hint.setWordWrap(True);root.addWidget(hint)
         self.filter.setCurrentData(str(self.settings.value("manager/filter","all")),emit=False)
-        self.search.blockSignals(True);self.search.setText(str(self.settings.value("manager/search","")));self.search.blockSignals(False)
+        # 启动时清空搜索框，不恢复上次的搜索记录；清空叉叉的可见性由
+        # MultiIdSearchLineEdit.setText 里的 refresh_clear_button 刷新。
+        self.search.setText("");self.settings.setValue("manager/search","")
         state=self.settings.value("manager/header")
         if state:
             try:self.table.horizontalHeader().restoreState(state)
@@ -10607,6 +11315,29 @@ class PageManagementPage(QWidget):
             if self.table.item(r,0).data(Qt.ItemDataRole.UserRole)==pid:
                 self.table.selectRow(r);self.table.scrollToItem(self.table.item(r,2));return
 
+    def _search_state(self, text):
+        """把搜索框文字解析成 (mode, key, not_found, skipped)。
+        出现 2 个及以上有效 ID 时走批量模式（按 ID 精确匹配）；
+        只有 1 个有效 ID 时用这个 ID 做子串搜索（兼容带引号粘贴与
+        部分 ID 搜索）；没有有效 ID 时走原来的名称/ID/备注子串搜索。"""
+        parsed = normalize_page_ids(text)
+        ids = parsed.ids
+        if len(ids) >= 2:
+            known = {row["page_id"] for row in self.store.list_pages()}
+            skipped = []
+            for line in re.split(r"[|]+", text):
+                line = line.strip()
+                if not line:
+                    continue
+                if re.sub(r"[\s_-]+", "", line.lower()) in HEADERS:
+                    continue
+                if not normalize_page_ids(line).ids:
+                    skipped.append(line[:40])
+            return "ids", set(ids), [i for i in ids if i not in known], skipped
+        if len(ids) == 1:
+            return "text", ids[0].casefold(), [], []
+        return "text", text.casefold().strip(), [], []
+
     def refresh(self):
         checked=set()
         for r in range(self.table.rowCount()):
@@ -10618,11 +11349,12 @@ class PageManagementPage(QWidget):
         posts_on=modules_posts_enabled(self.settings)
         self.module_banner.setVisible(not posts_on)
         self.table.setColumnHidden(5,not posts_on);self.table.setColumnHidden(6,not posts_on)
-        needle=self.search.text().casefold().strip();mode=self.filter.currentData()
+        search_mode,search_key,not_found,skipped=self._search_state(self.search.text());mode=self.filter.currentData()
         if mode=="posts" and not posts_on:mode="all"
         rows=[]
         for row in self.store.list_pages():
-            if needle and needle not in (display_name(row)+" "+row["page_id"]+" "+row["notes"]).casefold():continue
+            if search_mode=="ids" and row["page_id"] not in search_key:continue
+            if search_mode=="text" and search_key and search_key not in (display_name(row)+" "+row["page_id"]+" "+row["notes"]).casefold():continue
             if mode=="growth" and not row["monitor_growth"]:continue
             if mode=="posts" and not row["monitor_posts"]:continue
             if mode=="off" and (row["monitor_growth"] or row["monitor_posts"]):continue
@@ -10667,7 +11399,22 @@ class PageManagementPage(QWidget):
         self.table.verticalScrollBar().setValue(scroll)
         self._sync_selection_header()
         g=sum(r["monitor_growth"] for r in rows);p=sum(r["monitor_posts"] for r in rows)
-        self.summary.setText(f"{len(rows)} 个 ID · 粉丝监控 {g}"+(f" · 发帖监控 {p}" if posts_on else ""))
+        if search_mode=="ids":
+            _parts=[f"找到 {len(rows)} 个"]
+            if not_found:
+                _shown="、".join(not_found[:3]);_extra=f" 等 {len(not_found)-3} 个" if len(not_found)>3 else ""
+                _parts.append(f"未找到 {len(not_found)} 个：{_shown}{_extra}")
+            if skipped:
+                _parts.append(f"跳过 {len(skipped)} 行格式不对")
+            _parts.append(f"粉丝监控 {g}"+(f" · 发帖监控 {p}" if posts_on else ""))
+            self.summary.setText(" · ".join(_parts))
+            _tip=[]
+            if not_found:_tip.append("未找到："+"、".join(not_found))
+            if skipped:_tip.append("已跳过："+"、".join(str(s)[:40] for s in skipped[:5]))
+            self.summary.setToolTip("\n".join(_tip))
+        else:
+            self.summary.setText(f"{len(rows)} 个 ID · 粉丝监控 {g}"+(f" · 发帖监控 {p}" if posts_on else ""))
+            self.summary.setToolTip("")
         self.set_busy(self._busy)
 
 
@@ -10681,7 +11428,6 @@ class SettingsPage(QWidget):
     export_requested=pyqtSignal()
     data_dir_requested=pyqtSignal()
     theme_requested=pyqtSignal(str)
-    ui_scale_requested=pyqtSignal(int)
     toast_position_requested=pyqtSignal(str)
     progress_style_requested=pyqtSignal(str)
     card_layout_requested=pyqtSignal(str)
@@ -10730,9 +11476,6 @@ class SettingsPage(QWidget):
         self._nav_style=key;self.set_selected_nav_style(key)
         self.settings.setValue("nav_style",key);self.settings.sync()
         self.nav_style_requested.emit(key)
-
-    def set_ui_scale_label(self,scale):
-        if hasattr(self,"zoom_label"):self.zoom_label.setText(f"{int(scale)}%")
 
     def _on_toast_position_changed(self):
         # Save first (synchronous emit), then show the real toast so it
@@ -10796,11 +11539,11 @@ class SettingsPage(QWidget):
         _theme_note=QLabel("选择亮色或暗色界面风格。");_theme_note.setObjectName("SmallMuted");thel.addWidget(_theme_note)
         theme_row=QHBoxLayout();theme_row.setSpacing(12)
         self.theme_cards={}
-        _theme_descs={"云白":"暖白底色，深蓝点缀","护眼绿":"淡绿底色，深绿点缀（微信绿系）","曜石黑":"深灰底色，柔和浅蓝"}
+        _theme_descs={"云白":"暖白底色，深蓝点缀","护眼绿":"淡绿底色，深绿点缀","曜石黑":"深灰底色，柔和浅蓝","圣诞":"墨绿底色，雪花、圣诞帽和雪橇装饰"}
         for _name in THEME_PRESETS:
             _preset=THEME_PRESETS[_name]
             card=OptionCard(_name,_theme_descs.get(_name,""))
-            card.setFixedHeight(132)
+            card.setFixedHeight(148)
             _preview=QFrame();_preview.setFixedHeight(56)
             _preview.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
             _preview.setStyleSheet(f"background:{_preset['bg']};border:1px solid {_preset['border']};border-radius:8px;")
@@ -10828,25 +11571,11 @@ class SettingsPage(QWidget):
         self.nav_style_cards={};self.nav_style_previews={};self._nav_style=NAV_DEFAULT_STYLE
         for _key,_name,_desc in NAV_STYLES:
             _card=OptionCard(_name,_desc)
-            _prev=NavStylePreview(_key,migrate_theme_name(self.settings.value("ui_theme","云白")));_prev.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+            _prev=NavStylePreview(_key,migrate_theme_name(self.settings.value("ui_theme","圣诞")));_prev.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
             _card.layout().insertWidget(0,_prev)
             _card.clicked.connect(lambda _=False,k=_key:self._on_nav_style_picked(k))
             _nav_row.addWidget(_card,1);self.nav_style_cards[_key]=_card;self.nav_style_previews[_key]=_prev
         thel.addLayout(_nav_row)
-        _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");thel.addWidget(_div)
-        _zoom_title=QLabel("界面缩放");_zoom_title.setObjectName("SettingsTitle");thel.addWidget(_zoom_title)
-        _zoom_row=QHBoxLayout();_zoom_row.setSpacing(8)
-        _zoom_min=QLabel("80%");_zoom_min.setObjectName("SmallMuted");_zoom_row.addWidget(_zoom_min)
-        self.zoom_out_btn=QPushButton("−");self.zoom_out_btn.setFixedSize(38,36)
-        self.zoom_out_btn.setToolTip("缩小 10%")
-        self.zoom_label=QLabel("100%");self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter);self.zoom_label.setFixedWidth(64)
-        self.zoom_in_btn=QPushButton("+");self.zoom_in_btn.setFixedSize(38,36)
-        self.zoom_in_btn.setToolTip("放大 10%")
-        self.zoom_out_btn.clicked.connect(lambda:self.ui_scale_requested.emit(ui_scale_percent(self.settings)-10))
-        self.zoom_in_btn.clicked.connect(lambda:self.ui_scale_requested.emit(ui_scale_percent(self.settings)+10))
-        _zoom_row.addWidget(self.zoom_out_btn);_zoom_row.addWidget(self.zoom_label);_zoom_row.addWidget(self.zoom_in_btn)
-        _zoom_max=QLabel("130%");_zoom_max.setObjectName("SmallMuted");_zoom_row.addWidget(_zoom_max)
-        _zoom_row.addStretch();thel.addLayout(_zoom_row)
         _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");thel.addWidget(_div)
         _toast_title=QLabel("消息提示位置");_toast_title.setObjectName("SettingsTitle");thel.addWidget(_toast_title)
         _toast_note=QLabel("点选立即弹出一条真实提示");_toast_note.setObjectName("SmallMuted");thel.addWidget(_toast_note)
@@ -11013,12 +11742,12 @@ class SettingsPage(QWidget):
         if _cl not in CARD_LAYOUT_KEYS:_cl="oneline"
         self._card_layout=_cl;self.set_selected_card_layout(_cl)
         _ns=str(self.settings.value("nav_style",NAV_DEFAULT_STYLE) or NAV_DEFAULT_STYLE)
+        if _ns=="capsule":_ns="line";self.settings.setValue("nav_style","line")
         if _ns not in NAV_STYLE_KEYS:_ns=NAV_DEFAULT_STYLE
         self._nav_style=_ns;self.set_selected_nav_style(_ns)
-        self.set_selected_theme(migrate_theme_name(self.settings.value("ui_theme","云白")))
+        self.set_selected_theme(migrate_theme_name(self.settings.value("ui_theme","圣诞")))
         _pos=str(self.settings.value("toast_position","bottom_center"))
         if _pos in [k for _,k in TOAST_POSITIONS]:self.toast_position_choice.setCurrentData(_pos,emit=False)
-        self.set_ui_scale_label(ui_scale_percent(self.settings))
         if hasattr(self,"_interval_hint"):self._interval_hint.setVisible(int(self.interval.value())<180)
 
     def save_settings(self):
@@ -11364,6 +12093,54 @@ class FireworksOverlay(QWidget):
             painter.drawEllipse(QPointF(pt["x"], pt["y"]), pt["size"], pt["size"])
 
 
+def _filter_error_history_lines(lines, current_basename):
+    """Split error.log tail lines into timestamp-delimited blocks; keep only
+    blocks whose traceback names the currently running file. Returns
+    (kept_lines, kept_block_count, hidden_block_count). A block with no
+    File line cannot be attributed to this version, so it is hidden too."""
+    _blocks, _cur = [], []
+    for _ln in lines:
+        if re.match(r"^\d{4}-\d{2}-\d{2}T", _ln) and _cur:
+            _blocks.append(_cur)
+            _cur = []
+        _cur.append(_ln)
+    if _cur:
+        _blocks.append(_cur)
+    _kept = [b for b in _blocks if any(current_basename in ln for ln in b)]
+    _kept_lines = [ln for b in _kept for ln in b]
+    return _kept_lines, len(_kept), len(_blocks) - len(_kept)
+
+
+def _build_version_header(rows):
+    """Version header lines for the developer log: app version, bundled
+    connector version, and each paired browser's installed connector
+    version + online/offline."""
+    _m = re.search(r"rev(\d+)$", APP_BUILD or "")
+    _rev = "rev" + _m.group(1) if _m else str(APP_BUILD)
+    _lines = ["—— 当前版本 ——",
+              "软件版本：v%s %s" % (APP_VERSION, _rev),
+              "内置连接器版本：v%s" % BUNDLED_CONNECTOR_VERSION]
+    if not rows:
+        _lines.append("浏览器连接器：未检测到已配对浏览器")
+        return _lines
+    _lines.append("浏览器连接器：")
+    for _r in rows or []:
+        _ident = _r.get("identity") or {}
+        try:
+            _name = connector_display_name(_ident, _r.get("instance_id"))
+        except Exception:
+            _name = str(_r.get("instance_id") or "浏览器")
+        _ver = str(_ident.get("extension_version") or "").strip()
+        _ver_s = ("v" + _ver) if _ver else "版本未知"
+        if _r.get("blocked"):
+            _state = "已停用"
+        else:
+            _state = "在线" if _r.get("online") else "离线"
+        _old = "（版本较旧）" if connector_needs_update(_ident) else ""
+        _lines.append("  · %s：已装 %s · %s%s" % (_name, _ver_s, _state, _old))
+    return _lines
+
+
 class DiagLogWindow(QDialog):
     """Floating diagnostic log, visible only in developer mode.
 
@@ -11376,13 +12153,19 @@ class DiagLogWindow(QDialog):
     reset_tour_requested = pyqtSignal()
     restore_window_size_requested = pyqtSignal()
     apply_window_size_requested = pyqtSignal(int, int)
+    apply_sidebar_width_requested = pyqtSignal(int)
+    apply_metric_height_requested = pyqtSignal(int)
+    apply_page_height_requested = pyqtSignal(int)
+    restore_card_heights_requested = pyqtSignal()
+    free_float_requested = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("诊断日志（开发者模式）")
+        self.setWindowTitle("开发者模式")
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowCloseButtonHint)
         self._placed = False
         self._clamping = False
+        self._free_float = False
         self._snap_timer = QTimer(self); self._snap_timer.setInterval(120)
         self._snap_timer.timeout.connect(self._snap_check)
         _parent = self.parentWidget()
@@ -11391,11 +12174,15 @@ class DiagLogWindow(QDialog):
         self._listener = lambda text: self.append_requested.emit(text)
         self.view = QPlainTextEdit()
         self.view.setReadOnly(True)
-        self.view.setPlaceholderText("暂无诊断记录；下一次巡检的发帖检测会显示在这里。")
+        self.view.setPlaceholderText("暂无错误记录；这里只显示报错与失败的诊断行，正常运行不显示。")
         root = QVBoxLayout(self)
         toolbar = QHBoxLayout()
+        self._float_btn = QPushButton(ui_icon("popout"), "移出主窗口")
+        self._float_btn.setCheckable(True)
+        self._float_btn.setChecked(False)
+        self._float_btn.clicked.connect(self._toggle_free_float)
+        toolbar.addWidget(self._float_btn)
         fw_btn = QPushButton("放烟花")
-        fw_btn.setStyleSheet("QPushButton{background:#F59E0B;color:#FFFFFF;border:none;padding:7px 16px;} QPushButton:hover{background:#D97706;}")
         fw_btn.clicked.connect(self._test_fireworks)
         notify_btn = QPushButton("测试通知")
         notify_btn.clicked.connect(self._test_notification)
@@ -11443,12 +12230,62 @@ class DiagLogWindow(QDialog):
         size_row.addWidget(_apply_size_btn)
         size_row.addStretch()
         root.addLayout(size_row)
+        nav_row = QHBoxLayout()
+        nav_row.addWidget(QLabel("导航栏宽度："))
+        self._nav_w = DirectNumberSpinBox()
+        self._nav_w.setRange(120, 320)
+        self._nav_w.setFixedWidth(80)
+        nav_row.addWidget(self._nav_w)
+        _apply_nav_btn = QPushButton("应用宽度")
+        _apply_nav_btn.clicked.connect(self._apply_nav_width)
+        nav_row.addWidget(_apply_nav_btn)
+        nav_row.addWidget(QLabel("120–320，默认 175"))
+        nav_row.addStretch()
+        root.addLayout(nav_row)
+        metric_row = QHBoxLayout()
+        metric_row.addWidget(QLabel("顶部四个模块高度："))
+        self._metric_h = DirectNumberSpinBox()
+        self._metric_h.setRange(88, 160)
+        self._metric_h.setFixedWidth(70)
+        metric_row.addWidget(self._metric_h)
+        metric_row.addWidget(QLabel("px"))
+        metric_row.addWidget(QLabel("默认 100"))
+        _apply_metric_btn = QPushButton("应用")
+        _apply_metric_btn.clicked.connect(self._apply_metric_height)
+        metric_row.addWidget(_apply_metric_btn)
+        _restore_card_btn = QPushButton("还原默认")
+        _restore_card_btn.clicked.connect(self._restore_card_heights)
+        metric_row.addWidget(_restore_card_btn)
+        metric_row.addStretch()
+        root.addLayout(metric_row)
+        page_row = QHBoxLayout()
+        page_row.addWidget(QLabel("主页卡片高度："))
+        self._page_h = DirectNumberSpinBox()
+        self._page_h.setRange(180, 300)
+        self._page_h.setFixedWidth(70)
+        page_row.addWidget(self._page_h)
+        page_row.addWidget(QLabel("px"))
+        self._page_default_label = QLabel("")
+        page_row.addWidget(self._page_default_label)
+        _apply_page_btn = QPushButton("应用")
+        _apply_page_btn.clicked.connect(self._apply_page_height)
+        page_row.addWidget(_apply_page_btn)
+        page_row.addStretch()
+        root.addLayout(page_row)
         if _parent is not None:
             self._size_w.setValue(_parent.width())
             self._size_h.setValue(_parent.height())
+            self._nav_w.setValue(getattr(_parent, "_sidebar_expanded_width", lambda: 175)())
+            self._metric_h.setValue(getattr(_parent, "metric_card_screen_height", lambda: 100)())
+            self._page_h.setValue(getattr(_parent, "page_card_height", lambda: 200)())
+            self._update_page_label()
         else:
             self._size_w.setValue(1230)
             self._size_h.setValue(720)
+            self._nav_w.setValue(175)
+            self._metric_h.setValue(100)
+            self._page_h.setValue(200)
+            self._page_default_label.setText("当前排版：一行四列，默认 200")
         status_row = QHBoxLayout()
         self._status_label = QLabel("共 0 行")
         self._status_label.setStyleSheet("color:#6B7280;")
@@ -11471,8 +12308,62 @@ class DiagLogWindow(QDialog):
     def _apply_size(self):
         self.apply_window_size_requested.emit(self._size_w.value(), self._size_h.value())
 
+    def _apply_nav_width(self):
+        self.apply_sidebar_width_requested.emit(self._nav_w.value())
+
+    def _apply_metric_height(self):
+        self.apply_metric_height_requested.emit(self._metric_h.value())
+
+    def _apply_page_height(self):
+        self.apply_page_height_requested.emit(self._page_h.value())
+
+    def _update_page_label(self):
+        parent = self.parent()
+        _name = "一行四列"
+        _default = 200
+        if parent is not None:
+            try:
+                _name, _default = parent.dashboard._page_card_layout_info()
+            except Exception:
+                pass
+        self._page_default_label.setText("当前排版：%s，默认 %d" % (_name, _default))
+
+    def refresh_card_heights(self):
+        """Re-read both heights and the page-row label from the main window (layout change / reopen)."""
+        parent = self.parent()
+        if parent is None:
+            return
+        try:
+            self._metric_h.setValue(parent.metric_card_screen_height())
+            self._page_h.setValue(parent.page_card_height())
+        except Exception:
+            pass
+        self._update_page_label()
+
+    def _restore_card_heights(self):
+        parent = self.parent()
+        _metric_default = getattr(parent, "metric_card_default_screen_height", lambda: 100)() if parent is not None else 100
+        _page_default = getattr(parent, "page_card_default_height", lambda: 200)() if parent is not None else 200
+        self._metric_h.setValue(_metric_default)
+        self._page_h.setValue(_page_default)
+        self.restore_card_heights_requested.emit()
+
+    def _toggle_free_float(self, checked):
+        self.free_float_requested.emit(bool(checked))
+
+    def set_free_float(self, on):
+        """Allow (or stop) dragging this window outside the main window. Default off."""
+        self._free_float = bool(on)
+        try:
+            self._float_btn.setChecked(self._free_float)
+            self._float_btn.setText("已可移出主窗口" if self._free_float else "移出主窗口")
+        except Exception:
+            pass
+        if not self._free_float:
+            self._clamp_inside_parent()
+
     def _refresh_status(self):
-        self._status_label.setText("共 %d 行" % len(diag_log_snapshot()))
+        self._status_label.setText("共 %d 行" % len([ln for ln in self.view.toPlainText().splitlines() if ln.strip()]))
 
     def _test_fireworks(self):
         diag_log("[烟花] 手动测试播放一次")
@@ -11537,6 +12428,8 @@ class DiagLogWindow(QDialog):
         Clamping runs immediately, except mid-drag (see _defer_or_clamp):
         during a drag it snaps back once on release, so it never fights
         the window manager."""
+        if getattr(self, "_free_float", False):
+            return
         if getattr(self, "_clamping", False) or self.isMinimized():
             return
         parent = self.parentWidget()
@@ -11566,6 +12459,8 @@ class DiagLogWindow(QDialog):
     def _defer_or_clamp(self):
         # Clamping on every move event fights the window manager mid-drag
         # and flickers; wait for the release, then snap back once.
+        if getattr(self, "_free_float", False):
+            return
         if QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
             if not self._snap_timer.isActive():
                 self._snap_timer.start()
@@ -11582,6 +12477,8 @@ class DiagLogWindow(QDialog):
 
     def eventFilter(self, watched, event):
         # The main window moved or resized: pull the log back inside.
+        if getattr(self, "_free_float", False):
+            return super().eventFilter(watched, event)
         if watched is self.parentWidget() and event.type() in (QEvent.Type.Move, QEvent.Type.Resize):
             self._clamp_inside_parent()
         return super().eventFilter(watched, event)
@@ -11594,7 +12491,10 @@ class DiagLogWindow(QDialog):
         if _pw is not None:
             self._size_w.setValue(_pw.width())
             self._size_h.setValue(_pw.height())
-        self.view.setPlainText("\n".join(diag_log_snapshot()))
+            self.refresh_card_heights()
+        _snap = [t for t in diag_log_snapshot() if _diag_line_is_error(t)]
+        self.view.setPlainText("\n".join(self._version_header_lines() + [""] + _snap))
+        self._load_error_history()
         self._refresh_status()
         bar = self.view.verticalScrollBar()
         bar.setValue(bar.maximum())
@@ -11609,7 +12509,50 @@ class DiagLogWindow(QDialog):
         event.ignore()
         self.hide()
 
+    def _version_header_lines(self):
+        """Version header, re-detected on every open: same clients() data
+        refresh_connector_summary uses; no new detection channel and no
+        prompt side effects."""
+        _rows = []
+        try:
+            _pw = self.parentWidget()
+            if _pw is not None and hasattr(_pw, "connector"):
+                _rows = _pw.connector.clients()
+        except Exception:
+            _rows = []
+        return _build_version_header(_rows)
+
+    def _load_error_history(self):
+        """First open only: backfill the tail of error.log (last ~50 lines)
+        so past crashes are visible too; marked as history. Only blocks
+        from the currently running file are shown: old-version blocks
+        are hidden and counted, so a rev99 traceback can no longer be
+        mistaken for a new error."""
+        if getattr(self, "_history_loaded", False):
+            return
+        self._history_loaded = True
+        try:
+            _path = DATA_DIR / "error.log"
+            if not _path.is_file():
+                return
+            _lines = _path.read_bytes().decode("utf-8", errors="replace").splitlines()
+            _tail = [ln for ln in _lines[-50:] if ln.strip()]
+            if not _tail:
+                return
+            _kept, _n_kept, _n_hidden = _filter_error_history_lines(_tail, os.path.basename(__file__))
+            if self.view.toPlainText().strip():
+                self.view.appendPlainText("")
+            self.view.appendPlainText("—— error.log 历史报错（当前版本，%d 条）——" % _n_kept)
+            if _n_hidden:
+                self.view.appendPlainText("已隐藏 %d 条旧版本历史。" % _n_hidden)
+            for _ln in _kept:
+                self.view.appendPlainText(_ln[:500])
+        except Exception:
+            pass
+
     def _append(self, text):
+        if not _diag_line_is_error(text):
+            return
         self.view.appendPlainText(text)
         bar = self.view.verticalScrollBar()
         bar.setValue(bar.maximum())
@@ -11624,6 +12567,34 @@ def _subtitle(text, indent=0):
     if indent:
         lab.setIndent(indent)
     return lab
+
+
+class _CloseDimOverlay(QWidget):
+    """Dim behind CloseChoiceDialog (rev106): same dim as TourOverlay."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setGeometry(parent.rect())
+        parent.installEventFilter(self)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(15, 15, 15, 140))
+
+    def mousePressEvent(self, event):
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        event.accept()
+
+    def wheelEvent(self, event):
+        event.accept()
+
+    def eventFilter(self, watched, event):
+        if watched is self.parentWidget() and event.type() == QEvent.Type.Resize:
+            self.setGeometry(self.parentWidget().rect())
+        return super().eventFilter(watched, event)
 
 
 class CloseChoiceDialog(QDialog):
@@ -11641,29 +12612,33 @@ class CloseChoiceDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setModal(True)
         self.setObjectName("CloseDialog")
-        self.choice=None;self.remember=False
+        self.choice=None;self.remember=False;self._dim_overlay=None
         preset=THEME_PRESETS.get(getattr(parent,"theme_name","云白"),THEME_PRESETS["云白"])
         panel=preset["panel"];panel2=preset["panel_2"];border=preset["border"]
         text=preset["text"];muted=preset["muted"];accent=preset["accent"]
         accent2=preset.get("accent2",accent);soft=preset["soft"]
         hover=preset["hover"]
+        if getattr(parent, "theme_name", "云白") == "圣诞":
+            band_bg = "#0B3D2E"; band_title = "#D4AF37"; band_sub = "#A9C6B6"
+        else:
+            band_bg = soft; band_title = text; band_sub = muted
         self._text=text
         self.setStyleSheet(
             "QDialog#CloseDialog{background:transparent;border:0;}"
-            "QFrame#CloseDialogCard{background:%s;border:2px solid %s;border-radius:12px;}"
-            "QFrame#CloseHeadBand{background:%s;border-radius:10px;}"
+            "QFrame#CloseDialogCard{background:%s;border:2px solid %s;border-radius:8px;}"
+            "QFrame#CloseHeadBand{background:%s;border-radius:8px;}"
             "QLabel#CloseTitle{font-size:20px;font-weight:700;color:%s;}"
             "QLabel#CloseSub{font-size:14px;color:%s;}"
             "QPushButton#CloseX{background:#DC2626;border:0;border-radius:14px;color:#FFFFFF;font-size:20px;font-weight:700;padding:0;}"
             "QPushButton#CloseX:hover{background:#B91C1C;}"
-            "QPushButton#CloseCard{background:%s;border:1px solid %s;border-radius:10px;padding:0;}"
+            "QPushButton#CloseCard{background:%s;border:1px solid %s;border-radius:8px;padding:0;}"
             "QPushButton#CloseCard:hover{background:%s;border-color:%s;}"
-            "QLabel#CloseTile{background:%s;border-radius:10px;}"
+            "QLabel#CloseTile{background:%s;border-radius:8px;}"
             "QLabel#CloseCardTitle{font-size:15px;font-weight:600;color:%s;}"
             "QLabel#CloseCardDesc{font-size:13px;color:%s;}"
             "QLabel#CloseChevron{color:%s;font-size:16px;}"
             "QCheckBox#CloseRemember{font-size:13px;color:%s;}"
-            % (panel,accent,soft,text,muted,panel,border,hover,accent,
+            % (panel,accent,band_bg,band_title,band_sub,panel,border,hover,accent,
                panel2,text,muted,muted,text))
         # 548px wide: 500px card + 24px margins so the shadow is not clipped.
         self.setFixedWidth(548)
@@ -11723,7 +12698,23 @@ class CloseChoiceDialog(QDialog):
         self.choice=choice;self.remember=self._remember_box.isChecked();self.accept()
 
     def exec_choice(self):
-        self.exec();return self.choice,self.remember
+        # rev106: dim the main window behind the dialog while it is up.
+        # The overlay is tied to this dialog, so it appears on every
+        # path that shows it, and is removed when it closes.
+        _overlay=None
+        _parent=self.parentWidget()
+        if _parent is not None:
+            _overlay=_CloseDimOverlay(_parent)
+            _overlay.show()
+            self._dim_overlay=_overlay
+        try:
+            self.exec()
+        finally:
+            self._dim_overlay=None
+            if _overlay is not None:
+                _overlay.hide()
+                _overlay.deleteLater()
+        return self.choice,self.remember
 
 
 
@@ -11769,7 +12760,7 @@ class UpdateLogPanel(QWidget):
         note_wrap.setContentsMargins(20, 14, 20, 0)
         self._note = QLabel("更新到 v%s 已完成，这次更新了下面这些内容。" % APP_VERSION)
         self._note.setWordWrap(True)
-        self._note.setStyleSheet("QLabel{background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;color:#92400E;padding:10px 12px;font-size:12.5px;}")
+        self._note.setStyleSheet("QLabel{background:#FFFBEB;border:1px solid #F59E0B;border-radius:8px;color:#92400E;padding:10px 12px;font-size:12.5px;}")
         note_wrap.addWidget(self._note)
         self._log_wrap_labels = [self._note]
         self._note_box.hide()
@@ -11809,6 +12800,7 @@ class UpdateLogPanel(QWidget):
                     lab = QLabel(item)
                     lab.setWordWrap(True)
                     lab.setTextFormat(Qt.TextFormat.PlainText)
+                    lab.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse|Qt.TextInteractionFlag.TextSelectableByKeyboard)
                     row.addWidget(lab, 1)
                     self._log_wrap_labels.append(lab)
                     bl.addLayout(row)
@@ -11818,6 +12810,7 @@ class UpdateLogPanel(QWidget):
                 conn.setObjectName("SmallMuted")
                 conn.setWordWrap(True)
                 conn.setTextFormat(Qt.TextFormat.PlainText)
+                conn.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse|Qt.TextInteractionFlag.TextSelectableByKeyboard)
                 bl.addSpacing(10)
                 bl.addWidget(conn)
                 self._log_wrap_labels.append(conn)
@@ -11858,6 +12851,424 @@ class UpdateLogPanel(QWidget):
                 lab.text()).height()
             lab.setMinimumHeight(need)
 
+class SnowfallOverlay(QWidget):
+    """轻轻飘落的雪花，盖在主窗口上，只在圣诞主题下飘。
+
+    写法照着 FireworksOverlay：鼠标穿透、不填背景、只画雪花，
+    父窗口改尺寸时跟着改尺寸。约 30 片雪花（其中 5 片大号），80ms 一跳，慢慢往下
+    飘带一点左右晃；定时器只在圣诞主题下跑，换主题就停下藏起，
+    不拖性能。雪花横位置按比例存，窗口拉宽也不留空白。"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.hide()
+        self._flakes = []
+        self._timer = QTimer(self)
+        self._timer.setInterval(80)
+        self._timer.timeout.connect(self._tick)
+        if parent is not None:
+            parent.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self.parent() and event.type() == QEvent.Type.Resize:
+            self.setGeometry(self.parent().rect())
+        return super().eventFilter(obj, event)
+
+    def _seed(self):
+        rnd = random.Random()
+        self._flakes = [{
+            "fx": rnd.uniform(0, 1), "y": rnd.uniform(0, max(1, self.height())),
+            "r": rnd.uniform(2.5, 5.0), "vy": rnd.uniform(9, 22),
+            "phase": rnd.uniform(0, 2 * math.pi),
+            "sway": rnd.uniform(6, 16), "alpha": rnd.randint(140, 225),
+        } for _ in range(25)]
+        # 几片大号雪花，飘得慢一点、更显眼
+        self._flakes += [{
+            "fx": rnd.uniform(0, 1), "y": rnd.uniform(0, max(1, self.height())),
+            "r": rnd.uniform(7.0, 10.0), "vy": rnd.uniform(7, 14),
+            "phase": rnd.uniform(0, 2 * math.pi),
+            "sway": rnd.uniform(8, 18), "alpha": rnd.randint(160, 230),
+        } for _ in range(5)]
+
+    def start(self):
+        if self.parent() is not None:
+            self.setGeometry(self.parent().rect())
+        if not self._flakes:
+            self._seed()
+        self.show()
+        self.raise_()
+        self._timer.start()
+        self.update()
+
+    def stop(self):
+        self._timer.stop()
+        self.hide()
+
+    def _tick(self):
+        if not self.isVisible():
+            return
+        w, h = self.width(), self.height()
+        if h <= 0:
+            return
+        for f in self._flakes:
+            f["y"] += f["vy"] * 0.08
+            f["phase"] += 0.06
+            if f["y"] > h + 6:
+                f["y"] = -6
+                f["fx"] = random.uniform(0, 1)
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w = max(1, self.width())
+        for f in self._flakes:
+            x = f["fx"] * w + math.sin(f["phase"]) * f["sway"] * 0.3
+            y = f["y"]; r = f["r"]
+            p.setPen(QPen(QColor(255, 255, 255, f["alpha"]), 1.3,
+                          Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            for ang in (0, 60, 120):
+                rad = math.radians(ang)
+                dx, dy = r * math.cos(rad), r * math.sin(rad)
+                p.drawLine(QPointF(x - dx, y - dy), QPointF(x + dx, y + dy))
+        p.end()
+
+
+class ChristmasDecoWidget(QWidget):
+    """圣诞装饰：打开的小书（圣经书）+ 一棵戴圣诞帽的小圣诞树 + 八片雪花 + 一颗小金星。
+
+    只在圣诞主题下显示。纯手绘，不依赖字体里的 emoji；鼠标穿透，
+    不挡任何操作。放在侧栏空白处（连接卡片上方），收起导航栏时隐藏。"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(34)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+    def _flake(self, p, cx, cy, r):
+        p.setPen(QPen(QColor(255, 255, 255, 225), 1.4,
+                      Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        for ang in (0, 60, 120):
+            rad = math.radians(ang)
+            dx, dy = r * math.cos(rad), r * math.sin(rad)
+            p.drawLine(QPointF(cx - dx, cy - dy), QPointF(cx + dx, cy + dy))
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        gold = QColor("#C9A227")
+        page = QColor("#FFF8E7")
+        # 打开的书：左右两页 + 中缝 + 页内文字线
+        bx, by, bw, bh = 10, 6, 38, 22
+        cx = bx + bw / 2
+        left = QPainterPath()
+        left.moveTo(cx, by + 3)
+        left.quadTo(cx - bw / 4, by, bx + 1, by + 3)
+        left.lineTo(bx + 1, by + bh - 3)
+        left.quadTo(cx - bw / 4, by + bh, cx, by + bh - 3)
+        left.closeSubpath()
+        right = QPainterPath()
+        right.moveTo(cx, by + 3)
+        right.quadTo(cx + bw / 4, by, bx + bw - 1, by + 3)
+        right.lineTo(bx + bw - 1, by + bh - 3)
+        right.quadTo(cx + bw / 4, by + bh, cx, by + bh - 3)
+        right.closeSubpath()
+        p.setPen(QPen(gold, 1.5))
+        p.setBrush(page)
+        p.drawPath(left)
+        p.drawPath(right)
+        p.setPen(QPen(QColor("#B9A86A"), 1.0))
+        for yy in (by + 8, by + 13, by + 18):
+            p.drawLine(QPointF(bx + 5, yy), QPointF(cx - 5, yy))
+            p.drawLine(QPointF(cx + 5, yy), QPointF(bx + bw - 5, yy))
+        p.setPen(QPen(gold, 1.5))
+        p.drawLine(QPointF(cx, by + 3), QPointF(cx, by + bh - 3))
+        # 书右上方一颗小金星
+        sx, sy = bx + bw + 7, by + 4
+        p.setPen(QPen(QColor("#D4AF37"), 1.4,
+                      Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawLine(QPointF(sx - 4, sy), QPointF(sx + 4, sy))
+        p.drawLine(QPointF(sx, sy - 4), QPointF(sx, sy + 4))
+        # 书和雪花之间一棵小圣诞树：分层绿三角 + 树顶圣诞帽 + 小彩球
+        _tx = 76
+        p.setPen(QPen(QColor("#14532D"), 1.0))
+        p.setBrush(QColor("#1E7A4C"))
+        for _ay, _by, _hw in ((9, 15, 6), (14, 21, 9), (19, 27, 12)):
+            _tri = QPolygonF([QPointF(_tx, _ay), QPointF(_tx - _hw, _by), QPointF(_tx + _hw, _by)])
+            p.drawPolygon(_tri)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#8B5A2B"))
+        p.drawRect(QRectF(_tx - 2, 27, 4, 4))
+        # 树顶一顶小圣诞帽：红三角帽身 + 白边 + 白绒球（代替原来的金星）
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#DC2626"))
+        _hat = QPolygonF([QPointF(_tx - 5, 9), QPointF(_tx + 2, 1),
+                          QPointF(_tx + 8, 4), QPointF(_tx + 5, 9)])
+        p.drawPolygon(_hat)
+        p.setPen(QPen(QColor("#FFFFFF"), 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawLine(QPointF(_tx - 6, 9), QPointF(_tx + 6, 9))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#FFFFFF"))
+        p.drawEllipse(QPointF(_tx + 8, 4), 2.2, 2.2)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#DC2626"))
+        p.drawEllipse(QPointF(_tx - 7, 24), 1.6, 1.6)
+        p.setBrush(QColor("#D4AF37"))
+        p.drawEllipse(QPointF(_tx + 7, 24), 1.6, 1.6)
+        # 八片雪花，大小不一，散在侧栏空白处
+        self._flake(p, w - 16, 10, 6)
+        self._flake(p, w - 36, 23, 5)
+        self._flake(p, w - 56, 9, 4)
+        self._flake(p, w - 20, 28, 3.5)
+        self._flake(p, w - 12, 26, 3)
+        self._flake(p, 58, 30, 3)
+        self._flake(p, w - 100, 4, 2.5)
+        self._flake(p, 40, 4, 2.5)
+        p.end()
+
+
+class CollapsedXmasTreeWidget(QWidget):
+    """收起的导航栏里的一棵小圣诞树：放在浏览器按钮上方。
+
+    只在圣诞主题 + 导航栏收起时显示。纯手绘；鼠标穿透，不挡导航图标。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(40, 46)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.hide()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        cx = 20
+        p.setPen(QPen(QColor("#14532D"), 1.0))
+        p.setBrush(QColor("#1E7A4C"))
+        for _ay, _by, _hw in ((10, 18, 7), (16, 25, 10), (23, 33, 13)):
+            _tri = QPolygonF([QPointF(cx, _ay), QPointF(cx - _hw, _by),
+                              QPointF(cx + _hw, _by)])
+            p.drawPolygon(_tri)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#8B5A2B"))
+        p.drawRect(QRectF(cx - 2, 33, 4, 5))
+        # 树顶小红帽
+        p.setBrush(QColor("#DC2626"))
+        _hat = QPolygonF([QPointF(cx - 5, 10), QPointF(cx + 2, 2),
+                          QPointF(cx + 8, 5), QPointF(cx + 5, 10)])
+        p.drawPolygon(_hat)
+        p.setPen(QPen(QColor("#FFFFFF"), 2.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawLine(QPointF(cx - 6, 10), QPointF(cx + 6, 10))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#FFFFFF"))
+        p.drawEllipse(QPointF(cx + 8, 5), 2.0, 2.0)
+        # 两颗小彩球 + 一片小雪花
+        p.setBrush(QColor("#D4AF37"))
+        p.drawEllipse(QPointF(cx - 6, 28), 1.8, 1.8)
+        p.setBrush(QColor("#DC2626"))
+        p.drawEllipse(QPointF(cx + 7, 29), 1.8, 1.8)
+        p.setPen(QPen(QColor(255, 255, 255, 225), 1.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        for ang in (0, 60, 120):
+            rad = math.radians(ang)
+            dx, dy = 3.0 * math.cos(rad), 3.0 * math.sin(rad)
+            p.drawLine(QPointF(33 - dx, 8 - dy), QPointF(33 + dx, 8 + dy))
+        p.end()
+
+
+# 顶栏挂件的排布：按实际可用宽度排，挂件之间留最小间距；
+# 太窄时按优先级减挂件（先减雪橇，再减圣诞树，再减圣诞帽，再减圆球），
+# 实在太窄就整个挂件藏起来。返回 [(key, x0, x1), ...]，空表 = 藏起来。
+TOPBAR_DECO_GAP = 8
+TOPBAR_DECO_MARGIN = 8
+
+
+def layout_topbar_items(avail_w, gap=TOPBAR_DECO_GAP, margin=TOPBAR_DECO_MARGIN):
+    """按可用宽度排顶栏挂件，保证各挂件包围盒互不重叠。"""
+    _items = [
+        {"key": "bow", "w": 36, "rank": 0},
+        {"key": "bauble1", "w": 16, "rank": 1},
+        {"key": "tree", "w": 28, "rank": 3},
+        {"key": "bauble2", "w": 16, "rank": 1},
+        {"key": "hat", "w": 20, "rank": 2},
+        {"key": "bauble3", "w": 16, "rank": 1},
+        {"key": "sleigh", "w": 32, "rank": 4},
+        {"key": "bauble4", "w": 16, "rank": 1},
+    ]
+
+    def _needed(items):
+        return 2 * margin + sum(i["w"] for i in items) + gap * max(0, len(items) - 1)
+    items = list(_items)
+    while len(items) > 2 and _needed(items) > avail_w:
+        _drop = max(range(len(items)), key=lambda i: (items[i]["rank"], i))
+        if items[_drop]["rank"] == 0:
+            break
+        items.pop(_drop)
+    if _needed(items) > avail_w:
+        return []
+    total = sum(i["w"] for i in items)
+    g = (avail_w - total) / (len(items) + 1)
+    x = g
+    out = []
+    for it in items:
+        out.append((it["key"], x, x + it["w"]))
+        x += it["w"] + g
+    return out
+
+
+class TopBarDecoWidget(QWidget):
+    """圣诞顶栏挂件：一条垂下来的金线花环，松枝点缀，圆球错落挂着，
+    加上蝴蝶结、圣诞帽、小圣诞树和雪橇。
+
+    只在圣诞主题下显示。纯手绘；鼠标穿透，不挡标题、按钮和拖动。
+    位置由 _position_topbar_deco 算；挂件按实际宽度排布
+    （layout_topbar_items），太窄时减挂件，实在太窄整个藏起来。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(36)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+    def item_rects(self):
+        """当前宽度下各挂件的 (key, x0, x1)；空表 = 太窄，整个藏起来。"""
+        return layout_topbar_items(self.width())
+
+    def _string_y(self, x):
+        w = max(1, self.width())
+        t = max(0.0, min(1.0, (x - 6) / max(1.0, w - 12)))
+        return (1 - t) * (1 - t) * 4 + 2 * (1 - t) * t * 27 + t * t * 4
+
+    def paintEvent(self, event):
+        rects = dict((k, (x0, x1)) for k, x0, x1 in self.item_rects())
+        if not rects:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w = self.width()
+        gold = QColor("#C9A227")
+        deep_gold = QColor("#A8861B")
+        red = QColor("#DC2626")
+        green = QColor("#1E7A4C")
+        dark_green = QColor("#14532D")
+        # 金线花环：一条微微下垂的金线 + 几簇小松枝
+        p.setPen(QPen(gold, 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        path = QPainterPath()
+        path.moveTo(6, 4)
+        path.quadTo(w / 2, 27, w - 6, 4)
+        p.drawPath(path)
+        for fx in (0.08, 0.30, 0.55, 0.86):
+            sx = w * fx
+            sy = self._string_y(sx)
+            p.setPen(QPen(dark_green, 1.3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(QPointF(sx, sy), QPointF(sx - 5, sy + 6))
+            p.drawLine(QPointF(sx, sy), QPointF(sx + 5, sy + 6))
+            p.drawLine(QPointF(sx, sy), QPointF(sx, sy + 7))
+
+        def _hang(cx, length=3):
+            sy = self._string_y(cx)
+            p.setPen(QPen(deep_gold, 1.0))
+            p.drawLine(QPointF(cx, sy), QPointF(cx, sy + length))
+            return sy + length
+
+        def _bauble(cx, color, hang, r=7):
+            top = _hang(cx, hang)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(color)
+            p.drawEllipse(QPointF(cx, top + r), r, r)
+            p.setBrush(QColor(255, 255, 255, 110))
+            p.drawEllipse(QPointF(cx - 2.2, top + r - 2.2), 1.8, 1.8)
+
+        def _bow(cx):
+            top = _hang(cx, 2)
+            cy = top + 8
+            p.setPen(QPen(deep_gold, 1.2))
+            p.setBrush(red)
+            left = QPolygonF([QPointF(cx - 2, cy), QPointF(cx - 17, cy - 7),
+                              QPointF(cx - 17, cy + 7)])
+            right = QPolygonF([QPointF(cx + 2, cy), QPointF(cx + 17, cy - 7),
+                               QPointF(cx + 17, cy + 7)])
+            p.drawPolygon(left)
+            p.drawPolygon(right)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(gold)
+            p.drawEllipse(QPointF(cx, cy), 3.5, 3.5)
+            p.setPen(QPen(red, 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(QPointF(cx - 2, cy + 3), QPointF(cx - 5, cy + 10))
+            p.drawLine(QPointF(cx + 2, cy + 3), QPointF(cx + 5, cy + 10))
+
+        def _hat(cx):
+            top = _hang(cx, 2)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(red)
+            _cap = QPolygonF([QPointF(cx - 8, top + 2), QPointF(cx + 8, top + 2),
+                              QPointF(cx - 3, top + 12)])
+            p.drawPolygon(_cap)
+            p.setPen(QPen(QColor("#FFFFFF"), 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(QPointF(cx - 9, top + 2), QPointF(cx + 9, top + 2))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#FFFFFF"))
+            p.drawEllipse(QPointF(cx - 3, top + 12), 2.2, 2.2)
+
+        def _tree(cx):
+            top = _hang(cx, 1)  # rev100：金线垂深后树底会到约 36px，挂短 2px（底边约 34）
+            # 树顶小金星挂在金线上
+            p.setPen(QPen(gold, 1.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(QPointF(cx - 3, top - 1), QPointF(cx + 3, top - 1))
+            p.drawLine(QPointF(cx, top - 4), QPointF(cx, top + 2))
+            p.setPen(QPen(dark_green, 1.0))
+            p.setBrush(green)
+            for _ay, _by, _hw in ((0, 6, 6), (5, 11, 8), (10, 16, 10)):
+                _tri = QPolygonF([QPointF(cx, top + _ay), QPointF(cx - _hw, top + _by),
+                                  QPointF(cx + _hw, top + _by)])
+                p.drawPolygon(_tri)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#8B5A2B"))
+            p.drawRect(QRectF(cx - 2, top + 16, 4, 3))
+            p.setBrush(red)
+            p.drawEllipse(QPointF(cx - 5, top + 12), 1.3, 1.3)
+            p.setBrush(gold)
+            p.drawEllipse(QPointF(cx + 5, top + 13), 1.3, 1.3)
+
+        def _sleigh(cx):
+            top = _hang(cx, 3)
+            p.setPen(QPen(deep_gold, 1.0))
+            p.drawLine(QPointF(cx - 11, self._string_y(cx - 11)), QPointF(cx - 11, top + 3))
+            p.drawLine(QPointF(cx + 11, self._string_y(cx + 11)), QPointF(cx + 11, top + 3))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(gold)
+            _body = QPainterPath()
+            _body.moveTo(cx - 13, top + 3)
+            _body.quadTo(cx - 13, top + 12, cx - 2, top + 12)
+            _body.lineTo(cx + 10, top + 12)
+            _body.quadTo(cx + 14, top + 12, cx + 14, top + 3)
+            _body.closeSubpath()
+            p.drawPath(_body)
+            p.setPen(QPen(gold, 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(QPointF(cx + 14, top + 3), QPointF(cx + 16, top))
+            p.drawLine(QPointF(cx - 14, top + 15), QPointF(cx + 15, top + 15))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(red)
+            p.drawRect(QRectF(cx - 4, top + 4, 8, 7))
+            p.setPen(QPen(gold, 1.0))
+            p.drawLine(QPointF(cx, top + 4), QPointF(cx, top + 11))
+            p.drawLine(QPointF(cx - 4, top + 7.5), QPointF(cx + 4, top + 7.5))
+
+        _hangs = {"bauble1": 4, "bauble2": 5, "bauble3": 5, "bauble4": 10}  # rev100：金线垂到 15.5 后 bauble2 的 9 会垂到约 38px 被裁，改成 5（底边约 34）
+        _colors = {"bauble1": gold, "bauble2": red, "bauble3": gold, "bauble4": red}
+        for _key, (_x0, _x1) in rects.items():
+            _cx = (_x0 + _x1) / 2
+            if _key.startswith("bauble"):
+                _bauble(_cx, _colors[_key], _hangs[_key])
+            elif _key == "bow":
+                _bow(_cx)
+            elif _key == "hat":
+                _hat(_cx)
+            elif _key == "tree":
+                _tree(_cx)
+            elif _key == "sleigh":
+                _sleigh(_cx)
+        p.end()
+
+
 class MainWindow(QMainWindow):
     # Cross-thread jump request: the Windows toast callback runs on a WinRT
     # background thread, so it must not touch widgets directly. Emitting this
@@ -11897,7 +13308,7 @@ class MainWindow(QMainWindow):
         self._closing=False;self._maintenance=False;self._tray_hint_shown=False;self._exit_after_round=False
         self.auto_enabled=False;self.next_run_at=None;self.active_run_id=None
         self.run_started_at=None;self.run_ok=0;self.run_fail=0;self.current_purpose="monitor"
-        self._tick=0;self._popup=None;self._notice_queue=[];self._toast=None;self._diag_window=None;self._fireworks_overlay=None;self._growth_alert_seen=None;self._fireworks_pending=0;self._fireworks_queue=0
+        self._tick=0;self._popup=None;self._notice_queue=[];self._toast=None;self._diag_window=None;self._fireworks_overlay=None;self._snowfall_overlay=None;self._growth_alert_seen=None;self._fireworks_pending=0;self._fireworks_queue=0
         self._grace_timer=QTimer(self);self._grace_timer.setInterval(1000);self._grace_timer.timeout.connect(self._on_grace_tick);self._grace_remaining=0
         self._badge_show_next=False
         self._badge_timer=QTimer(self);self._badge_timer.setInterval(20000);self._badge_timer.timeout.connect(self._on_badge_timer)
@@ -11906,11 +13317,27 @@ class MainWindow(QMainWindow):
         self.count_timer=QTimer(self);self.count_timer.setInterval(1000);self.count_timer.timeout.connect(self.update_countdown)
         self.paint_timer=QTimer(self);self.paint_timer.setSingleShot(True);self.paint_timer.timeout.connect(self.refresh_all)
         self.notice_timer=QTimer(self);self.notice_timer.setSingleShot(True);self.notice_timer.timeout.connect(self.flush_notices)
-        self.apply_theme(str(self.settings.value("ui_theme","云白")),refresh=False)
+        if not is_true(self.settings.value("theme/xmas2026_migrated",0)):
+            # rev92 一次性迁移：更新完默认用圣诞主题；只跑一次，之后
+            # 用户手动换主题不再干预；明年新版本改回云白时再清这个标记。
+            self.settings.setValue("ui_theme","圣诞");self.settings.setValue("theme/xmas2026_migrated",1);self.settings.sync()
+        # rev106 一次性迁回：rev105 分出去的头像搬回 avatars/，空文件夹
+        # 删掉；只跑一次，失败跳过不打断启动。
+        _migrate_avatar_cache_back_once(self.settings)
+        # rev115：界面缩放功能已删除，固定 100%。以前改过缩放的
+        # （存了 80/90/110/120/130），启动时改回 100；已是 100
+        # 的不写盘。ui_scale_percent() 本来就不再读这个值，这里
+        # 是把设置文件本身也清干净。
+        try:
+            if int(self.settings.value("ui_scale",100))!=100:
+                self.settings.setValue("ui_scale",100);self.settings.sync()
+        except (TypeError,ValueError):
+            self.settings.setValue("ui_scale",100);self.settings.sync()
+        self.apply_theme(str(self.settings.value("ui_theme","圣诞")),refresh=False)
         app_icon=make_app_icon()
         QApplication.instance().setWindowIcon(app_icon)
         self.setWindowIcon(app_icon);self.setWindowTitle(APP_TITLE+" · "+APP_VERSION)
-        self.resize(1230,720);self.setMinimumSize(1024,650)
+        self.resize(_dpi_px(1230,ui_scale_percent(self.settings)),_dpi_px(720,ui_scale_percent(self.settings)));self.setMinimumSize(_dpi_px(1024,ui_scale_percent(self.settings)),_dpi_px(650,ui_scale_percent(self.settings)))
         self.tray=QSystemTrayIcon(make_app_icon(),self);self.tray.setToolTip(APP_TITLE)
         self.tray_menu=QMenu(self)
         self.tray_menu.addAction("打开软件",self.show_dashboard)
@@ -11927,10 +13354,11 @@ class MainWindow(QMainWindow):
         self._connector_timer.timeout.connect(self.refresh_connector_summary)
         self.build_ui();self.apply_style();self.refresh_all();self.count_timer.start()
         self._connector_timer.start();self.refresh_connector_summary()
-        self.size_grip=QSizeGrip(self);self.size_grip.setFixedSize(16,16)
+        self.size_grip=QSizeGrip(self);self.size_grip.setFixedSize(_dpi_px(16,ui_scale_percent(self.settings)),_dpi_px(16,ui_scale_percent(self.settings)))
         self.size_grip.move(self.width()-18,self.height()-18);self.size_grip.raise_()
         self._create_resize_handles()
         self.restore_ui_state()
+        self._apply_scaled_geometry()
         if not os.environ.get("FBPM_TEST_MODE") and "--diagnose" not in sys.argv:
             QTimer.singleShot(1800,self.startup_update_check);self._updates_timer.start()
         if self.store.upgrade_backup:self.dashboard.status.setText("升级前安全备份已保存："+self.store.upgrade_backup)
@@ -11992,9 +13420,10 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _set_paths(path):
-        global DATA_DIR,DB_PATH,BROWSER_PROFILE_DIR,AVATAR_DIR
+        global DATA_DIR,DB_PATH,BROWSER_PROFILE_DIR,AVATAR_DIR,AVATAR_DIR_V2,AVATAR_ARCHIVE_DIR
         DATA_DIR=ensure_private_directory(Path(path))
         DB_PATH=DATA_DIR/"fb_growth_radar_v1.db";BROWSER_PROFILE_DIR=DATA_DIR/"browser_profile";AVATAR_DIR=DATA_DIR/"avatars"
+        AVATAR_DIR_V2=AVATAR_DIR/"avatars_v2";AVATAR_ARCHIVE_DIR=AVATAR_DIR/"avatars_old"
 
     def build_ui(self):
         root=QWidget();root.setObjectName("Root");self.setCentralWidget(root)
@@ -12003,26 +13432,26 @@ class MainWindow(QMainWindow):
         self._version_corner.setObjectName("SmallMuted")
         self._version_corner.hide()
         shell=QHBoxLayout();shell.setContentsMargins(0,0,0,0);shell.setSpacing(0)
-        self.sidebar=QWidget();self.sidebar.setObjectName("Sidebar");self.sidebar.setFixedWidth(240)
+        self.sidebar=QWidget();self.sidebar.setObjectName("Sidebar");self.sidebar.setFixedWidth(self._sidebar_display_width())
         side=QVBoxLayout(self.sidebar);side.setContentsMargins(14,12,14,10);side.setSpacing(0)
         self._sidebar_collapsed=False;self._nav_button_texts={}
         self._sidebar_auto_collapsed=False;self._last_width=None
         brand=DraggableHeader();brand.setObjectName("BrandRow");self._brand_row=brand
-        brand_lay=QHBoxLayout(brand);brand_lay.setContentsMargins(6,2,6,8);brand_lay.setSpacing(10)
-        self.brand_mark=BrandMark(48);brand_lay.addWidget(self.brand_mark)
-        brand_text=QVBoxLayout();brand_text.setSpacing(1)
+        brand_lay=QHBoxLayout(brand);brand_lay.setContentsMargins(4,2,4,8);brand_lay.setSpacing(8)
+        self.brand_mark=BrandMark(34);brand_lay.addWidget(self.brand_mark)
+        self._brand_text_box=QWidget();brand_text=QVBoxLayout(self._brand_text_box);brand_text.setContentsMargins(0,0,0,0);brand_text.setSpacing(1)
         self.brand_name=QLabel(APP_TITLE);self.brand_name.setObjectName("BrandName")
         self.brand_name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);brand_text.addWidget(self.brand_name)
         tagline=QLabel("Facebook 主页监控");tagline.setObjectName("BrandSub")
         tagline.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);brand_text.addWidget(tagline)
-        brand_lay.addLayout(brand_text,1);side.addWidget(brand)
+        brand_lay.addWidget(self._brand_text_box,1);side.addWidget(brand)
         self.brand_caption=tagline
         self.nav_style=self._read_nav_style();self.sidebar.setProperty("navStyle",self.nav_style)
         self._nav_group_1=QFrame();self._nav_group_1.setObjectName("NavGroup")
         _g1=QVBoxLayout(self._nav_group_1);_g1.setContentsMargins(0,0,0,0);_g1.setSpacing(1);side.addWidget(self._nav_group_1)
         nav_label=QLabel("监控");nav_label.setObjectName("NavLabel");_g1.addWidget(nav_label);self._nav_label_monitor=nav_label
         self.nav_buttons={}
-        for index,kind,text in ((0,"home","监控看板"),(1,"trend","趋势"),(2,"bell","通知"),(3,"pages","ID管理")):
+        for index,kind,text in ((0,"home","监控看板"),(1,"trend","粉丝趋势"),(2,"bell","通知"),(3,"pages","ID管理")):
             row=QHBoxLayout();row.setContentsMargins(0,0,0,0);row.setSpacing(0)
             btn=QPushButton(text);btn.setObjectName("SideNav");btn.setProperty("iconKind",kind);self._nav_button_texts[index]=text
             btn.setIcon(ui_icon(kind,MUTED));btn.setIconSize(QSize(22,22));btn.setFixedHeight(40)
@@ -12044,8 +13473,11 @@ class MainWindow(QMainWindow):
         btn.clicked.connect(lambda:self.switch_page(4));_g2.addWidget(btn);self.nav_buttons[4]=btn
         self.page_nav_buttons=dict(self.nav_buttons)
         side.addStretch(1)
-        self.connector_card=ClickableFrame();self.connector_card.setObjectName("ConnCard")
-        conn_lay=QVBoxLayout(self.connector_card);conn_lay.setContentsMargins(12,9,12,9);conn_lay.setSpacing(3)
+        self._christmas_deco=ChristmasDecoWidget();self._christmas_deco.hide();side.addWidget(self._christmas_deco)
+        # 收起导航栏的圣诞树：浏览器按钮上方（rev95 放在按钮下方，错了）。展开时隐藏，不占位置。
+        self._collapsed_xmas_tree=CollapsedXmasTreeWidget();self._collapsed_xmas_tree.hide();side.addWidget(self._collapsed_xmas_tree,0,Qt.AlignmentFlag.AlignCenter)
+        self.connector_card=ClickableFrame();self.connector_card.setObjectName("ConnCard");self.connector_card.setCursor(Qt.CursorShape.PointingHandCursor)
+        conn_lay=QVBoxLayout(self.connector_card);conn_lay.setContentsMargins(10,9,10,9);conn_lay.setSpacing(3)
         title_row=QHBoxLayout();title_row.setSpacing(7);self._connector_title_row=title_row
         self.connector_dot=QLabel();self.connector_dot.setObjectName("ConnectorDot");self.connector_dot.setFixedSize(10,10)
         self.connector_dot.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
@@ -12053,50 +13485,57 @@ class MainWindow(QMainWindow):
         self.connector_title=QLabel("浏览器连接");self.connector_title.setObjectName("ConnTitle");title_row.addWidget(self.connector_title,1)
         self.connector_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         conn_lay.addLayout(title_row)
-        self.connector_sub=QLabel("连接器 v"+BUNDLED_CONNECTOR_VERSION+" · 点击查看");self.connector_sub.setObjectName("SmallMuted");self.connector_sub.setWordWrap(True);conn_lay.addWidget(self.connector_sub)
+        self.connector_sub=QLabel("连接器 v"+BUNDLED_CONNECTOR_VERSION+" · 点击查看");self.connector_sub.setObjectName("SmallMuted");self.connector_sub.setWordWrap(False);conn_lay.addWidget(self.connector_sub)
         _collapsed_box=QWidget();_cl=QVBoxLayout(_collapsed_box);_cl.setContentsMargins(0,2,0,2);_cl.setSpacing(2);_cl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._conn_collapsed_icon=QLabel();self._conn_collapsed_icon.setFixedSize(22,22);_cl.addWidget(self._conn_collapsed_icon,0,Qt.AlignmentFlag.AlignCenter)
         self._conn_collapsed_count=QLabel("0 个");self._conn_collapsed_count.setObjectName("SmallMuted");_cl.addWidget(self._conn_collapsed_count,0,Qt.AlignmentFlag.AlignCenter)
+        # rev101: the collapsed box/icon/count swallowed hover, so the
+        # card's :hover never fired (the expanded labels already pass
+        # events through). Let hover/click reach the card instead.
+        for _w in (_collapsed_box,self._conn_collapsed_icon,self._conn_collapsed_count):
+            _w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         conn_lay.addWidget(_collapsed_box);self._conn_collapsed_box=_collapsed_box;_collapsed_box.hide()
         self.connector_sub.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         self.connector_card.clicked.connect(self.open_login_browser);side.addWidget(self.connector_card)
         side.addSpacing(10)
         theme_row=QHBoxLayout();theme_row.setContentsMargins(4,0,4,0)
-        theme_label=QLabel("外观");theme_label.setObjectName("SmallMuted");theme_row.addWidget(theme_label);self._theme_label=theme_label
-        self.theme_name_label=QLabel(self.theme_name);self.theme_name_label.setObjectName("SmallMuted");theme_row.addWidget(self.theme_name_label)
-        theme_row.addStretch()
+        # 主题行只剩 4 个圆点，靠左排（“外观”文字已删）。
         self.theme_swatches={}
         for name in THEME_PRESETS:
-            sw=QPushButton();sw.setFixedSize(20,20);sw.setCursor(Qt.CursorShape.PointingHandCursor)
+            sw=QPushButton();sw.setFixedSize(_dpi_px(20,ui_scale_percent(self.settings)),_dpi_px(20,ui_scale_percent(self.settings)));sw.setCursor(Qt.CursorShape.PointingHandCursor)
             sw.clicked.connect(lambda _=False,n=name:self.apply_theme(n));theme_row.addWidget(sw);self.theme_swatches[name]=sw
         side.addLayout(theme_row)
         self._refresh_theme_swatches(self.theme_name)
         foot=QLabel("V "+APP_VERSION+" · Windows 版");foot.setObjectName("SideFoot");side.addWidget(foot);self._sidebar_foot=foot
-        _collapsed_theme_box=QWidget();_ctb_lay=QHBoxLayout(_collapsed_theme_box);_ctb_lay.setContentsMargins(0,4,0,0);_ctb_lay.setSpacing(4);_ctb_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        _collapsed_theme_box=QWidget();_ctb_lay=QGridLayout(_collapsed_theme_box);_ctb_lay.setContentsMargins(0,4,0,0);_ctb_lay.setSpacing(4);_ctb_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._collapsed_theme_swatches={}
-        for _name in THEME_PRESETS:
-            _sw=QPushButton();_sw.setFixedSize(14,14);_sw.setCursor(Qt.CursorShape.PointingHandCursor)
-            _sw.clicked.connect(lambda _=False,n=_name:self.apply_theme(n));_ctb_lay.addWidget(_sw);self._collapsed_theme_swatches[_name]=_sw
+        for _i,_name in enumerate(THEME_PRESETS):
+            _sw=QPushButton();_sw.setFixedSize(_dpi_px(14,ui_scale_percent(self.settings)),_dpi_px(14,ui_scale_percent(self.settings)));_sw.setCursor(Qt.CursorShape.PointingHandCursor)
+            _sw.clicked.connect(lambda _=False,n=_name:self.apply_theme(n));_ctb_lay.addWidget(_sw,_i//2,_i%2);self._collapsed_theme_swatches[_name]=_sw
         side.addWidget(_collapsed_theme_box);self._collapsed_theme_box=_collapsed_theme_box;_collapsed_theme_box.hide()
         self._refresh_theme_swatches(self.theme_name)
         _toggle_row=QHBoxLayout();_toggle_row.setContentsMargins(0,6,0,0);self._toggle_row=_toggle_row
-        self._sidebar_toggle=QPushButton("‹ 收起导航栏");self._sidebar_toggle.setObjectName("SideCollapse");self._sidebar_toggle.setFixedHeight(28);self._sidebar_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._sidebar_toggle.setToolTip("收起导航栏");self._sidebar_toggle.clicked.connect(self.toggle_sidebar_collapsed)
+        self._sidebar_toggle=QPushButton("‹ 收起导航栏");self._sidebar_toggle.setObjectName("SideCollapse");self._sidebar_toggle.setFixedHeight(_dpi_px(28,ui_scale_percent(self.settings)));self._sidebar_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sidebar_toggle.clicked.connect(self.toggle_sidebar_collapsed)
         _toggle_row.addWidget(self._sidebar_toggle);side.addLayout(_toggle_row)
         self._apply_nav_metrics()
         if is_true(self.settings.value("sidebar/collapsed",0)):self.set_sidebar_collapsed(True)
         shell.addWidget(self.sidebar)
+        self.sidebar.installEventFilter(self)
+        self.sidebar.setMouseTracking(True)
         center=QWidget();center_layout=QVBoxLayout(center);center_layout.setContentsMargins(0,0,0,0);center_layout.setSpacing(0)
-        self.topbar=DraggableHeader();self.topbar.setObjectName("TopBar");self.topbar.setFixedHeight(64)
+        self.topbar=DraggableHeader();self.topbar.setObjectName("TopBar");self.topbar.setFixedHeight(_dpi_px(64,ui_scale_percent(self.settings)))
+        self._topbar_deco=TopBarDecoWidget(self.topbar);self._topbar_deco.hide()
         bar=QHBoxLayout(self.topbar);bar.setContentsMargins(24,8,12,8);bar.setSpacing(8)
         titles=QVBoxLayout();titles.setSpacing(1)
         self.page_title=QLabel("监控看板");self.page_title.setObjectName("PageTitleTop");titles.addWidget(self.page_title)
-        self.page_sub=QLabel("粉丝与发帖监控 · 数据保存在本地");self.page_sub.setObjectName("Subtitle");titles.addWidget(self.page_sub)
+        self.page_sub=QLabel("粉丝与发帖监控");self.page_sub.setObjectName("Subtitle");titles.addWidget(self.page_sub)
         self.page_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         self.page_sub.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
         bar.addLayout(titles,1)
         bar.addStretch()
         self._caption_hover=CaptionHoverFilter(self)
+        self.pin_btn=icon_button("pin","固定窗口",self,32,20);self.pin_btn.setObjectName("PinButton");self.pin_btn.setToolTip("");self.pin_btn.setCheckable(True);self.pin_btn.clicked.connect(self.toggle_pin);bar.addWidget(self.pin_btn);self._refresh_pin_button()
         minimum=icon_button("min","",self,34);minimum.setAccessibleName("最小化");minimum.clicked.connect(self.showMinimized);bar.addWidget(minimum)
         self.max_btn=icon_button("max","",self,34);self.max_btn.setAccessibleName("最大化");self.max_btn.clicked.connect(self.toggle_maximized);bar.addWidget(self.max_btn)
         close=icon_button("close","",self,34);close.setObjectName("CloseWindowButton");close.setAccessibleName("关闭");close.installEventFilter(self._caption_hover);close.clicked.connect(self.close);bar.addWidget(close)
@@ -12111,7 +13550,16 @@ class MainWindow(QMainWindow):
         center_layout.addWidget(self.stack,1)
         if hasattr(self.dashboard,"action_bar"):
             bar.insertWidget(2,self.dashboard.action_bar)
-        self.statusbar=QFrame();self.statusbar.setObjectName("StatusBar");self.statusbar.setFixedHeight(30)
+        _ov=getattr(self.dashboard,"_once_overlay",None)
+        if _ov is not None:
+            # rev108: the badge pill sticks 9px above the patrol button,
+            # but action_bar is only 7px taller than the button -- the
+            # overlay (an action_bar child) was clipped by its parent and
+            # the pill lost its top half. The topbar has room, so the
+            # overlay lives there now; the button itself does not move.
+            _ov.setParent(self.topbar)
+            self.dashboard._sync_once_overlay()
+        self.statusbar=QFrame();self.statusbar.setObjectName("StatusBar");self.statusbar.setFixedHeight(_dpi_px(30,ui_scale_percent(self.settings)))
         status_lay=QHBoxLayout(self.statusbar);status_lay.setContentsMargins(24,0,24,0);status_lay.setSpacing(10)
         if hasattr(self.dashboard,"status"):status_lay.addWidget(self.dashboard.status,1)
         if hasattr(self.dashboard,"next_run"):
@@ -12126,7 +13574,7 @@ class MainWindow(QMainWindow):
         """Developer-mode helper: put the main window back to 1536x800."""
         try:
             if self.isMaximized():self.showNormal()
-            self.resize(1230,720)
+            self.resize(_dpi_px(1230,ui_scale_percent(self.settings)),_dpi_px(720,ui_scale_percent(self.settings)))
             diag_log("[窗口] 已还原默认尺寸 1230x720")
         except Exception as exc:
             diag_log(f"[窗口] 还原默认尺寸失败：{exc}")
@@ -12148,43 +13596,252 @@ class MainWindow(QMainWindow):
         # Manual choice from here on: never auto-expand a sidebar the user
         # collapsed by hand, and never auto-collapse one they expanded.
         self._sidebar_auto_collapsed=False
-        if _was and not getattr(self,"_sidebar_collapsed",False) and self.width()<1200:
+        if _was and not getattr(self,"_sidebar_collapsed",False) and self.width()<_dpi_px(1200,ui_scale_percent(self.settings)):
             # Manual expand in a narrow window: grow the window by the
             # sidebar width difference so the content area does not shrink.
             # Clamp to the screen so it never grows off the right edge.
-            _max_w=self.width()+176
+            _max_w=self.width()+(self._sidebar_display_width()-_dpi_px(64,ui_scale_percent(self.settings)))
             _scr=QApplication.primaryScreen()
             if _scr is not None:
                 _avail=_scr.availableGeometry()
                 _max_w=min(_max_w,_avail.right()-self.x()+1)
             if _max_w>self.width():self.resize(_max_w,self.height())
 
+    def _sidebar_expanded_width(self):
+        """Expanded sidebar width from settings (120-320, default 175)."""
+        try:
+            _raw = self.settings.value("sidebar/expanded_width", 175)
+            _w = int(_raw or 175)
+            if _w == 240:
+                # 旧默认值 240 随新默认迁移到 175；用户自己拖过的其他宽度不动。
+                _w = 175
+                self.settings.setValue("sidebar/expanded_width", 175)
+            return max(120, min(320, _w))
+        except Exception:
+            return 175
+
+    def _sidebar_display_width(self):
+        """Expanded sidebar width on screen: stored width scaled by the zoom.
+
+        The setting stores the unscaled width (120-320); the zoom is applied
+        only when the width is shown, so dragging the edge never compounds
+        the scale into the stored value.
+        """
+        return _dpi_px(self._sidebar_expanded_width(),ui_scale_percent(self.settings))
+
+    def apply_sidebar_width(self, width):
+        """Developer-mode helper: set the expanded sidebar width (120-320).
+
+        The width typed in the developer window is the on-screen width;
+        the stored value is the unscaled width, so the zoom never
+        compounds into the setting.
+        """
+        try:
+            asked = int(width)
+            w = max(120, min(320, asked))
+            _scale = ui_scale_percent(self.settings)
+            self.settings.setValue("sidebar/expanded_width", max(120, min(320, round(w * 100 / _scale))))
+            self.settings.sync()
+            if not getattr(self, "_sidebar_collapsed", False):
+                self.sidebar.setFixedWidth(w)
+            if w != asked:
+                diag_log(f"[导航栏] 宽度超出范围，已夹到 {w}px（输入 {asked}px）")
+            else:
+                diag_log(f"[导航栏] 已应用宽度 {w}px")
+        except Exception as exc:
+            diag_log(f"[导航栏] 应用宽度失败：{exc}")
+
+    def metric_card_screen_height(self):
+        """Current height of the four top metric cards; fixed, never zoom-scaled."""
+        return metric_card_base_height(self.settings)
+
+    def metric_card_default_screen_height(self):
+        """Height of the four top metric cards at the default: 100."""
+        return DEFAULT_METRIC_CARD_HEIGHT
+
+    def page_card_height(self):
+        """Current height of the per-page cards for the current layout."""
+        return page_card_height_value(self.settings,getattr(self.dashboard,"_card_layout","oneline"))
+
+    def page_card_default_height(self):
+        """Default page-card height for the current layout (212 or 200)."""
+        return page_card_default_height(getattr(self.dashboard,"_card_layout","oneline"))
+
+    def apply_metric_height(self, height):
+        """Developer-mode helper: set the four top metric cards' height (fixed px, never zoom-scaled)."""
+        try:
+            _h=max(METRIC_CARD_HEIGHT_MIN,min(METRIC_CARD_HEIGHT_MAX,int(height)))
+            self.settings.setValue("ui/metric_card_height",_h)
+            self.settings.sync()
+            if getattr(self,"dashboard",None) is not None:
+                self.dashboard._apply_scaled_sizes()
+                self.dashboard.update()
+            if _h!=int(height):
+                diag_log(f"[小卡片] 顶部高度超出范围，已夹到 {_h}px（输入 {height}）")
+            else:
+                diag_log(f"[小卡片] 已应用顶部高度 {_h}px")
+        except Exception as exc:
+            diag_log(f"[小卡片] 应用顶部高度失败：{exc}")
+
+    def apply_page_height(self, height):
+        """Developer-mode helper: set the page-card height for the current layout only.
+
+        Stored per layout, so switching layout loads that layout's
+        own height. Existing cards are resized in place; new ones
+        read the setting when built.
+        """
+        try:
+            _key=getattr(self.dashboard,"_card_layout","oneline")
+            _h=max(PAGE_CARD_HEIGHT_MIN,min(PAGE_CARD_HEIGHT_MAX,int(height)))
+            self.settings.setValue("ui/page_card_height/"+_key,_h)
+            self.settings.sync()
+            if getattr(self,"dashboard",None) is not None:
+                for _card in list(getattr(self.dashboard,"_card_cache",{}).values()):
+                    try:_card.setFixedHeight(_h)
+                    except Exception:pass
+                self.dashboard.update()
+            if _h!=int(height):
+                diag_log(f"[小卡片] 主页高度超出范围，已夹到 {_h}px（输入 {height}）")
+            else:
+                diag_log(f"[小卡片] 已应用主页高度 {_h}px")
+        except Exception as exc:
+            diag_log(f"[小卡片] 应用主页高度失败：{exc}")
+
+    def restore_card_heights(self):
+        """Developer-mode helper: restore both card heights to defaults (top 100, page = current layout default)."""
+        try:
+            _page_default=self.page_card_default_height()
+            _key=getattr(self.dashboard,"_card_layout","oneline")
+            self.settings.setValue("ui/metric_card_height",DEFAULT_METRIC_CARD_HEIGHT)
+            self.settings.setValue("ui/page_card_height/"+_key,_page_default)
+            self.settings.sync()
+            if getattr(self,"dashboard",None) is not None:
+                self.dashboard._apply_scaled_sizes()
+                for _card in list(getattr(self.dashboard,"_card_cache",{}).values()):
+                    try:_card.setFixedHeight(_page_default)
+                    except Exception:pass
+                self.dashboard.update()
+            diag_log("[小卡片] 已还原默认高度 顶部 100px，主页 %dpx" % _page_default)
+            self._refresh_diag_card_heights()
+        except Exception as exc:
+            diag_log(f"[小卡片] 还原默认高度失败：{exc}")
+
+    def set_diag_free_float(self, on):
+        """Developer-mode helper: allow the log window to be dragged outside the main window. Default off."""
+        try:
+            _on=bool(on)
+            self.settings.setValue("ui/diag_free_float",1 if _on else 0)
+            self.settings.sync()
+            if getattr(self,"_diag_window",None) is not None:
+                self._diag_window.set_free_float(_on)
+            diag_log("[开发者模式] 诊断窗口%s移出主窗口" % ("已可" if _on else "不再可"))
+        except Exception as exc:
+            diag_log(f"[开发者模式] 移出主窗口切换失败：{exc}")
+
+    def _refresh_diag_card_heights(self):
+        """Push the current card heights into the open developer window (layout change / restore)."""
+        _diag=getattr(self,"_diag_window",None)
+        if _diag is not None and _diag.isVisible():
+            try:_diag.refresh_card_heights()
+            except Exception:pass
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "sidebar", None):
+            return self._sidebar_edge_event(event)
+        return super().eventFilter(obj, event)
+
+    def _sidebar_edge_event(self, event):
+        """Developer-mode sidebar resize: drag the sidebar's right edge.
+
+        Only when developer mode is on and the sidebar is expanded. The
+        width is clamped to 120-320 and saved to settings on release; a
+        small bubble shows the live width while dragging.
+        """
+        if not getattr(self, "_dev_mode", False):
+            return False
+        if getattr(self, "_sidebar_collapsed", False):
+            return False
+        et = event.type()
+        if et == QEvent.Type.Leave:
+            self.sidebar.unsetCursor()
+            return False
+        if et == QEvent.Type.HoverMove:
+            near = event.position().x() >= self.sidebar.width() - 6
+            self.sidebar.setCursor(Qt.CursorShape.SizeHorCursor if near else Qt.CursorShape.ArrowCursor)
+            return False
+        if et == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            if event.position().x() < self.sidebar.width() - 6:
+                return False
+            self._nav_drag_active = True
+            self._nav_drag_start_x = event.globalPosition().x()
+            self._nav_drag_start_w = self.sidebar.width()
+            self._show_nav_width_bubble(self.sidebar.width(), event.globalPosition())
+            return True
+        if et == QEvent.Type.MouseMove and getattr(self, "_nav_drag_active", False):
+            _s = ui_scale_percent(self.settings)
+            w = max(_dpi_px(120, _s), min(_dpi_px(320, _s), int(self._nav_drag_start_w + (event.globalPosition().x() - self._nav_drag_start_x))))
+            if w != self.sidebar.width():
+                self.sidebar.setFixedWidth(w)
+            self._show_nav_width_bubble(w, event.globalPosition())
+            return True
+        if et == QEvent.Type.MouseButtonRelease and getattr(self, "_nav_drag_active", False):
+            self._nav_drag_active = False
+            w = self.sidebar.width()
+            self.settings.setValue("sidebar/expanded_width", max(120, min(320, round(w * 100 / ui_scale_percent(self.settings)))))
+            self.settings.sync()
+            self._hide_nav_width_bubble()
+            diag_log(f"[导航栏] 已拖动宽度 {w}px")
+            return True
+        return False
+
+    def _show_nav_width_bubble(self, width, global_pos):
+        lab = getattr(self, "_nav_width_bubble", None)
+        if lab is None:
+            lab = QLabel(self)
+            lab.setObjectName("NavWidthBubble")
+            lab.setStyleSheet("QLabel#NavWidthBubble{background:#1F2937;color:#FFFFFF;border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;}")
+            lab.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            lab.hide()
+            self._nav_width_bubble = lab
+        lab.setText(f"导航栏宽度：{int(width)}px")
+        lab.adjustSize()
+        pos = self.mapFromGlobal(global_pos)
+        x = int(max(8, min(self.width() - lab.width() - 8, pos.x() + 14)))
+        y = int(max(8, min(self.height() - lab.height() - 8, pos.y() - lab.height() - 10)))
+        lab.move(x, y)
+        lab.show()
+        lab.raise_()
+
+    def _hide_nav_width_bubble(self):
+        lab = getattr(self, "_nav_width_bubble", None)
+        if lab is not None:
+            lab.hide()
+
     def set_sidebar_collapsed(self,collapsed):
         """Collapse the left nav to a 64px icon-only column (Teams style)."""
         collapsed=bool(collapsed);self._sidebar_collapsed=collapsed
         try:self.settings.setValue("sidebar/collapsed",1 if collapsed else 0)
         except Exception:pass
-        self.sidebar.setFixedWidth(64 if collapsed else 240)
+        self.sidebar.setFixedWidth(_dpi_px(64,ui_scale_percent(self.settings)) if collapsed else self._sidebar_display_width())
         _lay=self.sidebar.layout()
         if collapsed:_lay.setContentsMargins(6,12,6,10)
         else:_lay.setContentsMargins(14,12,14,10)
-        self.brand_name.setVisible(not collapsed);self.brand_caption.setVisible(not collapsed)
+        self.brand_name.setVisible(not collapsed);self.brand_caption.setVisible(not collapsed);self._brand_text_box.setVisible(not collapsed)
         self._brand_row.layout().setAlignment(Qt.AlignmentFlag.AlignCenter if collapsed else Qt.AlignmentFlag.AlignLeft)
         # Collapsed rail is 64px: sidebar margins 6+6 leave 52px, so the
-        # brand row's 6+6 margins clipped the 48px mark (6+48+6=60>52).
-        # 2px margins fit exactly (2+48+2=52) and keep the mark centered.
-        self._brand_row.layout().setContentsMargins(*((2,2,2,8) if collapsed else (6,2,6,8)))
+        # brand row's 6+6 margins clipped the old 48px mark (6+48+6=60>52).
+        # 2px margins fit the 34px mark with room (2+34+2=38) and keep it centered.
+        self._brand_row.layout().setContentsMargins(*((2,2,2,8) if collapsed else (4,2,4,8)))
         self._nav_label_monitor.setVisible(not collapsed);self._nav_label_system.setVisible(not collapsed)
         for _idx,_btn in self.nav_buttons.items():
             _txt=self._nav_button_texts.get(_idx,"")
-            if collapsed:_btn.setText("");_btn.setToolTip(_txt)
+            if collapsed:_btn.setText("");_btn.setToolTip("")
             else:_btn.setText(_txt);_btn.setToolTip("")
         self.connector_title.setVisible(not collapsed);self.connector_sub.setVisible(not collapsed)
         self.connector_dot.setVisible(not collapsed)
         if hasattr(self,"_conn_collapsed_box"):self._conn_collapsed_box.setVisible(collapsed)
-        self.connector_card.setToolTip("浏览器连接 v"+BUNDLED_CONNECTOR_VERSION+" · 点击查看" if collapsed else "")
+        self.connector_card.setToolTip("")
         self._connector_title_row.setAlignment(Qt.AlignmentFlag.AlignCenter if collapsed else Qt.AlignmentFlag.AlignLeft)
-        self._theme_label.setVisible(not collapsed);self.theme_name_label.setVisible(not collapsed)
         for _name,_sw in self.theme_swatches.items():_sw.setVisible(not collapsed)
         self._sidebar_foot.setVisible(not collapsed)
         if hasattr(self, "_version_corner"):
@@ -12198,8 +13855,8 @@ class MainWindow(QMainWindow):
         else:
             self._sidebar_toggle.setText("‹ 收起导航栏");self._sidebar_toggle.setMinimumSize(0,28);self._sidebar_toggle.setMaximumSize(16777215,28)
             self._toggle_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self._sidebar_toggle.setToolTip("展开导航栏" if collapsed else "收起导航栏")
         self._apply_nav_metrics()
+        self._refresh_christmas_deco()
         QTimer.singleShot(0,self._position_notification_badge)
 
     def _position_version_corner(self):
@@ -12219,6 +13876,9 @@ class MainWindow(QMainWindow):
     # ---- sidebar look (设置 → 外观 → 导航栏样式) -------------------------
     def _read_nav_style(self):
         key=str(self.settings.value("nav_style",NAV_DEFAULT_STYLE) or NAV_DEFAULT_STYLE)
+        if key=="capsule":
+            # 旧导航样式已删掉，旧设置迁移到清爽线条。
+            key="line";self.settings.setValue("nav_style",key)
         return key if key in NAV_STYLE_KEYS else NAV_DEFAULT_STYLE
 
     def _repolish_tree(self,widget):
@@ -12229,20 +13889,18 @@ class MainWindow(QMainWindow):
         """Ring colour of the connector status dot = background of its card."""
         st=getattr(self,"nav_style","")
         if st=="dark":return nav_dark_palette(getattr(self,"theme_name","云白"))["glass"]
-        return PANEL if st=="capsule" else (SIDEBAR if st=="line" else BG)
+        return SIDEBAR if st=="line" else BG
 
     def _nav_pad(self):
         """Left padding of a nav button (used to place the unread badge)."""
-        if getattr(self,"_sidebar_collapsed",False):return 10
-        return 14 if getattr(self,"nav_style","")=="capsule" else 10
+        return 10
 
     def _apply_nav_metrics(self):
         """Sizes/margins that QSS cannot express, then re-polish the sidebar."""
         if not hasattr(self,"_nav_group_1") or not hasattr(self,"_nav_group_2"):return
         st=getattr(self,"nav_style",NAV_DEFAULT_STYLE);col=bool(getattr(self,"_sidebar_collapsed",False))
         self.sidebar.setProperty("navStyle",st);self.sidebar.setProperty("navCollapsed",col)
-        if st=="capsule":margins=(4,2,4,4) if col else (6,4,6,6);height=42;gap=10
-        else:margins=(0,0,0,0);height=40 if st=="dark" else 38;gap=0
+        margins=(0,0,0,0);height=_dpi_px(40 if st=="dark" else 38,ui_scale_percent(self.settings));gap=0
         for group in (self._nav_group_1,self._nav_group_2):group.layout().setContentsMargins(*margins)
         self._nav_gap_w.setFixedHeight(gap)
         for btn in self.nav_buttons.values():btn.setFixedHeight(height)
@@ -12256,12 +13914,13 @@ class MainWindow(QMainWindow):
         if unread is not None:self._nav_unread=int(unread or 0)
         st=getattr(self,"nav_style",NAV_DEFAULT_STYLE)
         d=nav_dark_palette(getattr(self,"theme_name","云白"))
+        side_muted=THEME_PRESETS.get(getattr(self,"theme_name","云白"),THEME_PRESETS["云白"]).get("side_muted",MUTED)
         for btn in self.page_nav_buttons.values():
             kind=btn.property("iconKind");active=bool(btn.property("active"))
-            if st=="capsule":color="#FFFFFF" if active else MUTED
-            elif st=="dark":color=d["accent"] if active else d["muted"]
+            if st=="dark":color=d["accent"] if active else d["muted"]
+            elif getattr(self,"theme_name","云白")=="圣诞":color=ACCENT if active else side_muted
             else:color=ACCENT if active else MUTED
-            if kind=="bell" and getattr(self,"_nav_unread",0)>0 and not (active and st=="capsule"):
+            if kind=="bell" and getattr(self,"_nav_unread",0)>0:
                 color="#F87171" if st=="dark" else RED
             btn.setIcon(ui_icon(kind,color))
 
@@ -12272,18 +13931,11 @@ class MainWindow(QMainWindow):
 
     def _nav_style_sheet(self,hover,soft):
         d=nav_dark_palette(getattr(self,"theme_name","云白"))
-        c="QWidget#Sidebar[navStyle='capsule']";l="QWidget#Sidebar[navStyle='line']";k="QWidget#Sidebar[navStyle='dark']"
-        return f"""
+        _p=THEME_PRESETS.get(getattr(self,"theme_name","云白"),THEME_PRESETS["云白"])
+        nav_bg=_p.get("nav_bg",BG);side_text=_p.get("side_text",TEXT);side_muted=_p.get("side_muted",MUTED)
+        l="QWidget#Sidebar[navStyle='line']";k="QWidget#Sidebar[navStyle='dark']"
+        _sheet_out = f"""
             QFrame#NavGroup {{ background:transparent;border:0; }}
-            {c} {{ background:{BG}; }}
-            {c} QFrame#NavGroup {{ background:{PANEL};border:1px solid {BORDER};border-radius:14px; }}
-            {c} QLabel#NavLabel {{ font-size:11px;font-weight:700;padding:6px 10px 4px; }}
-            {c} QPushButton#SideNav {{ border-radius:21px;padding:0 14px;font-size:14px;font-weight:600; }}
-            {c} QPushButton#SideNav:hover {{ background:{hover}; }}
-            {c} QPushButton#SideNav[active='true'] {{ background:{ACCENT};color:#FFFFFF;font-weight:700; }}
-            {c}[navCollapsed='true'] QPushButton#SideNav {{ padding:0px;text-align:center; }}
-            {c} QFrame#ConnCard {{ background:{PANEL};border-radius:18px; }}
-            {c} QPushButton#SideCollapse {{ font-size:13px;font-weight:600;border-radius:14px; }}
             {l} QLabel#NavLabel {{ font-size:11px;font-weight:600;padding:10px 10px 4px; }}
             {l} QPushButton#SideNav {{ border-radius:8px;padding:0 10px;font-size:14px;font-weight:500; }}
             {l} QPushButton#SideNav:hover {{ background:{hover}; }}
@@ -12291,6 +13943,10 @@ class MainWindow(QMainWindow):
             {l}[navCollapsed='true'] QPushButton#SideNav {{ padding:0px;text-align:center; }}
             {l}[navCollapsed='true'] QPushButton#SideNav[active='true'] {{ border-left:0;border-radius:8px;padding:0px;text-align:center; }}
             {l} QFrame#ConnCard {{ background:transparent;border-radius:8px; }}
+            {l} QFrame#ConnCard:hover {{ background:{hover}; }}
+            {l}[navCollapsed='true'] QFrame#ConnCard:hover {{ background:{hover}; }}
+            {l} QLabel#ConnTitle {{ color:{side_text}; }}
+            {l} QFrame#ConnCard QLabel#SmallMuted {{ color:{side_muted}; }}
             {l} QPushButton#SideCollapse {{ font-size:13px;font-weight:600; }}
             {k} {{ background:{d['bg']};border-right:1px solid {d['border']}; }}
             {k} QLabel {{ color:{d['text']}; }}
@@ -12301,11 +13957,26 @@ class MainWindow(QMainWindow):
             {k} QPushButton#SideNav:hover {{ background:{d['hover']}; }}
             {k} QPushButton#SideNav[active='true'] {{ background:{d['active']};color:#FFFFFF;font-weight:700; }}
             {k}[navCollapsed='true'] QPushButton#SideNav {{ padding:0px;text-align:center; }}
-            {k} QFrame#ConnCard {{ background:{d['glass']};border:1px solid {d['border']};border-radius:12px; }}
-            {k} QFrame#ConnCard:hover {{ border-color:{d['accent']}; }}
+            {k} QFrame#ConnCard {{ background:{d['glass']};border:1px solid {d['border']};border-radius:8px; }}
+            {k} QFrame#ConnCard:hover {{ background:{d['hover']};border-color:{d['accent']}; }}
+            {k}[navCollapsed='true'] QFrame#ConnCard:hover {{ background:{d['hover']}; }}
             {k} QPushButton#SideCollapse {{ color:{d['muted']};font-size:13px;font-weight:600; }}
             {k} QPushButton#SideCollapse:hover {{ color:#FFFFFF;background:{d['hover']}; }}
         """
+        if getattr(self, "theme_name", "云白") == "圣诞":
+            # 圣诞主题：两种样式都要走深绿 + 金色，选中态绝不能留在米黄上。
+            _sheet_out += f"""
+            {l} QLabel#NavLabel {{ color:#A9C6B6; }}
+            {l} QPushButton#SideNav {{ color:#F2F7F3; }}
+            {l} QPushButton#SideNav:hover {{ background:#123B2D; }}
+            {l} QPushButton#SideNav[active='true'] {{ background:#1D4A3A;color:#D4AF37;border-left:3px solid #D4AF37; }}
+            {l} QFrame#ConnCard {{ background:#0E3325;border:1px solid #1D4A3A;border-radius:8px; }}
+            {l} QFrame#ConnCard:hover {{ background:#123B2D;border-color:#D4AF37; }}
+            {l}[navCollapsed='true'] QFrame#ConnCard:hover {{ background:#123B2D; }}
+            {l} QFrame#ConnCard QLabel#ConnTitle {{ color:#FFFFFF; }}
+            {l} QFrame#ConnCard QLabel#SmallMuted {{ color:#A9C6B6; }}
+            """
+        return _sheet_out
 
     def wire_signals(self):
         d=self.dashboard;d.collect_once.connect(self.dashboard_run_button);d.toggle_auto.connect(self.toggle_auto);d.grace_cancel_requested.connect(self._on_grace_cancel)
@@ -12325,7 +13996,6 @@ class MainWindow(QMainWindow):
         settings=self.settings_page;settings.login_requested.connect(self.open_login_browser)
         settings.save_requested.connect(self.save_settings)
         settings.theme_requested.connect(self.apply_theme)
-        settings.ui_scale_requested.connect(self.set_ui_scale)
         settings.toast_position_requested.connect(self.set_toast_position)
         settings.progress_style_requested.connect(self._on_progress_style_changed)
         settings.card_layout_requested.connect(self._on_card_layout_changed)
@@ -12343,6 +14013,7 @@ class MainWindow(QMainWindow):
 
     def _on_card_layout_changed(self, key):
         self.dashboard.set_card_layout(key)
+        self._refresh_diag_card_heights()
 
     def _request_fireworks(self,count=1):
         """Queue `count` firework plays; each plays in turn (one play ~7s)."""
@@ -12420,12 +14091,13 @@ class MainWindow(QMainWindow):
 
     def set_dev_mode(self, on):
         on = bool(on)
+        self._dev_mode = on
         # Developer mode minimum is 1080x560 (user-set test size);
         # turning it off restores the normal 1024x650.
         # The sidebar keeps its fixed width; only the centre is allowed to
         # shrink, so the smaller floor is reachable without the sidebar
         # being squeezed away.
-        self.setMinimumSize(1080, 560) if on else self.setMinimumSize(1024, 650)
+        self.setMinimumSize(_dpi_px(1080,ui_scale_percent(self.settings)),_dpi_px(560,ui_scale_percent(self.settings))) if on else self.setMinimumSize(_dpi_px(1024,ui_scale_percent(self.settings)),_dpi_px(650,ui_scale_percent(self.settings)))
         _center = self.stack.parentWidget() if hasattr(self, "stack") else None
         if on:
             self.sidebar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Ignored)
@@ -12446,6 +14118,12 @@ class MainWindow(QMainWindow):
                 self._diag_window.reset_tour_requested.connect(self.reset_tour)
                 self._diag_window.restore_window_size_requested.connect(self.restore_default_window_size)
                 self._diag_window.apply_window_size_requested.connect(self.apply_window_size)
+                self._diag_window.apply_sidebar_width_requested.connect(self.apply_sidebar_width)
+                self._diag_window.apply_metric_height_requested.connect(self.apply_metric_height)
+                self._diag_window.apply_page_height_requested.connect(self.apply_page_height)
+                self._diag_window.restore_card_heights_requested.connect(self.restore_card_heights)
+                self._diag_window.free_float_requested.connect(self.set_diag_free_float)
+                self._diag_window.set_free_float(is_true(self.settings.value("ui/diag_free_float", False), False))
             self._diag_window.show()
             self._diag_window.raise_()
             self._diag_window.activateWindow()
@@ -12464,12 +14142,18 @@ class MainWindow(QMainWindow):
         self._refresh_nav_icons()
         if hasattr(self,"dashboard") and hasattr(self.dashboard,"action_bar"):
             self.dashboard.action_bar.setVisible(index==0)
-        titles={0:("监控看板","粉丝与发帖监控 · 数据保存在本地"),1:("增长趋势","每天粉丝变化曲线"),2:("通知","未读通知与历史记录"),3:("ID管理","一次添加，多模块共用"),4:("设置","浏览器连接、巡检、提醒与数据")}
+            _ov=getattr(self.dashboard,"_once_overlay",None)
+            if _ov is not None:
+                if index==0 and bool(getattr(self.dashboard,"_active",False)):
+                    self.dashboard._sync_once_overlay();_ov.show();_ov.raise_()
+                else:
+                    _ov.hide()
+        titles={0:("监控看板","粉丝与发帖监控"),1:("粉丝趋势","每天粉丝变化曲线"),2:("通知","未读通知与历史记录"),3:("ID管理","一次添加，多模块共用"),4:("设置","浏览器连接、巡检、提醒与数据")}
         title,sub=titles[index]
         if index==0:
             _posts_on=modules_posts_enabled(self.settings);_growth_on=modules_growth_enabled(self.settings)
-            sub=("粉丝与发帖监控 · 数据保存在本地" if _posts_on and _growth_on else
-                 "仅粉丝监控 · 数据保存在本地" if not _posts_on else "仅发帖监控 · 数据保存在本地")
+            sub=("粉丝与发帖监控" if _posts_on and _growth_on else
+                 "仅粉丝监控" if not _posts_on else "仅发帖监控")
         if hasattr(self,"page_title"):self.page_title.setText(title)
         if hasattr(self,"page_sub"):self.page_sub.setText(sub)
         if index==0:self.refresh_dashboard()
@@ -12478,6 +14162,7 @@ class MainWindow(QMainWindow):
         elif index==2:self.alerts.open_current()
         elif index==3:self.page_manager.refresh()
         elif index==4:self.settings_page.refresh_data_path()
+        QTimer.singleShot(0, self._position_topbar_deco)
 
     def open_manager(self,pid=""):
         self.switch_page(3)
@@ -12533,7 +14218,6 @@ class MainWindow(QMainWindow):
         if self.worker_thread is not None and self.current_purpose=="monitor":self._check_fireworks()
         g,p=self.store.unread_totals();n=g+p
         self.notification_badge.setText(str(n) if n<100 else "99+");self.notification_badge.setVisible(n>0)
-        self.page_nav_buttons[2].setToolTip(f"通知 · {n} 条未读")
         self._update_header_icons(n)
 
     def refresh_all(self):
@@ -12637,7 +14321,13 @@ class MainWindow(QMainWindow):
         it joins the queue, and the next batch starts automatically when
         the running round finishes. Pages already queued or running are
         skipped instead of being added twice.
+        rev110: no connector online -> say so directly and do not
+        enqueue at all (before this the page was queued and the
+        prompt claimed it was already queued, but no round could
+        ever start).
         """
+        if not self.selected_connectors(require_all=False):
+            show_hint(self,"连接器未连接。",kind="warning");return
         queued={pid for pid,_ in self._patrol_queue}
         running={pid for pid,_ in self._patrol_running}
         fresh=[p for p in pages if str(p["page_id"]) not in queued and str(p["page_id"]) not in running]
@@ -12929,10 +14619,18 @@ class MainWindow(QMainWindow):
         if self._tick%60==0 and not self._maintenance and self.dashboard.refresh_clock():self.refresh_dashboard()
 
     def open_login_browser(self):
+        if self._connector_dialog is not None and self._connector_dialog.isVisible():
+            self._connector_dialog.raise_();self._connector_dialog.activateWindow();return
         if self._connector_dialog is None:
             self._connector_dialog=BrowserConnectionsDialog(self)
-        self._connector_dialog.refresh();self._connector_dialog.show()
-        self._connector_dialog.raise_();self._connector_dialog.activateWindow()
+        self._connector_dialog.refresh()
+        self._connector_dialog.setStyleSheet("QDialog#BrowserConnectionsDialog{background:%s;border:1px solid %s;border-radius:8px;} QPushButton#CloseX{background:#DC2626;border:0;border-radius:14px;color:#FFFFFF;font-size:20px;font-weight:700;padding:0;} QPushButton#CloseX:hover{background:#B91C1C;}" % (PANEL, BORDER))
+        _overlay=_CloseDimOverlay(self)
+        _overlay.show()
+        try:
+            self._connector_dialog.exec()
+        finally:
+            _overlay.hide();_overlay.deleteLater()
 
     def connector_selection_initialized(self):
         return is_true(self.settings.value('connector/selection_initialized',0),False)
@@ -13004,6 +14702,78 @@ class MainWindow(QMainWindow):
         except queue.Empty:
             pass
 
+    def _connector_update_box(self, count):
+        """Prompt box for an outdated connector (rev99: proactive, once per
+        bundled version). Same look as the other prompt boxes."""
+        box = QMessageBox(self)
+        box.setWindowTitle("浏览器连接器需要更新")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(f"检测到 {count} 个浏览器连接器是旧版本（v{BUNDLED_CONNECTOR_VERSION} 已内置），头像和采集可能不是最新效果。")
+        box.setInformativeText("点「更新连接器」会把新版连接器保存出来，解压后在 Chrome 扩展页面加载即可。")
+        update_btn = box.addButton("更新连接器", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("以后再说", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(update_btn)
+        return box, update_btn
+
+    def _maybe_prompt_connector_update(self, outdated_count):
+        """First time after startup an online connector is confirmed older
+        than the bundled one, prompt once. Returns True when a prompt fired.
+        Test mode only records the decision, never opens a dialog."""
+        if outdated_count <= 0:
+            return False
+        reminded = str(self.settings.value("connector/update_reminded_version", "") or "")
+        if reminded == BUNDLED_CONNECTOR_VERSION:
+            return False
+        if os.environ.get("FBPM_TEST_MODE"):
+            self.settings.setValue("connector/update_reminded_version", BUNDLED_CONNECTOR_VERSION)
+            return True
+        # rev100: QMessageBox has no Accepted in PyQt6 (that AttributeError
+        # crashed every exit), and both buttons are custom role buttons so
+        # exec() returns 0 for them -- comparing to QDialog.DialogCode.Accepted
+        # would never export either. Compare the clicked button instead.
+        # (The old export call also named a method that never existed;
+        # the real entry is save_bundled_connector.)
+        box, update_btn = self._connector_update_box(outdated_count)
+        box.exec()
+        if box.clickedButton() is update_btn:
+            try:
+                save_bundled_connector(self)
+            except Exception:
+                pass
+        self.settings.setValue("connector/update_reminded_version", BUNDLED_CONNECTOR_VERSION)
+        return True
+
+    def _maybe_prompt_connector_reinstall(self, same_count):
+        """Once per bundled connector build: an installed 1.4.8 has the same
+        version number as the bundled 1.4.8, so the version check can never
+        tell the build with the photo-page original from the bundled one
+        (avatars are back to the original behaviour). Prompt once per
+        bundled SHA -- not per version -- so a future build prompts again.
+        Test mode only records the decision, never a dialog."""
+        if same_count <= 0:
+            return False
+        if str(self.settings.value("connector/reinstall_reminded_sha", "") or "") == BUNDLED_CONNECTOR_SHA256:
+            return False
+        if os.environ.get("FBPM_TEST_MODE"):
+            self.settings.setValue("connector/reinstall_reminded_sha", BUNDLED_CONNECTOR_SHA256)
+            return True
+        box = QMessageBox(self)
+        box.setWindowTitle("浏览器连接器需要重装一次")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(f"检测到 {same_count} 个浏览器连接器是 v{BUNDLED_CONNECTOR_VERSION}，和内置的是同一个版本号，但不是同一版：头像已恢复为原来方式，连接器也恢复为原来版本。请重装一次连接器。")
+        box.setInformativeText("点「更新连接器」会把连接器保存出来，解压后在 Chrome 扩展页面加载即可。")
+        update_btn = box.addButton("更新连接器", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("以后再说", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(update_btn)
+        box.exec()
+        if box.clickedButton() is update_btn:
+            try:
+                save_bundled_connector(self)
+            except Exception:
+                pass
+        self.settings.setValue("connector/reinstall_reminded_sha", BUNDLED_CONNECTOR_SHA256)
+        return True
+
     def refresh_connector_summary(self):
         if self._closing:return
         self._prompt_pending_approvals()
@@ -13026,7 +14796,7 @@ class MainWindow(QMainWindow):
         else:
             state='ok'
             if len(online)==1:
-                name=connector_display_name(online[0]['identity'],online[0]['instance_id']);text='已自动连接：'+name
+                text=f'已连接 {len(active)} 个浏览器'
             else:text=f'已连接 {len(active)} 个浏览器，任务将并行分配'
             extras=[]
             if outdated:extras.append(f'{len(outdated)} 个连接器版本较旧，可在设置中获取 v{BUNDLED_CONNECTOR_VERSION}')
@@ -13034,17 +14804,24 @@ class MainWindow(QMainWindow):
             if extras:text+=' · '+' · '.join(extras)
         try:self.settings_page.connector_summary.setText(text)
         except Exception:pass
-        if hasattr(self,"connector_card"):self.connector_card.setToolTip(html.escape(text)+'\n点击查看浏览器连接')
+        if hasattr(self,"connector_card"):self.connector_card.setToolTip("")
         if hasattr(self,"connector_title"):
-            if state=='ok' and len(online)==1:
-                _nm=connector_display_name(online[0]['identity'],online[0]['instance_id']);_short='已连接：'+_nm
-            elif state=='ok':_short=f'已连接 {len(active)} 个浏览器'
+            if state=='ok':_short=f'已连接 {len(active)} 个浏览器'
             else:_short='未检测到浏览器'
             self.connector_title.setText(_short)
+        _prompted = self._maybe_prompt_connector_update(len(outdated))
+        if not _prompted:
+            # Same-version reinstall prompt (rev103): installed 1.4.8 and
+            # bundled 1.4.8 share the number, so the outdated check above
+            # can never fire for it; prompt once per bundled SHA instead.
+            _same = [r for r in online if connector_same_version(r.get('identity') or {})]
+            self._maybe_prompt_connector_reinstall(len(_same))
         if hasattr(self,'connector_dot'):
             color={'ok':'#26C281','warn':'#F0A43A','error':'#E75768'}[state];self.connector_dot.setStyleSheet(f'background:{color};border:2px solid {self._nav_dot_ring()};border-radius:6px;');self.connector_dot.setToolTip(html.escape(text))
         if hasattr(self,"_conn_collapsed_icon"):
-            self._conn_collapsed_icon.setPixmap(ui_icon("browser",color).pixmap(QSize(22,22)))
+            # rev100：收起 + 圣诞时连接器按钮用圣诞树加雪花图标，单独的小树已撤掉。
+            _xmas_icon = getattr(self, "theme_name", "云白") == "圣诞" and getattr(self, "_sidebar_collapsed", False)
+            self._conn_collapsed_icon.setPixmap(ui_icon("xmas_tree" if _xmas_icon else "browser", color).pixmap(QSize(22, 22)))
         if hasattr(self,"_conn_collapsed_count"):
             self._conn_collapsed_count.setText(f"{len(active)} 个")
         if self.auto_enabled and not active:
@@ -13191,10 +14968,14 @@ class MainWindow(QMainWindow):
         if getattr(self,"_toast",None) is not None:
             self._toast.reposition()
         if hasattr(self,"size_grip"):
-            self.size_grip.move(self.width()-18,self.height()-18);self.size_grip.setVisible(not self.isMaximized())
+            self.size_grip.move(self.width()-_dpi_px(18,ui_scale_percent(self.settings)),self.height()-_dpi_px(18,ui_scale_percent(self.settings)));self.size_grip.setVisible(not self.isMaximized())
         self._layout_resize_handles()
         self._position_notification_badge()
         self._position_version_corner()
+        self._position_topbar_deco()
+        # resizeEvent 里布局还没算完，标题几何可能是旧的：0ms 后再定位一次，
+        # 等布局算完再按最终几何摆（立即那次先应付大多数情况）。
+        QTimer.singleShot(0, self._position_topbar_deco)
         # Log the current size once a drag settles, so the user can read
         # it from the diagnostic log and report it back. Debounced: the
         # timer restarts on every resize event and only fires after 500ms
@@ -13209,16 +14990,17 @@ class MainWindow(QMainWindow):
         # Only a crossing counts, so a startup restore to a narrow width
         # keeps the saved sidebar state instead of overriding it.
         _w=self.width();_prev=getattr(self,"_last_width",None)
+        _collapse_at=_dpi_px(1200,ui_scale_percent(self.settings))
         if _prev is not None and _w!=_prev:
-            if _prev>=1200 and _w<1200 and not getattr(self,"_sidebar_collapsed",False):
+            if _prev>=_collapse_at and _w<_collapse_at and not getattr(self,"_sidebar_collapsed",False):
                 self._sidebar_auto_collapsed=True;self.set_sidebar_collapsed(True)
-            elif _prev<1200 and _w>=1200 and getattr(self,"_sidebar_collapsed",False) and getattr(self,"_sidebar_auto_collapsed",False):
+            elif _prev<_collapse_at and _w>=_collapse_at and getattr(self,"_sidebar_collapsed",False) and getattr(self,"_sidebar_auto_collapsed",False):
                 self._sidebar_auto_collapsed=False;self.set_sidebar_collapsed(False)
         self._last_width=_w
 
     def paintEvent(self,event):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        radius=0 if self.isMaximized() else 20
+        radius=0 if self.isMaximized() else 8
         rect=QRectF(0.5,0.5,self.width()-1,self.height()-1)
         # Outer edge: a faint 20%-opacity line (black on light themes, white
         # on the dark theme) so the window edge stays visible against other
@@ -13227,11 +15009,17 @@ class MainWindow(QMainWindow):
         _edge=QColor(255,255,255,51) if not _preset.get("light",True) else QColor(0,0,0,51)
         # Cache the rasterized background: re-rasterizing the antialiased
         # rounded rect on every paint frame is a large share of resize
-        # cost. The pixmap is rebuilt only when size/radius/theme change.
-        _key=(self.width(),self.height(),radius,str(BG),_edge.rgba())
+        # cost. The pixmap is rebuilt only when size/radius/theme/DPR change.
+        # 背景圆角是光栅在位图里的：位图必须按 devicePixelRatio 建，
+        # 否则 Windows 缩放（125%/150%）下逻辑尺寸的位图被放大拉伸，
+        # 只有四角那圈抗锯齿半透明像素是光栅的，看起来发虚、像马赛克，
+        # 窗口其余部分是矢量和文字、原生清晰。缓存键也要算上 dpr，
+        # 换显示器缩放变了要重建。
+        _dpr=self.devicePixelRatioF()
+        _key=(self.width(),self.height(),radius,str(BG),_edge.rgba(),_dpr)
         _cached=getattr(self,"_bg_cache",None)
         if _cached is None or _cached[0]!=_key:
-            _pm=QPixmap(max(1,self.width()),max(1,self.height()));_pm.fill(Qt.GlobalColor.transparent)
+            _pm=QPixmap(max(1,int(self.width()*_dpr)),max(1,int(self.height()*_dpr)));_pm.setDevicePixelRatio(_dpr);_pm.fill(Qt.GlobalColor.transparent)
             _pp=QPainter(_pm);_pp.setRenderHint(QPainter.RenderHint.Antialiasing)
             _pp.setBrush(QColor(BG));_pp.setPen(QPen(_edge,1))
             if radius:_pp.drawRoundedRect(rect,radius,radius)
@@ -13263,6 +15051,74 @@ class MainWindow(QMainWindow):
         log_window_event("toggle_maximized","maximized=%s"%self.isMaximized())
         if self.isMaximized():self.showNormal()
         else:self.showMaximized()
+
+    def _refresh_pin_button(self):
+        """Sync the pin-to-top button with the current pinned state (rev109).
+        Icon = the user's two SVGs verbatim, only the stroke colour changes:
+        unpinned = diagonal pin in the theme muted colour; pinned = vertical
+        pin in the theme accent (accent2 on the two dark themes, one step
+        brighter). Checked/active follow the state, so the PinButton
+        stylesheet background switches together with the icon. Called at
+        startup (right after the button is created), on every toggle, and
+        on every theme switch. Safe before the button exists: apply_theme
+        runs before build_ui."""
+        _btn=getattr(self,"pin_btn",None)
+        if _btn is None:return
+        _on=bool(getattr(self,"_pinned",bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)))
+        _p=THEME_PRESETS.get(getattr(self,"theme_name","云白"),THEME_PRESETS["云白"])
+        _color=_p["muted"] if not _on else (_p["accent2"] if not _p.get("light",True) else _p["accent"])
+        _px=_dpi_px(20,ui_scale_percent(self.settings))
+        _btn.setIcon(render_pin_icon(_on,_color))
+        _btn.setIconSize(QSize(_px,_px))
+        _btn.setChecked(_on);_btn.setProperty("active",_on)
+        _btn.style().unpolish(_btn);_btn.style().polish(_btn)
+
+    def toggle_pin(self):
+        """置顶钉子：点一下窗口固定在所有界面最前面，再点取消。
+
+        置顶切换不能闪：Qt 的 setWindowFlag 会重建原生窗口，Windows
+        下整个窗口闪一下。Windows 上直接调 SetWindowPos 改 TOPMOST，
+        不重建窗口，就不闪；其他平台走原来的 setWindowFlag。
+        状态记在 self._pinned（win32 路径下 Qt 的 flag 位不同步）。"""
+        _on=not bool(getattr(self,"_pinned",bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)))
+        diag_log(f"[置顶] 点了一下，要{'置顶' if _on else '取消置顶'}")
+        _done=False
+        if sys.platform=="win32":
+            try:_done=self._set_topmost_win32(_on)
+            except Exception as _e:
+                diag_log(f"[置顶] win32 出错：{type(_e).__name__} {_e}，走老路 setWindowFlag")
+                _done=False
+        if not _done:
+            diag_log("[置顶] 走老路 setWindowFlag+show（这条路会闪一下）")
+            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint,_on)
+            self.show()
+        else:
+            diag_log("[置顶] win32 路成功，没走 setWindowFlag")
+        self._pinned=_on
+        self._refresh_pin_button()
+
+    def _set_topmost_win32(self,on):
+        """Windows 上用 SetWindowPos 改置顶，不重建原生窗口、不闪。
+        （rev96：ctypes 显式声明参数类型，HWND 用 void* 传，64 位下不会被截成 32 位；
+        成功失败都写诊断日志，开发者日志里能看到走了哪条路。
+        rev97：GetLastError 是 kernel32.dll 导出的，user32 上根本没有这个函数——
+        rev96 在设 argtypes 那行就抛 AttributeError，还没调 SetWindowPos 就走回
+        setWindowFlag 老路（闪一下）。错误码改从 kernel32 取，只在失败时取。）"""
+        import ctypes
+        _u32=ctypes.windll.user32
+        _u32.SetWindowPos.argtypes=[ctypes.c_void_p,ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_uint]
+        _u32.SetWindowPos.restype=ctypes.c_bool
+        _hwnd=int(self.winId())
+        _ret=_u32.SetWindowPos(_hwnd,-1 if on else -2,0,0,0,0,0x0002|0x0001|0x0010)
+        if _ret:
+            diag_log(f"[置顶] win32 SetWindowPos 成功：{'置顶' if on else '取消置顶'} hwnd={_hwnd}")
+        else:
+            _k32=ctypes.windll.kernel32
+            _k32.GetLastError.argtypes=[]
+            _k32.GetLastError.restype=ctypes.c_ulong
+            _err=_k32.GetLastError()
+            diag_log(f"[置顶] win32 SetWindowPos 失败：{'置顶' if on else '取消置顶'} hwnd={_hwnd} 错误码={_err}")
+        return bool(_ret)
 
 
     def check_for_updates(self,manual=True):
@@ -13494,21 +15350,127 @@ class MainWindow(QMainWindow):
 
     def _refresh_theme_swatches(self,name):
         if not hasattr(self,"theme_swatches"):return
-        _sw_colors={"云白":"#F7F7F5","护眼绿":"#0B7A43","曜石黑":"#17181C"}
+        _sw_colors={"云白":"#F7F7F5","护眼绿":"#D9F2E3","曜石黑":"#17181C","圣诞":"#0B3D2E"}
         for _n,_sw in self.theme_swatches.items():
             _sel=_n==name
             _sw.setStyleSheet(f"background:{_sw_colors.get(_n,'#FFFFFF')};border:{'2px' if _sel else '1px'} solid {ACCENT if _sel else '#C9C9C4'};border-radius:10px;")
         for _n,_sw in getattr(self,"_collapsed_theme_swatches",{}).items():
             _sel=_n==name
             _sw.setStyleSheet(f"background:{_sw_colors.get(_n,'#FFFFFF')};border:{'2px' if _sel else '1px'} solid {ACCENT if _sel else '#C9C9C4'};border-radius:7px;")
-        if hasattr(self,"theme_name_label"):self.theme_name_label.setText(name)
 
-    def set_ui_scale(self,scale):
-        scale=_bounded_int(scale,100,80,130)
-        self.settings.setValue("ui_scale",scale);self.settings.sync()
-        self._apply_ui_font();self.apply_style();self.update()
-        try:self.settings_page.set_ui_scale_label(scale)
-        except Exception:pass
+    def _refresh_christmas_deco(self):
+        """圣诞装饰：展开时是侧栏的书+树+雪花；收起时那棵小圣诞树融进了连接器按钮
+        的图标里（rev100），按钮上方不再单独放一棵树；其他主题下全部隐藏。"""
+        _xmas = getattr(self, "theme_name", "云白") == "圣诞"
+        deco = getattr(self, "_christmas_deco", None)
+        if deco is not None:
+            deco.setVisible(_xmas and not getattr(self, "_sidebar_collapsed", False))
+        _ct = getattr(self, "_collapsed_xmas_tree", None)
+        if _ct is not None:
+            _ct.setVisible(False)
+
+    def _refresh_topbar_deco(self):
+        """顶栏圣诞挂件：只在圣诞主题下显示，其他主题完全不出现。"""
+        deco = getattr(self, "_topbar_deco", None)
+        if deco is None:
+            return
+        deco.setVisible(getattr(self, "theme_name", "云白") == "圣诞")
+        deco.update()
+
+    def _refresh_snowfall(self):
+        """飘落的雪花：只在圣诞主题下飘，其他主题下停掉藏起来。"""
+        ov = getattr(self, "_snowfall_overlay", None)
+        if getattr(self, "theme_name", "云白") == "圣诞":
+            if ov is None:
+                ov = SnowfallOverlay(self)
+                self._snowfall_overlay = ov
+            ov.start()
+        elif ov is not None:
+            ov.stop()
+
+    def _refresh_metric_xmas_deco(self):
+        """看板四个大模块右下角的圣诞装饰：只在圣诞主题下显示。"""
+        _d=getattr(self,"dashboard",None)
+        if _d is None:return
+        for _m in (_d.metric_pages,_d.metric_total,_d.metric_yesterday,_d.metric_today):
+            try:_m.refresh_xmas_deco()
+            except Exception:pass
+
+    def _position_topbar_deco(self):
+        """把顶栏挂件摆在标题文字和巡检按钮之间的空档；太窄时先减挂件，实在太窄才藏起来。
+
+        左边按标题文字的实际宽度算（标题标签本身会撑满剩余空间，
+        不能用它的几何右缘），右边按巡检按钮组（action_bar）的左缘
+        算，这样挂件绝不会压到按钮或「上次巡检时间」。非看板页巡检
+        按钮组是隐藏的，那时挂件可以伸到右上角按钮之前。
+        """
+        deco = getattr(self, "_topbar_deco", None)
+        if deco is None:
+            return
+        try:
+            _tw = self.page_title.fontMetrics().horizontalAdvance(self.page_title.text())
+            x0 = 24 + _tw + 12
+        except Exception:
+            x0 = 236
+        _bar = getattr(getattr(self, "dashboard", None), "action_bar", None)
+        if _bar is not None and _bar.isVisible():
+            x1 = _bar.geometry().x() - 12
+        else:
+            x1 = self.topbar.width() - 150
+        if x1 - x0 < 76:
+            deco.hide()
+            return
+        deco.setGeometry(x0, 0, x1 - x0, 36)
+        deco.setVisible(getattr(self, "theme_name", "云白") == "圣诞")
+
+    def _apply_scaled_geometry(self,old_scale=None):
+        """Re-apply every code-set fixed pixel size for the current zoom.
+
+        The stylesheet scaler only reaches font-size/padding/margin, so all
+        fixed sizes set in code (window, sidebar, top bar, status bar,
+        dashboard and manager controls) are re-applied here, both at
+        startup and after a zoom change. The logo and the big page titles
+        are deliberately left at their fixed sizes. When the zoom changes,
+        the window itself scales by the same ratio as the zoom.
+        """
+        scale=ui_scale_percent(self.settings)
+        _w,_h=self.width(),self.height()
+        if getattr(self,"dev_mode",False):
+            self.setMinimumSize(_dpi_px(1080,scale),_dpi_px(560,scale))
+        else:
+            self.setMinimumSize(_dpi_px(1024,scale),_dpi_px(650,scale))
+        if old_scale is not None and old_scale!=scale and not self.isMaximized():
+            _ratio=scale/old_scale
+            self.resize(max(self.minimumWidth(),round(_w*_ratio)),max(self.minimumHeight(),round(_h*_ratio)))
+        if hasattr(self,"sidebar"):
+            self.sidebar.setFixedWidth(_dpi_px(64,scale) if getattr(self,"_sidebar_collapsed",False) else self._sidebar_display_width())
+        if hasattr(self,"topbar"):
+            self.topbar.setFixedHeight(_dpi_px(64,scale))
+            for _btn in self.topbar.findChildren(QPushButton):
+                if str(_btn.property("iconKind") or "") in ("pin","min","max","close"):
+                    if str(_btn.property("iconKind") or "")=="pin":
+                        _btn.setFixedSize(_dpi_px(32,scale),_dpi_px(32,scale))
+                        _btn.setIconSize(QSize(_dpi_px(20,scale),_dpi_px(20,scale)))
+                    else:
+                        _btn.setFixedSize(_dpi_px(34,scale),_dpi_px(34,scale))
+                        _btn.setIconSize(QSize(_dpi_px(21,scale),_dpi_px(21,scale)))
+        if hasattr(self,"statusbar"):
+            self.statusbar.setFixedHeight(_dpi_px(30,scale))
+        if hasattr(self,"size_grip"):
+            self.size_grip.setFixedSize(_dpi_px(16,scale),_dpi_px(16,scale))
+            self.size_grip.move(self.width()-_dpi_px(18,scale),self.height()-_dpi_px(18,scale))
+        for _sw in getattr(self,"theme_swatches",{}).values():
+            _sw.setFixedSize(_dpi_px(20,scale),_dpi_px(20,scale))
+        for _sw in getattr(self,"_collapsed_theme_swatches",{}).values():
+            _sw.setFixedSize(_dpi_px(14,scale),_dpi_px(14,scale))
+        if hasattr(self,"_sidebar_toggle"):
+            self._sidebar_toggle.setFixedHeight(_dpi_px(28,scale))
+        self._apply_nav_metrics()
+        for _page in (getattr(self,"dashboard",None),getattr(self,"page_manager",None),getattr(self,"settings_page",None)):
+            _fn=getattr(_page,"_apply_scaled_sizes",None)
+            if _fn is not None:
+                try:_fn()
+                except Exception:pass
 
     def _apply_ui_font(self):
         app=QApplication.instance()
@@ -13538,7 +15500,7 @@ class MainWindow(QMainWindow):
         for role,color in ((QPalette.ColorRole.Window,BG),(QPalette.ColorRole.Base,p["input"]),
             (QPalette.ColorRole.AlternateBase,PANEL_2),(QPalette.ColorRole.WindowText,TEXT),
             (QPalette.ColorRole.Text,TEXT),(QPalette.ColorRole.Button,PANEL_2),(QPalette.ColorRole.ButtonText,TEXT),
-            (QPalette.ColorRole.Highlight,ACCENT),(QPalette.ColorRole.HighlightedText,"#FFFFFF"),
+            (QPalette.ColorRole.Highlight,ACCENT),(QPalette.ColorRole.HighlightedText,p.get("highlight_text","#FFFFFF")),
             (QPalette.ColorRole.ToolTipBase,p.get("tooltip_bg",PANEL_2)),(QPalette.ColorRole.ToolTipText,p.get("tooltip_text",TEXT)),
             (QPalette.ColorRole.PlaceholderText,MUTED)):
             palette.setColor(role,QColor(color))
@@ -13551,6 +15513,11 @@ class MainWindow(QMainWindow):
         self.apply_style()
         if hasattr(self,"brand_mark"):self.brand_mark.update()
         self._refresh_theme_swatches(name)
+        self._refresh_christmas_deco()
+        self._refresh_topbar_deco()
+        self._refresh_snowfall()
+        self._refresh_metric_xmas_deco()
+        QTimer.singleShot(0, self._position_topbar_deco)
         if hasattr(self,"settings_page"):
             try:self.settings_page.set_selected_theme(name)
             except Exception:pass
@@ -13559,6 +15526,7 @@ class MainWindow(QMainWindow):
             self._update_header_icons(sum(self.store.unread_totals()) if hasattr(self,"store") else 0)
             if refresh:self.refresh_all()
         self._refresh_nav_icons()
+        self._refresh_pin_button()
         for avatar in self.findChildren(AvatarWidget):avatar.update()
 
 
@@ -13574,45 +15542,59 @@ class MainWindow(QMainWindow):
         status_warn_border="#F0D9AE" if light else "#5A4520"
         danger_bg="#FDECEC" if light else "#331B1B"
         danger_border="#F2C4C4" if light else "#5A2E2E"
-        table_selection="#EAF0FE" if light else "#1E2A44"
+        # 圣诞主题的选中行不要用深蓝紫 #1E2A44（墨绿里看着像深紫色），
+        # 改用主题里的深绿；其他三个主题不动。
+        if getattr(self,"theme_name","云白")=="圣诞":table_selection="#14532D"
+        elif light:table_selection="#EAF0FE"
+        else:table_selection="#1E2A44"
         disabled_text="#A3A3A3" if light else "#667C95"
+        side_text=p.get("side_text",TEXT);side_muted=p.get("side_muted",MUTED)
+        # 圣诞主题的侧栏是上下渐变（确认稿方案二）；其他主题保持纯色。
+        sidebar_bg=("qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #102B1E, stop:1 #0B2015)"
+                    if getattr(self, "theme_name", "云白") == "圣诞" else SIDEBAR)
         _sheet=f"""
             QMainWindow, QWidget#Root {{ background:transparent; color:{TEXT}; }}
-            QWidget#UpdateLogPanel {{ background:{PANEL}; border-left:1px solid {BORDER}; }}
+            QWidget#UpdateLogPanel {{ background:{PANEL}; border-left:1px solid {BORDER}; border-top-right-radius:8px; border-bottom-right-radius:8px; }}
             QLabel#UpdateLogVersion {{ font-weight:700; font-size:17px; }}
             QLabel#UpdateLogGroup {{ color:{ACCENT}; font-weight:700; font-size:13px; }}
             QLabel#UpdateLogDot {{ color:{ACCENT}; }}
-            QPushButton#UpdateLogClose {{ background:transparent; border:1px solid {BORDER}; border-radius:8px; color:{MUTED}; font-size:16px; }}
+            QPushButton#UpdateLogClose {{ background:transparent; border:1px solid {BORDER}; border-radius:8px; color:{MUTED}; font-size:20px; font-weight:700; padding:0; }}
+            QPushButton#UpdateLogClose:hover {{ background:#DC2626; border-color:#DC2626; color:#FFFFFF; }}
             QWidget {{ color:{TEXT}; font-size:13px; }}
             QLabel {{ background:transparent; border:0; }}
             QDialog, QMessageBox {{ background:{BG}; }}
-            QPushButton#SideCollapse {{ background:transparent;border:0;color:{MUTED};font-size:16px;font-weight:700;padding:0; }}
+            QPushButton#SideCollapse {{ background:transparent;border:0;color:{side_muted};font-size:16px;font-weight:700;padding:0; }}
             QPushButton#SideCollapse:hover {{ color:{ACCENT};background:{hover};border-radius:6px; }}
-            QWidget#Sidebar {{ background:{SIDEBAR}; border-right:1px solid {BORDER};
-                border-top-left-radius:19px; border-bottom-left-radius:19px; }}
+            QWidget#Sidebar {{ background:{sidebar_bg}; border-right:1px solid {BORDER};
+                border-top-left-radius:8px; border-bottom-left-radius:8px; }}
             QWidget#Sidebar[flat='true'] {{ border-radius:0px; }}
             QFrame#BrandRow {{ background:transparent; }}
-            QLabel#BrandName {{ font-size:16px;font-weight:750;color:{TEXT}; }}
-            QLabel#BrandSub {{ font-size:12px;color:{MUTED}; }}
-            QLabel#NavLabel {{ color:{MUTED};font-size:12px;font-weight:700;padding:8px 10px 4px; }}
-            QPushButton#SideNav {{ background:transparent;border:0;border-radius:10px;
-                padding:0 10px;font-size:16px;font-weight:700;text-align:left;color:{TEXT}; }}
+            QLabel#BrandName {{ font-size:14px;font-weight:750;color:{side_text}; }}
+            QLabel#BrandSub {{ font-size:10px;color:{side_muted}; }}
+            QLabel#NavLabel {{ color:{side_muted};font-size:12px;font-weight:700;padding:8px 10px 4px; }}
+            QPushButton#SideNav {{ background:transparent;border:0;border-radius:8px;
+                padding:0 10px;font-size:16px;font-weight:700;text-align:left;color:{side_text}; }}
             QPushButton#SideNav:hover {{ background:{hover}; }}
             QPushButton#SideNav[active='true'] {{ background:{soft};color:{ACCENT};font-weight:700; }}
-            QFrame#ConnCard {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:14px; }}
+            QFrame#ConnCard {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:8px; }}
             QFrame#ConnCard:hover {{ border-color:{ACCENT}; }}
-            QLabel#ConnTitle {{ font-size:13px;font-weight:700;color:{TEXT}; }}
-            QLabel#SideFoot {{ color:{MUTED};font-size:11px;padding:10px 8px 0; }}
-            QFrame#TopBar {{ background:{BG};border-bottom:1px solid {BORDER};border-top-right-radius:19px; }}
+            QLabel#ConnTitle {{ font-size:12px;font-weight:700;color:{TEXT}; }}
+            QLabel#SideFoot {{ color:{side_muted};font-size:11px;padding:10px 8px 0; }}
+            QWidget#Sidebar > QLabel#SmallMuted {{ color:{side_muted}; }}
+            QFrame#TopBar {{ background:{BG};border-bottom:1px solid {BORDER};border-top-right-radius:8px; }}
             QFrame#TopBar[flat='true'] {{ border-radius:0px; }}
             QLabel#PageTitleTop {{ font-size:21px;font-weight:800;color:{TEXT}; }}
-            QFrame#StatusBar {{ background:{BG};border-top:1px solid {BORDER};border-bottom-right-radius:19px; }}
+            QFrame#StatusBar {{ background:{BG};border-top:1px solid {BORDER};border-bottom-right-radius:8px; }}
             QFrame#StatusBar[flat='true'] {{ border-radius:0px; }}
             QFrame#HeaderDivider {{ background:{BORDER}; }}
-            QPushButton#TopIconButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:0; }}
+            QPushButton#TopIconButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:8px;padding:0; }}
             QPushButton#TopIconButton:hover {{ background:{hover};border-color:{BORDER}; }}
             QPushButton#TopIconButton[active='true'] {{ background:{soft};border-color:{ACCENT}; }}
-            QPushButton#UpdateButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:0; }}
+            QPushButton#PinButton {{ background:transparent;border:none;border-radius:6px;padding:0; }}
+            QPushButton#PinButton:hover {{ background:{hover}; }}
+            QPushButton#PinButton[active='true'] {{ background:{soft};border:1px solid {ACCENT}; }}
+            QPushButton#PinButton[active='true']:hover {{ background:{hover};border:1px solid {ACCENT}; }}
+            QPushButton#UpdateButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:8px;padding:0; }}
             QPushButton#UpdateButton:hover {{ background:{hover};border-color:{ACCENT}; }}
             QPushButton#UpdateButton[hasUpdate='true'] {{ background:{status_warn_bg};border:1px solid {AMBER}; }}
             QProgressBar {{ border:1px solid {BORDER};border-radius:6px;background:{PANEL_2};height:18px;text-align:center; }}
@@ -13622,9 +15604,17 @@ class MainWindow(QMainWindow):
             QLabel#NotificationBadge {{ background:#EA580C;color:#FFFFFF;border-radius:8px;font-size:9px;font-weight:800; }}
             QLabel#PageTitle {{ font-size:24px;font-weight:800;color:{TEXT}; }}
             QLabel#DialogTitle {{ font-size:23px;font-weight:800; }}
+            #TourWelcomeCard {{ background:{PANEL};border:1px solid {BORDER};border-radius:8px; }}
+            #TourBubble {{ background:{PANEL};border:1px solid {BORDER};border-radius:8px; }}
+            QLabel#TourStepLabel {{ color:{ACCENT};font-size:11.5px;font-weight:bold;border:none; }}
+            QLabel#TourTitleLabel {{ font-size:15.5px;font-weight:bold;border:none; }}
+            QLabel#TourBodyLabel {{ font-size:13px;color:{TEXT};border:none; }}
+            QPushButton#TourSkipButton {{ color:{MUTED};border:none;font-size:12.5px; }}
+            QPushButton#TourNextButton {{ background:{ACCENT};color:#FFFFFF;border:none;border-radius:8px;padding:8px 16px;font-size:13px; }}
             QLabel#SectionTitle {{ font-size:17px;font-weight:750; }}
             QLabel#SettingsTitle, QLabel#PanelTitle {{ font-size:15px;font-weight:750; }}
             QLabel#Subtitle, QLabel#SmallMuted, QLabel#FooterText {{ color:{MUTED};font-size:12px; }}
+            QFrame#ConnCard QLabel#SmallMuted {{ font-size:11px; }}
             QLabel#CardHeadSmall {{ color:{MUTED};font-size:11px; }}
             QLineEdit#DiagLine {{ background:transparent;border:0;color:{MUTED};font-size:12px;padding:0; }}
             QLineEdit#DiagLine:focus {{ background:transparent;border:0; }}
@@ -13632,25 +15622,25 @@ class MainWindow(QMainWindow):
             QLabel#Eyebrow {{ color:{CYAN};font-size:11px;font-weight:700; }}
             QLabel#RunBadge {{ color:{TEXT};font-size:13px;font-weight:650;padding:7px 8px; }}
             QFrame#MetricCard, QFrame#PageCard, QFrame#SettingsCard, QFrame#EmptyState, QFrame#DetailStat, QFrame#TrendChartCard, QFrame#TrendCard {{
-                background:{PANEL};border:1px solid {BORDER};border-radius:16px;
+                background:{PANEL};border:1px solid {BORDER};border-radius:8px;
             }}
             QFrame#PageCard:hover {{ border:1px solid {ACCENT}; }}
             QFrame#TrendCard:hover {{ border:1px solid {ACCENT}; }}
             QLabel#TrendCardName {{ font-size:13px;font-weight:700; }}
-            QPushButton#DatePill {{ background:{PANEL};border:1px solid {BORDER};border-radius:12px;padding:9px 14px;font-size:14px;font-weight:600;color:{TEXT}; }}
+            QPushButton#DatePill {{ background:{PANEL};border:1px solid {BORDER};border-radius:8px;padding:9px 14px;font-size:14px;font-weight:600;color:{TEXT}; }}
             QPushButton#DatePill:hover {{ border-color:{ACCENT}; }}
             QLabel#CalMonthLabel {{ font-size:15px;font-weight:750;color:{TEXT}; }}
             QPushButton#CalNavButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:8px;padding:4px 12px;font-size:15px;font-weight:700; }}
             QPushButton#CalQuickButton {{ background:{PANEL};border:1px solid {BORDER};border-radius:9px;padding:8px 0;font-size:13px;font-weight:600;color:{TEXT}; }}
             QPushButton#CalQuickButton:checked {{ background:{ACCENT};border-color:{ACCENT};color:#FFFFFF; }}
-            QDialog#DateRangePopup {{ background:{PANEL};border:1px solid {BORDER};border-radius:14px; }}
+            QDialog#DateRangePopup {{ background:{PANEL};border:1px solid {BORDER};border-radius:8px; }}
             QFrame#AlertRow {{ background:transparent;border-left:2px solid {BORDER}; }}
             QLabel#AlertRowTitle {{ color:{AMBER};font-size:12px;font-weight:650; }}
             QLabel#MetricLabel {{ color:{MUTED};font-size:13px;font-weight:600; }}
             QLabel#MetricValue {{ color:{TEXT};font-size:32px;font-weight:750; }}
             QLabel#MetricValue[tone="history"] {{ color:{RED}; }}
             QLabel#MetricValue[tone="bell"] {{ color:{GREEN}; }}
-            QPushButton#MetricBadge {{ background:{RED};color:#FFFFFF;border:0;border-radius:10px;font-size:11px;font-weight:800;padding:0; }}
+            QPushButton#MetricBadge {{ background:{RED};color:#FFFFFF;border:0;border-radius:8px;font-size:11px;font-weight:800;padding:0; }}
             QLabel#ChipBadge {{ background:#EA580C;color:#FFFFFF;border-radius:8px;font-size:10px;font-weight:800;padding:0; }}
             QLabel#ChipBadge[tone="good"] {{ background:#EA580C;color:#FFFFFF;border-radius:8px;font-size:10px;font-weight:800;padding:0; }}
             QLabel#CardTitle {{ font-size:16px;font-weight:750;color:{TEXT}; }}
@@ -13665,17 +15655,17 @@ class MainWindow(QMainWindow):
             QWidget#DiagStripe[severity="warning"] {{ background:{AMBER};border-radius:2px; }}
             QWidget#DiagStripe[severity="plain"] {{ background:{MUTED};border-radius:2px; }}
             QWidget#DiagStripe[severity="good"] {{ background:{GREEN};border-radius:2px; }}
-            QLabel#StatusBadge {{ background:{status_ok_bg};color:{GREEN};border:1px solid {status_ok_border};border-radius:12px;
+            QLabel#StatusBadge {{ background:{status_ok_bg};color:{GREEN};border:1px solid {status_ok_border};border-radius:8px;
                 padding:4px 11px;font-size:13px;font-weight:700; }}
             QLabel#StatusBadge[state='alert'] {{ background:{status_alert_bg};color:{RED};border-color:{status_alert_border}; }}
             QLabel#StatusBadge[state='warning'] {{ background:{status_warn_bg};color:{AMBER};border-color:{status_warn_border}; }}
             QLabel#StatusBadge[state='off'] {{ background:{PANEL_2};color:{MUTED};border-color:{BORDER}; }}
             QLabel#StatusBadge[state='good'] {{ background:{status_ok_bg};color:{GREEN};border-color:{status_ok_border}; }}
-            QLabel#UpdatePill {{ background:{status_warn_bg};color:{AMBER};border:1px solid {status_warn_border};border-radius:11px;padding:3px 9px;font-size:12px;font-weight:700; }}
+            QLabel#UpdatePill {{ background:{status_warn_bg};color:{AMBER};border:1px solid {status_warn_border};border-radius:8px;padding:3px 9px;font-size:12px;font-weight:700; }}
             QLabel#DetailNumber {{ color:{TEXT};font-size:20px;font-weight:800; }}
             QLabel#PathLabel {{ color:{CYAN};font-size:12px; }}
-            QLabel#InfoBox {{ background:{PANEL_2};border-radius:10px;padding:12px;color:{MUTED}; }}
-            QPushButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:10px;padding:8px 13px;
+            QLabel#InfoBox {{ background:{PANEL_2};border-radius:8px;padding:12px;color:{MUTED}; }}
+            QPushButton {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:8px;padding:8px 13px;
                 color:{TEXT};font-weight:650; }}
             QPushButton:hover {{ background:{hover};border-color:{ACCENT}; }}
             QPushButton:disabled {{ color:{disabled_text};border-color:{BORDER};background:{PANEL}; }}
@@ -13696,18 +15686,18 @@ class MainWindow(QMainWindow):
             QPushButton#NoticeHistoryButton[active='true'] {{ background:{soft};border-color:{BORDER};color:{TEXT}; }}
             QLabel#NoticeSummary {{ color:{TEXT};font-weight:650; }}
             QLabel#EmptyHint {{ color:{MUTED};font-size:14px; }}
-            QFrame#OptionCard {{ background:{PANEL};border:1px solid {BORDER};border-radius:14px; }}
+            QFrame#OptionCard {{ background:{PANEL};border:1px solid {BORDER};border-radius:8px; }}
             QFrame#OptionCard[selected='true'] {{ border:2px solid {ACCENT};background:{soft}; }}
             QLabel#OptionCardTitle {{ font-size:14px;font-weight:700;color:{TEXT}; }}
             QLineEdit, QPlainTextEdit, QSpinBox, QComboBox {{
-                background:{field};border:1px solid {BORDER};border-radius:10px;
+                background:{field};border:1px solid {BORDER};border-radius:8px;
                 padding:7px 9px;color:{TEXT};selection-background-color:{ACCENT};
             }}
             QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus {{ border-color:{ACCENT}; }}
             QComboBox QAbstractItemView {{ background:{PANEL};border:1px solid {BORDER};color:{TEXT};selection-background-color:{soft}; }}
             QCheckBox {{ spacing:8px;color:{TEXT}; }}
             QCheckBox::indicator {{ width:17px;height:17px;border:1px solid {BORDER};border-radius:4px;background:{field}; }}
-            QCheckBox::indicator:checked {{ background:{ACCENT};border:1px solid {ACCENT}; }}
+            QCheckBox::indicator:checked {{ background:{ACCENT};border:1px solid {ACCENT};image:url("{_check_glyph_path()}"); }}
             QScrollArea {{ background:transparent;border:0; }}
             QWidget#CardCanvas {{ background:transparent; }}
             QScrollBar:vertical {{ background:transparent;width:9px;margin:0; }}
@@ -13717,30 +15707,30 @@ class MainWindow(QMainWindow):
             QScrollBar::handle:horizontal {{ background:{BORDER};border-radius:4px;min-width:25px; }}
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width:0; }}
             QTableWidget {{ background:{PANEL};alternate-background-color:{PANEL_2};border:1px solid {BORDER};
-                border-radius:16px;gridline-color:transparent;selection-background-color:{table_selection};selection-color:{TEXT}; }}
+                border-radius:8px;gridline-color:transparent;selection-background-color:{table_selection};selection-color:{TEXT}; }}
             QTableWidget::item {{ border-bottom:1px solid {PANEL_2};padding:6px; }}
             QHeaderView::section {{ background:{PANEL_2};border:0;border-bottom:1px solid {BORDER};color:{MUTED};padding:10px 6px;font-size:12px;font-weight:700; }}
             QTableWidget#IdManagerTable {{ font-size:12px; }}
-            QTabWidget::pane {{ border:1px solid {BORDER};border-radius:16px;background:{BG}; }}
+            QTabWidget::pane {{ border:1px solid {BORDER};border-radius:8px;background:{BG}; }}
             QTabBar::tab {{ background:{PANEL_2};border:1px solid {BORDER};color:{MUTED};padding:10px 17px;
                 border-top-left-radius:8px;border-top-right-radius:8px;margin-right:5px; }}
             QTabBar::tab:selected {{ background:{soft};color:{TEXT};border-bottom-color:{ACCENT}; }}
-            QMenu {{ background:{PANEL};border:1px solid {BORDER};padding:6px;color:{TEXT};border-radius:12px; }}
+            QMenu {{ background:{PANEL};border:1px solid {BORDER};padding:6px;color:{TEXT};border-radius:8px; }}
             QMenu::item {{ padding:6px 14px;border-radius:8px;font-size:12px;font-weight:500; }}
             QMenu::item:selected {{ background:{soft}; }}
             QMenu::indicator {{ width:16px;height:16px; }}
-            QPushButton#MenuButton {{ background:{PANEL};border:1px solid {BORDER};border-radius:10px;
+            QPushButton#MenuButton {{ background:{PANEL};border:1px solid {BORDER};border-radius:8px;
                 padding:0 13px;font-size:13.5px;font-weight:650;color:{TEXT};text-align:left; }}
             QPushButton#MenuButton:hover {{ border-color:{ACCENT};background:{soft}; }}
-            QFrame#SegmentedChoice {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:11px; }}
+            QFrame#SegmentedChoice {{ background:{PANEL_2};border:1px solid {BORDER};border-radius:8px; }}
             QPushButton#SegmentedButton {{ background:transparent;border:0;border-radius:8px;
                 padding:7px 14px;font-size:13.5px;font-weight:650;color:{MUTED}; }}
             QPushButton#SegmentedButton:checked {{ background:{PANEL};border:1px solid {BORDER};color:{TEXT}; }}
             QLabel#ConnectorDot {{ border-radius:5px; }}
-            QFrame#MonitorAlertPopup {{ background:{PANEL};border:2px solid {AMBER};border-radius:18px; }}
+            QFrame#MonitorAlertPopup {{ background:{PANEL};border:2px solid {AMBER};border-radius:8px; }}
             QLabel#MonitorAlertHeadline {{ font-size:18px;font-weight:850;color:{TEXT}; }}
             QLabel#MonitorAlertSymbol {{ background:{AMBER};color:#16110A;border-radius:17px;font-size:22px;font-weight:900; }}
-            QFrame#MonitorAlertRow {{ background:{PANEL_2};border:1px solid {BORDER};border-left:4px solid {AMBER};border-radius:12px; }}
+            QFrame#MonitorAlertRow {{ background:{PANEL_2};border:1px solid {BORDER};border-left:4px solid {AMBER};border-radius:8px; }}
             QLabel#MonitorAlertName {{ font-size:15px;font-weight:850;color:{TEXT}; }}
             QLabel#MonitorAlertEvent {{ background:{soft};border:1px solid {BORDER};border-radius:7px;padding:3px 7px;font-size:11px;font-weight:800;color:{AMBER}; }}
             QLabel#MonitorAlertEvent[kind='growth'] {{ color:{RED};background:{danger_bg};border-color:{RED}; }}
@@ -13766,6 +15756,24 @@ class MainWindow(QMainWindow):
         if geometry:
             try:self.restoreGeometry(geometry)
             except (TypeError,ValueError):pass
+            try:_gs=int(self.settings.value("ui/geometry_scale",100))
+            except (TypeError,ValueError):_gs=100
+            _cs=ui_scale_percent(self.settings)
+            _saved_size=str(self.settings.value("ui/geometry_size","") or "")
+            _sw=_sh=0
+            if "x" in _saved_size:
+                try:_sw,_sh=[int(v) for v in _saved_size.split("x")]
+                except (TypeError,ValueError):_sw=_sh=0
+            if _gs and _gs!=_cs:
+                # Scale the SAVED size, not the size after restore: when
+                # the saved size is below the current minimum,
+                # restoreGeometry clamps it first, and scaling the
+                # clamped size would double-count (819x520 saved at 80%
+                # would come back 1280x812 at 100% instead of 1024x650).
+                if _sw>0 and _sh>0:
+                    self.resize(max(self.minimumWidth(),round(_sw*_cs/_gs)),max(self.minimumHeight(),round(_sh*_cs/_gs)))
+                else:
+                    self.resize(max(self.minimumWidth(),round(self.width()*_cs/_gs)),max(self.minimumHeight(),round(self.height()*_cs/_gs)))
         screen=QApplication.primaryScreen()
         if screen:
             frame=self.frameGeometry()
@@ -13793,6 +15801,8 @@ class MainWindow(QMainWindow):
         if self._ui_restoring or not hasattr(self,"stack"):return
         if not self.isMinimized():
             self.settings.setValue("ui/geometry",self.saveGeometry())
+            self.settings.setValue("ui/geometry_scale",ui_scale_percent(self.settings))
+            self.settings.setValue("ui/geometry_size","%dx%d"%(self.width(),self.height()))
             self.settings.setValue("ui/maximized",self.isMaximized())
         self.settings.setValue("ui/page",self.stack.currentIndex())
         self.settings.setValue("dashboard/scroll",self.dashboard.scroll.verticalScrollBar().value())
@@ -14014,6 +16024,7 @@ def main():
     def exception_hook(exc_type,exc,tb):
         import traceback
         text="".join(traceback.format_exception(exc_type,exc,tb));log_exception(text)
+        _report_error_to_diag(exc_type,exc,tb)
         if sys.stderr is not None:
             try:sys.stderr.write(text)
             except Exception:pass
