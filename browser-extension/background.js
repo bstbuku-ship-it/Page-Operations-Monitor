@@ -1,10 +1,14 @@
-/* 专业监控工具连接器 1.4.8 -- automatic local bridge, no codes, no remote code and no cookies. */
+/* 专业监控工具连接器 1.4.10 -- automatic local bridge, no codes, no remote code and no cookies. */
 "use strict";
 importScripts('extractor.js');
 const DEFAULT_PORT = 17831;
 const PROTOCOL = 1;
 let socket = null, pingTimer = null, reconnectTimer = null;
-let currentTask = null, connecting = false, pairedReady = false;
+let connecting = false, pairedReady = false;
+// rev120 1.4.9: concurrent collect tasks, one per tab. Keyed by job_id;
+// maxSlots comes from the desktop in each collect message (1..5, default 3).
+const tasks = new Map();
+let maxSlots = 3;
 let generation = 0, initPromise = null;
 let portCursor=0, failures=0, duplicateRetries=0;
 let configQueue=Promise.resolve();
@@ -76,18 +80,36 @@ function modifyConfig(change) {
 async function config(){return modifyConfig(null);}
 
 
+// The owned-tab map is read-modify-write in storage.session; with several
+// tasks running at once the updates must queue, or one task's tab entry can
+// be lost and its tab never closed.
+let ownedQueue=Promise.resolve();
+function withOwned(fn){ const op=ownedQueue.then(fn); ownedQueue=op.catch(()=>{}); return op; }
+async function registerOwnedTab(tabId, jobId) {
+  return withOwned(async()=>{
+    const owned=(await chrome.storage.session.get('owned')).owned||{};
+    owned[String(tabId)]=jobId;
+    await chrome.storage.session.set({owned});
+  });
+}
 async function closeOwnTab(tabId, jobId) {
   // A tab ID is saved before collection. Never query or close the user's ordinary tabs.
   if(!Number.isInteger(tabId))return;
-  try {
-    const stored=(await chrome.storage.session.get('owned')).owned||{};
-    if(stored[String(tabId)]!==jobId)return;
-    try {await chrome.tabs.remove(tabId);} catch (_) {}
-    delete stored[String(tabId)];await chrome.storage.session.set({owned:stored});
-  } catch (_) {}
+  return withOwned(async()=>{
+    try {
+      const stored=(await chrome.storage.session.get('owned')).owned||{};
+      if(stored[String(tabId)]!==jobId)return;
+      try {await chrome.tabs.remove(tabId);} catch (_) {}
+      delete stored[String(tabId)];await chrome.storage.session.set({owned:stored});
+    } catch (_) {}
+  });
 }
-async function abortCurrent() {
-  if(currentTask){currentTask.cancelled=true;await closeOwnTab(currentTask.tabId,currentTask.job_id);}
+async function abortTask(jobId) {
+  const task=tasks.get(jobId);
+  if(task){task.cancelled=true;await closeOwnTab(task.tabId,task.job_id);}
+}
+async function abortAllTasks() {
+  for(const task of [...tasks.values()]){task.cancelled=true;await closeOwnTab(task.tabId,task.job_id);}
 }
 async function recoverOwnedTabs() {
   const owned=(await chrome.storage.session.get('owned')).owned||{};
@@ -202,25 +224,38 @@ async function hoverPostTooltips(task, urls) {
 
 async function collect(message) {
   if(!pairedReady)return;
-  if(currentTask) {
-    send({type:'result',job_id:message.job_id,payload:{page_id:message.page_id,error:'Connector already has an active task'}});return;
-  }
   if(!/^[0-9]{5,25}$/.test(message.page_id||'') || !/^[a-f0-9]{32}$/.test(message.job_id||'') ||
       !['monitor','metadata'].includes(message.purpose))return;
+  // Slots come from the desktop (the user setting, 1..5, default 3). The
+  // same job is never run twice; when every slot is busy the desktop is
+  // told so and hands the page to another browser.
+  const slots=Math.min(5,Math.max(1,parseInt(message.slots,10)||3));
+  maxSlots=slots;
+  if(tasks.has(message.job_id))return;
+  if(tasks.size>=maxSlots) {
+    send({type:'result',job_id:message.job_id,payload:{page_id:message.page_id,error:'Connector busy: all slots in use'}});return;
+  }
   const task={...message,generation,cancelled:false,tabId:null,
     deadline:Date.now()+Math.min(110000,Math.max(5000,Number(message.timeout_ms)||100000))};
-  currentTask=task;
+  tasks.set(task.job_id,task);
   let payload={page_id:task.page_id};
   try {
     await state({text:'\u5de1\u68c0 '+task.page_id,connected:true});await setToolbarState('busy');
     // Fail instead of opening a new visible browser window without the user's consent.
-    const windows=await chrome.windows.getAll({windowTypes:['normal']});
-    const normal=windows.find(w=>w.focused&&!w.incognito)||windows.find(w=>!w.incognito);
-    if(!normal)throw new Error('Open a normal window in this Chrome Profile before inspecting');
+    // rev121 1.4.10: report what this Chrome profile actually sees, so a
+    // "webpage is open but nothing is read" report can be pinned down instead
+    // of guessed at. A window in another Chrome profile does not count here
+    // (each profile runs its own connector); neither does a popup, app or
+    // incognito window. windowTypes must be listed explicitly: with it unset
+    // Chrome only returns normal+popup windows, hiding app/devtools ones.
+    const allWindows=await chrome.windows.getAll({windowTypes:['normal','popup','panel','app','devtools']});
+    const _n=(type)=>allWindows.filter(w=>w.type===type).length;
+    const _normalWindows=allWindows.filter(w=>w.type==='normal'&&!w.incognito);
+    const normal=_normalWindows.find(w=>w.focused)||_normalWindows[0];
+    if(!normal)throw new Error('Open a normal window in this Chrome Profile before inspecting [实际窗口：普通'+_normalWindows.length+'个，无痕普通'+(_n('normal')-_normalWindows.length)+'个，弹窗'+_n('popup')+'个，应用'+_n('app')+'个，其他'+(allWindows.length-_n('normal')-_n('popup')-_n('app'))+'个，共'+allWindows.length+'个]');
     const tab=await chrome.tabs.create({windowId:normal.id,url:'https://www.facebook.com/'+task.page_id,active:false});
     task.tabId=tab.id;
-    const owned=(await chrome.storage.session.get('owned')).owned||{};owned[String(tab.id)]=task.job_id;
-    await chrome.storage.session.set({owned});
+    await registerOwnedTab(tab.id,task.job_id);
     await waitForTab(task);
     payload={...payload,...await extract(task,!!task.posts)};
     if(payload.error)throw new Error(payload.error);
@@ -265,8 +300,11 @@ async function collect(message) {
   finally {
     await closeOwnTab(task.tabId,task.job_id);
     if(!task.cancelled && task.generation===generation && pairedReady)send({type:'result',job_id:task.job_id,payload});
-    if(currentTask===task)currentTask=null;
-    if(pairedReady){await setToolbarState('idle');await state({text:tr.connected,connected:true});}
+    tasks.delete(task.job_id);
+    if(pairedReady){
+      if(tasks.size){await setToolbarState('busy');}
+      else {await setToolbarState('idle');await state({text:tr.connected,connected:true});}
+    }
   }
 }
 
@@ -351,7 +389,7 @@ async function connect() {
       } else if(msg.type==='ping')send({type:'pong'});
       else if(msg.type==='pong'){}
       else if(msg.type==='collect')collect(msg);
-      else if(msg.type==='cancel') {if(currentTask?.job_id===msg.job_id)await abortCurrent();}
+      else if(msg.type==='cancel') {await abortTask(msg.job_id);}
       else if(msg.type==='identify') {
         await setToolbarState('idle');
         await state({text:'这是当前选中的浏览器连接器',connected:true,port,auto:true});
@@ -369,7 +407,7 @@ async function connect() {
     clearTimeout(attemptTimeout);
     if(gen!==generation)return;
     pairedReady=false;connecting=false;clearInterval(pingTimer);socket=null;
-    await abortCurrent();
+    await abortAllTasks();
     if(gen!==generation)return;
     await setToolbarState('offline');
     const st=(await chrome.storage.local.get('status')).status;
@@ -387,7 +425,7 @@ async function connect() {
 async function disconnect(disable=true) {
   if(disable)await modifyConfig(c=>({...c,enabled:false}));
   generation++;pairedReady=false;connecting=false;clearTimeout(reconnectTimer);clearInterval(pingTimer);
-  await abortCurrent();
+  await abortAllTasks();
   if(socket)socket.close();socket=null;
   await setToolbarState('offline');await state({text:tr.disconnected,connected:false});
 }
@@ -395,7 +433,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=> {
   if(sender.id!==chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')))return false;
   (async()=> {
     if(msg.type==='save') {
-      if(currentTask)throw new Error('\u8bf7\u7b49\u5f85\u5f53\u524d\u4e3b\u9875\u5de1\u68c0\u5b8c\u6210\u540e\u4fee\u6539\u5907\u6ce8');
+      if(tasks.size)throw new Error('\u8bf7\u7b49\u5f85\u5f53\u524d\u4e3b\u9875\u5de1\u68c0\u5b8c\u6210\u540e\u4fee\u6539\u5907\u6ce8');
       const v=msg.config||{},allowed={};
       const limits={profile_name:80,profile_directory:100,profile_path:800,channel_label:100};
       for(const [key,limit] of Object.entries(limits)) {
