@@ -2,16 +2,16 @@
 """第一步：把发布包里的浏览器连接器同步到仓库 main 分支。
 
 双击就能跑（推荐双击 1-sync-connector.bat）。只做连接器这一件事：
-  1. 读本包 browser-extension/manifest.json，确认是 1.4.8，并且和主程序
+  1. 读本包 browser-extension/manifest.json，确认是 1.4.10，并且和主程序
      内嵌的连接器版本一致；不一致就停住，绝不把错的版本推上去。
   2. 找到本地仓库（脚本目录本身是仓库就用它，否则用脚本目录下的
      Page-Operations-Monitor 子目录，没有就自动 clone），切到 main
      分支并拉取最新代码。
   3. 把本包的 browser-extension/ 整个拷进仓库（只动这一个目录，
-     仓库里别的文件一个不动），有变化就提交“更新浏览器连接器 1.4.8”
+     仓库里别的文件一个不动），有变化就提交“更新浏览器连接器 1.4.10”
      并推送到 main；没变化就直接告诉你已经是最新，不提交。
   4. 跑完这一步，再双击 publish.bat 发主程序，云端打出的包里嵌的
-     才是新连接器 1.4.8。
+     才是新连接器 1.4.10。
 
 安全与防呆：
   - 只提交 browser-extension/ 这一个目录，别处未提交的改动不会被带上去。
@@ -37,7 +37,7 @@ from pathlib import Path
 OWNER = "bstbuku-ship-it"
 REPO = "Page-Operations-Monitor"
 REPO_URL = f"https://github.com/{OWNER}/{REPO}"
-CONNECTOR_VERSION = "1.4.8"
+CONNECTOR_VERSION = "1.4.10"
 
 TOKEN_ENV_NAMES = ("GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT", "GIT_TOKEN")
 

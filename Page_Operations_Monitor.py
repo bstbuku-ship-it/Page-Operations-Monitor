@@ -42,14 +42,14 @@ import base64
 import shlex
 
 APP_TITLE = "专业监控工具"
-APP_VERSION = "1.7.4"
-APP_BUILD = "professional-portable-deployer-ui-v174-20261118-rev116"
+APP_VERSION = "1.7.5"
+APP_BUILD = "professional-portable-deployer-ui-v175-20261124-rev127"
 
 # Update log, bundled in the code in Whitaker's wording and grouping:
 # version header "vX.Y.Z (date)", groups 优化/新增/修复 (first release
 # uses 首个版本), connector line on its own after the groups.
 UPDATE_LOG_SHOWN_KEY = "update_log/shown_for"
-CHANGELOG = [{'version': '1.7.4', 'date': '2026-11-17', 'groups': [{'title': '新增', 'items': ['ID 管理的搜索框可以直接粘贴多行 ID，一次查出多个主页，查到的可以直接批量设置或批量删除。', '新增圣诞主题：整体墨绿底色配金色点缀，侧栏有雪花和小书本装饰。', '监控看板的搜索框也可以直接粘贴多行 ID，一次查出多个主页。']}, {'title': '优化', 'items': ['左侧导航栏默认宽度修改了。', '删除了一个导航栏样式。', '左侧导航栏底部的“外观”文字删掉了，只剩四个主题圆点。', '整个页面四角的圆角改小了。', '界面缩放功能移除了，界面固定为 100% 显示。', '浏览器连接窗口打开时背景变暗、点不了别的，只能关掉后再操作。', 'ID 管理的搜索框加长了，最小窗口下也能完整显示。', '固定窗口的图钉图标换成新样式（未置顶斜钉、已置顶竖钉，颜色跟随主题）。', '监控看板副标题改成粉丝与发帖监控。', '两个搜索框都加宽了一点，主界面搜索框里写明了可粘贴多行 ID。', '侧栏和趋势页标题里的“趋势”改成“粉丝趋势”。']}, {'title': '修复', 'items': ['巡检时筛选胶囊右上角的数字徽标会被压住一半，现在能完整显示了。', '巡检进度选角标样式时，“继续巡检”按钮右上角的数字会被压住一半，现在能完整显示了。', '最小窗口下上次巡检时间显示不全，现在能完整显示了。', '没有连接器时点“仅巡检本主页”不再提示已在队列中，会直接提示连接器未连接。', '过了零点还没巡检时，昨日新增不再显示横杠，改按昨天和前天的最后一次读数计算；今日新增没巡检时仍显示横杠。']}], 'connector': '浏览器连接器升级至 1.4.8（需手动更新）。'}, {'version': '1.7.3', 'date': '2026-11-12', 'groups': [{'title': '新增', 'items': ['左侧导航栏可以收起来，只留一列图标，点 ‹ 收起、点 › 展开。', '设置 → 外观里可以换导航栏样式：胶囊分组、清爽线条、深色导航三种。', '左侧导航栏新增「趋势」：上面是所有专业汇总趋势图，下面是每个专业的趋势图；点日期药丸可以选几号到几号。']}, {'title': '优化', 'items': ['启用自动巡检后，按钮变成深蓝色；点启用后等 5 秒再开始第一轮，5 秒内点取消就不立即巡检。', '窗口默认 1230×720，最小 1024×650；拉到 1200 以下侧栏自动收起，拖回自动展开；卡片按宽度排，最多 6 列；开发者模式最小 1080×560，开发者日志里可以输入尺寸测试、还原默认尺寸。', '通知、发帖超时、需处理、粉丝增长超标的数字，三个主题统一成正红色。', '更新完旧的安装包会自动清理，只留当前版本。', '浏览器连接窗口里，在线绿色、离线红色；状态和备注不再弹重复提示。', '关闭窗口改成新确认框，只有最小化到托盘和完全退出两个选项。', '左侧导航栏的「最近预警」板块删掉了。', '更新前会验证发布者的签名，签名不对就不会安装。']}, {'title': '修复', 'items': ['趋势日历下面三个快捷日期，现在只有点中的那一个有颜色；手动在日历上选日期后，三个都不亮了。', '头像不会再误抓成贴文里的图片。', '粉丝增长超标时，每录到一个就立刻放一次烟花。']}], 'connector': '浏览器连接器保持 1.4.7，已安装的无需重新安装。'}, {'version': '1.7.2', 'date': '2026-11-06', 'groups': [{'title': '新增', 'items': ['第一次打开会弹新手引导，带你走一遍装连接器、加主页、设自动巡检时间、跑巡检、看提醒；老用户也会弹一次，确认过就不再弹。', '自动巡检间隔设到 180 分钟以下时，设置里会出现提示，提醒你太短容易被 Facebook 临时限制。', '巡检跑起来之后，右键点「立即巡检」可以取消当前这一轮。']}, {'title': '优化', 'items': ['设置 → 巡检与提醒里的「巡检设置」改名「自动巡检设置」。']}, {'title': '修复', 'items': ['昨天超标、今天没超标的主页，不再一直留在「粉丝增长超标」里。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.1', 'date': '2026-11-06', 'groups': [{'title': '优化', 'items': ['主页小卡片改版：数值显示为「昨日新增 / 今日新增 / 距上次发帖」三列，当前粉丝单独一行（仅开启粉丝监控时显示）。', '昨日新增以红色、今日新增以绿色显示，无数据时为灰色；数值达 10000 以上以 W 为单位显示。', '点击「仅巡检本主页」后立即排入队列，无需等待上一轮结束；多个浏览器并行执行。', '发帖状态区分为「未见贴文」「读取不到」「待获取」三种。', '设置页重新整理：说明文字移至控件下方，「巡检与提醒」拆分为三节，粉丝增长提醒与发帖超时提醒可分别开关。', '精简设置项，移除「启动自动巡检」「静默收起到托盘」「备份数据库」。', '托盘右键菜单精简为「打开软件」「完全退出」。']}, {'title': '新增', 'items': ['筛选胶囊支持右键直接巡检该类主页。', '关闭窗口时可选择继续后台运行、等待本轮结束后退出或立即退出。']}, {'title': '修复', 'items': ['主页名称本轮未读取到时，不再判定为异常。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.0', 'date': '2026-11-04', 'groups': [{'title': '新增', 'items': ['浏览器连接器升级至 1.4.7（需手动更新），工具栏图标以角标显示离线 / 空闲 / 执行中状态。', '粉丝增长达标时播放烟花提示。', '自动复检：对仍无法确认的主页最多复检 5 遍，并优先更换浏览器重试。', '新增界面缩放（80%–130%）与消息提示位置设置。', '新增诊断日志窗口。']}, {'title': '优化', 'items': ['优化预警分类规则：粉丝增长超标、发帖超时、需处理三个维度独立统计。', '排序精简为三项，默认「增长预警优先」。', '卡片数值达 1000 以上以 k 为单位显示，悬停可查看精确值。', '设置页改为 5 个横向标签页。', '巡检间隔默认值调整为 240 分钟。', '通知历史支持清空已读记录。', '统一各类提示的显示样式。', '重写浏览器连接窗口，支持筛选、停用、删除与重新检测。', '并行巡检自动识别新上线的浏览器，不再限制数量。']}], 'connector': ''}, {'version': '1.6.2', 'date': '', 'groups': [{'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.1', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['Windows 版改用标准安装程序，提供简体中文安装向导，可自选安装路径。', '新增绿色便携版，解压即用，数据保存在软件文件夹内。']}, {'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.0', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['新增三套主题：云白（默认）、护眼绿、曜石黑。', '新增监控模块开关，首次运行时可选择启用的模块。', '支持静默升级：后台下载并校验新版本，空闲时自动安装并重启，可在「设置 → 更新」中关闭。', '提示气泡按类型区分图标：成功、警告、普通提示。', '主页卡片支持通过三点菜单删除。', '左侧栏新增预警头像行。', '接入 Windows 系统通知。']}, {'title': '优化', 'items': ['界面改为圆角风格，并新增左侧边栏。', '提示气泡按主题配色，宽度随内容自适应。', '主页不可用时直接给出判断。', 'ID 管理列表按专业名称排序。', '精简通知文案，不再显示 ID。']}, {'title': '修复', 'items': ['修复提示气泡偶尔被裁掉最后一个字的问题。']}], 'connector': '浏览器连接器保持 1.4.1，无需重新安装。'}, {'version': '1.5.0', 'date': '', 'groups': [{'title': '优化', 'items': ['软件名称统一为「专业监控工具」。', '「设置中心」更名为「设置」，移除「恢复默认巡检参数」「打开运行日志」「重置窗口布局」。', '专业 ID 管理入口统一为「FB专业ID管理」。', '更新提示改为「升级 / 以后再说」，下载并校验完成后再次确认安装。']}, {'title': '新增', 'items': ['设置新增「智能清理缓存」，扫描后经确认再清理，不影响 ID、通知、头像、设置、数据库及浏览器连接记录。']}], 'connector': ''}, {'version': '1.4.0', 'date': '2026-10-15', 'groups': [{'title': '新增', 'items': ['首页新增「昨日新增」指标。', '点击「查看通知」可直达通知界面并高亮对应预警。']}, {'title': '优化', 'items': ['通知界面默认仅显示未读及今日通知，较早的已读记录移至「历史记录」。', '预警弹窗头像与主页卡片保持一致。', '首页巡检参数布局更紧凑。', '数字输入框改为点击即选中、输入即保存。', '顶部图标按主题分层配色，有未读通知时显示红色。', '浏览器按钮增加状态灯：绿色可用、黄色部分连接、红色无连接。', '浏览器连接窗口简化；多个连接器可并行巡检，最多 10 个。', '浏览器连接器改为紧凑弹窗，可直接填写浏览器备注。']}], 'connector': ''}, {'version': '1.3.0', 'date': '2026-10-14', 'groups': [{'title': '新增', 'items': ['浏览器连接器改为同机自动发现、自动连接，无需手动输入配对码。', '检测到多个 Chrome 配置时可选择巡检所用浏览器，并记住上次选择。', '专业 ID 的粉丝监控与发帖监控可独立启用，支持批量管理。', '首页显示上次巡检时间，支持随机巡检间隔与随机主页间隔。', '关闭窗口后可留在系统托盘运行，再次启动时自动唤回已有窗口。', '最近预警增加主页头像。', '支持通过 GitHub Releases 检查并更新软件。']}], 'connector': ''}, {'version': '1.0.0', 'date': '2026-10-12', 'groups': [{'title': '首个版本', 'items': ['支持批量导入主页 ID，可直接粘贴谷歌表格内容并自动清洗。', '登录监控账号后，逐页采集粉丝数、主页名称与头像。', '首页展示当前粉丝与今日新增。', '支持粉丝增长桌面提醒。', '支持发帖时间监控与超时判断。', '提供专业 ID 管理：添加、编辑、批量设置、批量删除、导出清单。', '支持立即巡检与自动巡检。', '支持系统托盘、数据导出、数据目录迁移与数据库备份。', '支持检查新版本。']}], 'connector': ''}]
+CHANGELOG = [{'version': '1.7.5', 'date': '2026-11-20', 'groups': [{'title': '新增', 'items': ['后台或最小化时巡检跑完会弹系统通知，写明手动还是自动、跑了多少个、成功失败多少。', '每个浏览器可以同时开几个标签页巡检，默认 3 个，可以在设置里改成 1 到 5 个。', '下载新版本时可以点“取消下载”停掉下载。']}, {'title': '优化', 'items': ['主界面搜索框缩短了，筛选胶囊在最小窗口下也保持在一行。', '浏览器断开或复检时不用等整轮跑完，剩下的主页马上交给还连着的浏览器接着巡检。', '没有打开普通窗口的浏览器本轮会直接跳过，并提示打开一个普通窗口。', '更新日志和新浏览器连接的确认框都改成在窗口里弹，背景变暗、点不了别的。']}, {'title': '修复', 'items': ['预警的系统通知只在没看这个界面时才弹，看着界面时不再弹。', '看板今日新增和昨日新增都改成和粉丝趋势同一个算法，两边同一天的数完全一致。', '读到的粉丝数是 0 时也会按实际读到的写进去，不再当作没读到处理。', '没有打开普通窗口时，诊断会写明这个浏览器实际看到的窗口数量。', '粉丝趋势总图不再算已删主页和已关粉丝监控的主页，只算现在还在的主页。']}], 'connector': '浏览器连接器升级至 1.4.10（需手动更新；多标签巡检和窗口数量诊断都要用新版连接器）。'}, {'version': '1.7.4', 'date': '2026-11-17', 'groups': [{'title': '新增', 'items': ['ID 管理的搜索框可以直接粘贴多行 ID，一次查出多个主页，查到的可以直接批量设置或批量删除。', '新增圣诞主题：整体墨绿底色配金色点缀，侧栏有雪花和小书本装饰。', '监控看板的搜索框也可以直接粘贴多行 ID，一次查出多个主页。']}, {'title': '优化', 'items': ['左侧导航栏默认宽度修改了。', '删除了一个导航栏样式。', '左侧导航栏底部的“外观”文字删掉了，只剩四个主题圆点。', '整个页面四角的圆角改小了。', '界面缩放功能移除了，界面固定为 100% 显示。', '浏览器连接窗口打开时背景变暗、点不了别的，只能关掉后再操作。', 'ID 管理的搜索框加长了，最小窗口下也能完整显示。', '固定窗口的图钉图标换成新样式（未置顶斜钉、已置顶竖钉，颜色跟随主题）。', '监控看板副标题改成粉丝与发帖监控。', '两个搜索框都加宽了一点，主界面搜索框里写明了可粘贴多行 ID。', '侧栏和趋势页标题里的“趋势”改成“粉丝趋势”。']}, {'title': '修复', 'items': ['巡检时筛选胶囊右上角的数字徽标会被压住一半，现在能完整显示了。', '巡检进度选角标样式时，“继续巡检”按钮右上角的数字会被压住一半，现在能完整显示了。', '最小窗口下上次巡检时间显示不全，现在能完整显示了。', '没有连接器时点“仅巡检本主页”不再提示已在队列中，会直接提示连接器未连接。', '过了零点还没巡检时，昨日新增不再显示横杠，改按昨天和前天的最后一次读数计算；今日新增没巡检时仍显示横杠。']}], 'connector': '浏览器连接器升级至 1.4.8（需手动更新）。'}, {'version': '1.7.3', 'date': '2026-11-12', 'groups': [{'title': '新增', 'items': ['左侧导航栏可以收起来，只留一列图标，点 ‹ 收起、点 › 展开。', '设置 → 外观里可以换导航栏样式：胶囊分组、清爽线条、深色导航三种。', '左侧导航栏新增「趋势」：上面是所有专业汇总趋势图，下面是每个专业的趋势图；点日期药丸可以选几号到几号。']}, {'title': '优化', 'items': ['启用自动巡检后，按钮变成深蓝色；点启用后等 5 秒再开始第一轮，5 秒内点取消就不立即巡检。', '窗口默认 1230×720，最小 1024×650；拉到 1200 以下侧栏自动收起，拖回自动展开；卡片按宽度排，最多 6 列；开发者模式最小 1080×560，开发者日志里可以输入尺寸测试、还原默认尺寸。', '通知、发帖超时、需处理、粉丝增长超标的数字，三个主题统一成正红色。', '更新完旧的安装包会自动清理，只留当前版本。', '浏览器连接窗口里，在线绿色、离线红色；状态和备注不再弹重复提示。', '关闭窗口改成新确认框，只有最小化到托盘和完全退出两个选项。', '左侧导航栏的「最近预警」板块删掉了。', '更新前会验证发布者的签名，签名不对就不会安装。']}, {'title': '修复', 'items': ['趋势日历下面三个快捷日期，现在只有点中的那一个有颜色；手动在日历上选日期后，三个都不亮了。', '头像不会再误抓成贴文里的图片。', '粉丝增长超标时，每录到一个就立刻放一次烟花。']}], 'connector': '浏览器连接器保持 1.4.7，已安装的无需重新安装。'}, {'version': '1.7.2', 'date': '2026-11-06', 'groups': [{'title': '新增', 'items': ['第一次打开会弹新手引导，带你走一遍装连接器、加主页、设自动巡检时间、跑巡检、看提醒；老用户也会弹一次，确认过就不再弹。', '自动巡检间隔设到 180 分钟以下时，设置里会出现提示，提醒你太短容易被 Facebook 临时限制。', '巡检跑起来之后，右键点「立即巡检」可以取消当前这一轮。']}, {'title': '优化', 'items': ['设置 → 巡检与提醒里的「巡检设置」改名「自动巡检设置」。']}, {'title': '修复', 'items': ['昨天超标、今天没超标的主页，不再一直留在「粉丝增长超标」里。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.1', 'date': '2026-11-06', 'groups': [{'title': '优化', 'items': ['主页小卡片改版：数值显示为「昨日新增 / 今日新增 / 距上次发帖」三列，当前粉丝单独一行（仅开启粉丝监控时显示）。', '昨日新增以红色、今日新增以绿色显示，无数据时为灰色；数值达 10000 以上以 W 为单位显示。', '点击「仅巡检本主页」后立即排入队列，无需等待上一轮结束；多个浏览器并行执行。', '发帖状态区分为「未见贴文」「读取不到」「待获取」三种。', '设置页重新整理：说明文字移至控件下方，「巡检与提醒」拆分为三节，粉丝增长提醒与发帖超时提醒可分别开关。', '精简设置项，移除「启动自动巡检」「静默收起到托盘」「备份数据库」。', '托盘右键菜单精简为「打开软件」「完全退出」。']}, {'title': '新增', 'items': ['筛选胶囊支持右键直接巡检该类主页。', '关闭窗口时可选择继续后台运行、等待本轮结束后退出或立即退出。']}, {'title': '修复', 'items': ['主页名称本轮未读取到时，不再判定为异常。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.0', 'date': '2026-11-04', 'groups': [{'title': '新增', 'items': ['浏览器连接器升级至 1.4.7（需手动更新），工具栏图标以角标显示离线 / 空闲 / 执行中状态。', '粉丝增长达标时播放烟花提示。', '自动复检：对仍无法确认的主页最多复检 5 遍，并优先更换浏览器重试。', '新增界面缩放（80%–130%）与消息提示位置设置。', '新增诊断日志窗口。']}, {'title': '优化', 'items': ['优化预警分类规则：粉丝增长超标、发帖超时、需处理三个维度独立统计。', '排序精简为三项，默认「增长预警优先」。', '卡片数值达 1000 以上以 k 为单位显示，悬停可查看精确值。', '设置页改为 5 个横向标签页。', '巡检间隔默认值调整为 240 分钟。', '通知历史支持清空已读记录。', '统一各类提示的显示样式。', '重写浏览器连接窗口，支持筛选、停用、删除与重新检测。', '并行巡检自动识别新上线的浏览器，不再限制数量。']}], 'connector': ''}, {'version': '1.6.2', 'date': '', 'groups': [{'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.1', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['Windows 版改用标准安装程序，提供简体中文安装向导，可自选安装路径。', '新增绿色便携版，解压即用，数据保存在软件文件夹内。']}, {'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.0', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['新增三套主题：云白（默认）、护眼绿、曜石黑。', '新增监控模块开关，首次运行时可选择启用的模块。', '支持静默升级：后台下载并校验新版本，空闲时自动安装并重启，可在「设置 → 更新」中关闭。', '提示气泡按类型区分图标：成功、警告、普通提示。', '主页卡片支持通过三点菜单删除。', '左侧栏新增预警头像行。', '接入 Windows 系统通知。']}, {'title': '优化', 'items': ['界面改为圆角风格，并新增左侧边栏。', '提示气泡按主题配色，宽度随内容自适应。', '主页不可用时直接给出判断。', 'ID 管理列表按专业名称排序。', '精简通知文案，不再显示 ID。']}, {'title': '修复', 'items': ['修复提示气泡偶尔被裁掉最后一个字的问题。']}], 'connector': '浏览器连接器保持 1.4.1，无需重新安装。'}, {'version': '1.5.0', 'date': '', 'groups': [{'title': '优化', 'items': ['软件名称统一为「专业监控工具」。', '「设置中心」更名为「设置」，移除「恢复默认巡检参数」「打开运行日志」「重置窗口布局」。', '专业 ID 管理入口统一为「FB专业ID管理」。', '更新提示改为「升级 / 以后再说」，下载并校验完成后再次确认安装。']}, {'title': '新增', 'items': ['设置新增「智能清理缓存」，扫描后经确认再清理，不影响 ID、通知、头像、设置、数据库及浏览器连接记录。']}], 'connector': ''}, {'version': '1.4.0', 'date': '2026-10-15', 'groups': [{'title': '新增', 'items': ['首页新增「昨日新增」指标。', '点击「查看通知」可直达通知界面并高亮对应预警。']}, {'title': '优化', 'items': ['通知界面默认仅显示未读及今日通知，较早的已读记录移至「历史记录」。', '预警弹窗头像与主页卡片保持一致。', '首页巡检参数布局更紧凑。', '数字输入框改为点击即选中、输入即保存。', '顶部图标按主题分层配色，有未读通知时显示红色。', '浏览器按钮增加状态灯：绿色可用、黄色部分连接、红色无连接。', '浏览器连接窗口简化；多个连接器可并行巡检，最多 10 个。', '浏览器连接器改为紧凑弹窗，可直接填写浏览器备注。']}], 'connector': ''}, {'version': '1.3.0', 'date': '2026-10-14', 'groups': [{'title': '新增', 'items': ['浏览器连接器改为同机自动发现、自动连接，无需手动输入配对码。', '检测到多个 Chrome 配置时可选择巡检所用浏览器，并记住上次选择。', '专业 ID 的粉丝监控与发帖监控可独立启用，支持批量管理。', '首页显示上次巡检时间，支持随机巡检间隔与随机主页间隔。', '关闭窗口后可留在系统托盘运行，再次启动时自动唤回已有窗口。', '最近预警增加主页头像。', '支持通过 GitHub Releases 检查并更新软件。']}], 'connector': ''}, {'version': '1.0.0', 'date': '2026-10-12', 'groups': [{'title': '首个版本', 'items': ['支持批量导入主页 ID，可直接粘贴谷歌表格内容并自动清洗。', '登录监控账号后，逐页采集粉丝数、主页名称与头像。', '首页展示当前粉丝与今日新增。', '支持粉丝增长桌面提醒。', '支持发帖时间监控与超时判断。', '提供专业 ID 管理：添加、编辑、批量设置、批量删除、导出清单。', '支持立即巡检与自动巡检。', '支持系统托盘、数据导出、数据目录迁移与数据库备份。', '支持检查新版本。']}], 'connector': ''}]
 DEFAULT_INTERVAL_MINUTES = 240
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -714,6 +714,93 @@ def send_system_toast(entries, on_activated=None, silent=False):
         except Exception:
             pass
         log_exception("系统通知发送失败：" + detail)
+        return False, detail
+
+
+def send_simple_system_toast(title, message, on_activated=None):
+    """Send a plain native Windows toast (title + one message line).
+
+    rev119: patrol-finished notice. Same toaster setup as
+    send_system_toast (Reminder scenario + Long duration, about 25s
+    on Windows -- the system does not let us ask for exactly 30s),
+    but no alert entries and no avatar. Clicking the toast body or
+    the 查看 button runs on_activated; 关闭 only dismisses.
+    Returns (ok, detail); a failure never raises and never falls back
+    to a custom popup (same rule as the alert toast).
+    """
+    if os.name != "nt":
+        return False, "not-windows"
+    try:
+        from windows_toasts import (InteractableWindowsToaster, Toast,
+                                    ToastButton, ToastDuration, ToastScenario)
+    except Exception as exc:
+        return False, "windows-toasts-not-installed:" + str(exc)[:160]
+    try:
+        toast = Toast()
+        toast.text_fields = [str(title), str(message)]
+        try:
+            toast.scenario = ToastScenario.Reminder
+        except Exception:
+            pass
+        try:
+            toast.duration = ToastDuration.Long
+        except Exception:
+            pass
+        for _label, _arg in (("查看", "pom:view"), ("关闭", "pom:dismiss")):
+            try:
+                toast.AddAction(ToastButton(_label, _arg))
+            except Exception:
+                try:
+                    toast.add_action(ToastButton(_label, _arg))
+                except Exception:
+                    try:
+                        toast.actions.append(ToastButton(_label, _arg))
+                    except Exception:
+                        pass
+        _SYSTEM_TOASTS.append(toast)
+        del _SYSTEM_TOASTS[:-10]
+        aumid_ok, aumid_detail = _ensure_toast_aumid_registered()
+        if on_activated is not None:
+            def _activated(*_args, **_kwargs):
+                try:
+                    ev = _args[0] if _args else None
+                    raw = getattr(ev, "arguments", None)
+                    if raw is None and isinstance(ev, str):
+                        raw = ev
+                    if raw is None and isinstance(ev, dict):
+                        raw = ev.get("arguments", ev.get("Arguments"))
+                    # 查看 button, or a plain body click, opens the
+                    # target; 关闭 (pom:dismiss) never does.
+                    if _toast_activation_is_view(*_args) or str(raw or "").strip() == "":
+                        _record_toast_activation("" if raw is None else str(raw), True)
+                        on_activated()
+                except Exception:
+                    pass
+            toast.on_activated = _activated
+        try:
+            toaster = InteractableWindowsToaster(APP_TITLE, notifierAUMID=APP_USER_MODEL_ID)
+        except Exception:
+            try:
+                toaster = InteractableWindowsToaster(APP_TITLE)
+            except Exception:
+                from windows_toasts import WindowsToaster
+                toaster = WindowsToaster(APP_TITLE)
+        _SYSTEM_TOASTERS.append(toaster)
+        toaster.show_toast(toast)
+        try:
+            record = toast_avatar_dir() / "toast_check.json"
+            data = {}
+            if record.is_file() and record.stat().st_size < 200000:
+                data = json.loads(record.read_text("utf-8")) or {}
+            data["last_simple_send"] = {"ok": True, "title": str(title),
+                                        "aumid_ok": aumid_ok, "aumid_detail": aumid_detail, "at": now_iso()}
+            record.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        except Exception:
+            pass
+        return True, "" if aumid_ok else "AUMID未注册：" + aumid_detail
+    except Exception as exc:
+        detail = str(exc)[:200]
+        log_exception("巡检完成通知发送失败：" + detail)
         return False, detail
 
 
@@ -1526,6 +1613,11 @@ def random_inspection_timing(settings):
         settings.value("page_gap_max_seconds", DEFAULT_PAGE_GAP_MAX))
 
 
+def patrol_tabs_per_browser(settings):
+    """Concurrent collect tabs per browser (rev120): 1..5, default 3."""
+    return _bounded_int(settings.value("patrol_tabs_per_browser", 3), 3, 1, 5)
+
+
 def save_random_timing(settings, values):
     values = normalize_random_timing(*values)
     for key, value in zip(("interval_minutes", "round_jitter_min_minutes",
@@ -2333,19 +2425,41 @@ class Store:
                       (json.dumps(rules,ensure_ascii=False),))
 
 
-    @staticmethod
-    def _today_from_state(row,now,interval_seconds=DEFAULT_INTERVAL_MINUTES*60):
-        now=float(now)
-        local=datetime.fromtimestamp(now).astimezone()
-        if not row or row["baseline_date"]!=local.date().isoformat():
-            return {"delta":None,"partial":True,"note":"今天尚无成功采集记录"}
-        if row["latest_ts"]>now+1 or row["latest_ts"]<=row["baseline_ts"]:
-            return {"delta":None,"partial":True,"note":"今天首次检测已建立基准；再次巡检后显示新增"}
-        partial=bool(row["partial"]);approx=bool(row["latest_approx"] or row["baseline_approx"])
-        note=("自今日首次检测起" if partial else "以零点附近读数为基准")
-        note+="（"+datetime.fromtimestamp(row["baseline_ts"]).astimezone().strftime("%H:%M")+"）"
-        if approx:note+="；来源为缩写约值"
-        return {"delta":row["latest_count"]-row["baseline_count"],"partial":partial,"approx":approx,"note":note}
+    def _day_growth(self,pid,day):
+        """One day's follower growth -- the single definition used by
+        the dashboard (top metrics, cards, over-threshold check) and
+        the trend page (rev124). Growth on day D = followers(D) minus
+        followers(D-1), both end-of-day readings from daily_followers.
+        A day counts only when both days have a row; otherwise delta
+        is None. This replaces the two older definitions that could
+        disagree with the trend page: today's intraday baseline
+        (latest minus today's first reading, which missed the overnight
+        growth) and yesterday's rolled-up fallback (last minus first
+        reading of the day, plus a new page's rolled-up value that the
+        trend page skipped)."""
+        if isinstance(day,datetime):day=day.date()
+        prev=day-timedelta(days=1)
+        with self.lock,self._connect() as c:
+            _rows=c.execute("SELECT day,followers,approx FROM daily_followers WHERE page_id=? AND day IN (?,?)",
+                          (str(pid),day.isoformat(),prev.isoformat())).fetchall()
+        _by={str(_r["day"]):_r for _r in _rows}
+        if day.isoformat() in _by and prev.isoformat() in _by:
+            _cur=_by[day.isoformat()];_prv=_by[prev.isoformat()]
+            return {"delta":int(_cur["followers"])-int(_prv["followers"]),"partial":False,
+                    "approx":bool(_cur["approx"] or _prv["approx"]),"note":"按每天最后一次读数计算"}
+        if day.isoformat() in _by:
+            return {"delta":None,"partial":True,"approx":bool(_by[day.isoformat()]["approx"]),
+                    "note":"前一天没有读数"}
+        return {"delta":None,"partial":True,"approx":False,"note":"当天没有读数"}
+
+    def _today_from_state(self,row,now,interval_seconds=DEFAULT_INTERVAL_MINUTES*60):
+        """Today's growth, same definition as the trend page (rev124):
+        last reading today minus last reading yesterday (see
+        _day_growth). interval_seconds is kept for the callers and no
+        longer affects the result."""
+        if not row:
+            return {"delta":None,"partial":True,"approx":False,"note":"今天尚无成功采集记录"}
+        return self._day_growth(row["page_id"],datetime.fromtimestamp(float(now)).astimezone().date())
 
     def today_change(self,pid,now=None,interval_seconds=DEFAULT_INTERVAL_MINUTES*60):
         now=time.time() if now is None else float(now)
@@ -2354,49 +2468,19 @@ class Store:
         return self._today_from_state(dict(row) if row else None,now,interval_seconds)
 
 
-    @staticmethod
-    def _yesterday_from_state(row,now):
-        """Return only yesterday's rolled-up delta; no historical time series is stored."""
-        now=float(now)
-        yesterday=(datetime.fromtimestamp(now).astimezone().date()-timedelta(days=1)).isoformat()
-        if not row or row["yesterday_date"]!=yesterday or row["yesterday_delta"] is None:
-            return {"delta":None,"partial":True,"approx":False,"note":"需要跨日的成功巡检记录后显示"}
-        note="昨天从首次有效基准起计算" if row["yesterday_partial"] else "昨天完整基准"
-        if row["yesterday_approx"]:note+="；来源为缩写约值"
-        return {"delta":int(row["yesterday_delta"]),"partial":bool(row["yesterday_partial"]),
-                "approx":bool(row["yesterday_approx"]),"note":note}
-
     def _yesterday_from_state_with_history(self,row,now):
-        """Yesterday's delta, with a daily_followers fallback.
-
-        The rolled-up yesterday_* fields are only written by
-        record_followers, i.e. only once a patrol runs on the
-        new day. Before that first patrol after midnight they
-        still describe the day before yesterday, so
-        _yesterday_from_state returns None and the dashboard
-        shows "—" for 昨日新增 even though yesterday's numbers
-        are already in daily_followers. Fall back to the
-        end-of-day comparison followers(yesterday) minus
-        followers(day before) when both days have a row -- the
-        same definition daily_growth_series already uses. The
-        rolled-up value still wins when it exists, so cases
-        that already worked do not change; only when either
-        day has no row does it stay "—".
-        """
-        base=self._yesterday_from_state(dict(row) if row else None,now)
-        if base["delta"] is not None or not row:
-            return base
+        """Yesterday's delta, same definition as the trend page (rev124):
+        last reading yesterday minus last reading the day before (see
+        _day_growth). The rolled-up yesterday_delta fallback is gone:
+        it measured last minus first reading of the day (missing the
+        overnight growth) and let a new page's rolled-up value count
+        on the dashboard while the trend page skipped it, so the two
+        totals could never be made to agree."""
+        if not row:
+            return {"delta":None,"partial":True,"approx":False,"note":"需要跨日的成功巡检记录后显示"}
         yesterday=(datetime.fromtimestamp(float(now)).astimezone().date()-timedelta(days=1))
-        day_before=yesterday-timedelta(days=1)
-        with self.lock,self._connect() as c:
-            _rows=c.execute("SELECT day,followers,approx FROM daily_followers WHERE page_id=? AND day IN (?,?)",
-                          (str(row["page_id"]),yesterday.isoformat(),day_before.isoformat())).fetchall()
-        _by_day={str(_r["day"]):_r for _r in _rows}
-        if yesterday.isoformat() not in _by_day or day_before.isoformat() not in _by_day:
-            return base
-        _cur=_by_day[yesterday.isoformat()];_prev=_by_day[day_before.isoformat()]
-        return {"delta":int(_cur["followers"])-int(_prev["followers"]),"partial":False,
-                "approx":bool(_cur["approx"] or _prev["approx"]),"note":"按每天最后一次读数计算"}
+        return self._day_growth(row["page_id"],yesterday)
+
 
     def yesterday_change(self,pid,now=None):
         now=time.time() if now is None else float(now)
@@ -2477,7 +2561,7 @@ class Store:
         _fail_parts=[]
         if row["monitor_growth"] and not result.get("growth_ok"):_fail_parts.append("粉丝")
         if _fail_parts:
-            _cerr = str(result.get("growth_error") or "")[:80]
+            _cerr = str(result.get("growth_error") or "")[:200]
             _czh = _zh_connector_error(_cerr)
             diag_log(f"[采集] {pid} " + "／".join(_fail_parts) + "失败：" + _cerr + (f"（{_czh}）" if _czh else ""))
         if purpose=="metadata":
@@ -2725,45 +2809,52 @@ class Store:
 
     def daily_growth_series(self, pid, start_day, end_day):
         """Daily follower growth for one page in [start_day, end_day].
-        Growth on day D = followers(D) - followers(D-1); a day is skipped
-        when either day has no recorded number."""
-        start = start_day - timedelta(days=1)
-        rows = dict(self.daily_series(pid, start, end_day))
+        Same single definition as the dashboard (see _day_growth):
+        growth on day D = followers(D) - followers(D-1); a day is
+        skipped when either day has no recorded number."""
         out = {}
         d = start_day
         while d <= end_day:
-            prev = rows.get((d - timedelta(days=1)).isoformat())
-            cur = rows.get(d.isoformat())
-            if prev is not None and cur is not None:
-                out[d.isoformat()] = int(cur) - int(prev)
+            _g = self._day_growth(pid, d)
+            if _g["delta"] is not None:
+                out[d.isoformat()] = int(_g["delta"])
             d += timedelta(days=1)
         return out
 
     def daily_total_growth_series(self, start_day, end_day):
         """All pages summed daily growth in [start_day, end_day].
-        A page counts toward a day only when it has numbers for that day
-        and the day before, so a missing day never inflates the total."""
+        Same single definition as the dashboard (see _day_growth): a
+        page counts toward a day only when it has numbers for that day
+        and the day before, so a missing day never inflates the total.
+        Same page set as the dashboard, too (rev125): only pages still
+        in the pages table with follower monitoring on. A deleted
+        page's old daily rows stay in the table forever and a
+        switched-off page keeps its old rows, so counting every
+        distinct page_id in daily_followers used to pull both into
+        the total and it drifted above the dashboard."""
         start = start_day - timedelta(days=1)
         with self.lock, self._connect() as c:
-            rows = c.execute(
-                "SELECT page_id,day,followers FROM daily_followers WHERE day>=? AND day<=? ORDER BY day",
-                (str(start), str(end_day))).fetchall()
-        by_page = {}
-        for r in rows:
-            by_page.setdefault(str(r["page_id"]), {})[str(r["day"])] = int(r["followers"])
+            # rev125: only pages still listed with follower
+            # monitoring on -- see the docstring. Deleted and
+            # switched-off pages keep old daily rows; those must not
+            # reach the total.
+            _pids = [str(_r["page_id"]) for _r in c.execute(
+                "SELECT DISTINCT df.page_id FROM daily_followers df "
+                "JOIN pages p ON p.page_id=df.page_id "
+                "WHERE p.monitor_growth=1 AND df.day>=? AND df.day<=?",
+                (str(start), str(end_day))).fetchall()]
         out = {}
         d = start_day
         while d <= end_day:
-            prev_key = (d - timedelta(days=1)).isoformat()
-            cur_key = d.isoformat()
             total = 0
             any_page = False
-            for series in by_page.values():
-                if prev_key in series and cur_key in series:
-                    total += series[cur_key] - series[prev_key]
+            for _pid in _pids:
+                _g = self._day_growth(_pid, d)
+                if _g["delta"] is not None:
+                    total += int(_g["delta"])
                     any_page = True
             if any_page:
-                out[cur_key] = total
+                out[d.isoformat()] = total
             d += timedelta(days=1)
         return out
 
@@ -2846,6 +2937,34 @@ def log_exception(text):
         with log_path.open("a",encoding="utf-8") as f:
             f.write("\n"+now_iso()+"\n"+str(text)+"\n")
     except OSError:pass
+
+
+_patrol_timing_lock=threading.Lock()
+
+
+def log_patrol_timing(text):
+    """rev118 diagnostic: one timestamped line per patrol stage in
+    DATA_DIR/patrol_timing.log (last 300 lines). Wall-clock local time
+    so the user can read it directly; never raises, never shows UI.
+    The developer log shows errors only, so timing deliberately does
+    NOT go there -- it would be filtered out and invisible."""
+    try:
+        with _patrol_timing_lock:
+            ensure_private_directory(DATA_DIR)
+            path=DATA_DIR/"patrol_timing.log"
+            stamp=datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
+            try:lines=path.read_text(encoding="utf-8").splitlines()
+            except OSError:lines=[]
+            lines.append("%s | %s"%(stamp,str(text)[:300]))
+            path.write_text("\n".join(lines[-300:])+"\n",encoding="utf-8")
+    except Exception:pass
+
+
+def _timing_suffix(t0):
+    """'（距本轮起点 X.X 秒）' or '' when no round clock is running."""
+    if t0 is None:return ""
+    try:return "（距本轮起点 %.1f 秒）"%max(0.0,time.monotonic()-float(t0))
+    except (TypeError,ValueError):return ""
 
 
 AVATAR_TARGET_PX = 1290
@@ -4258,679 +4377,693 @@ CONNECTOR_ORIGIN = 'chrome-extension://' + CONNECTOR_EXTENSION_ID
 # BEGIN BUNDLED CONNECTOR PACKAGE
 # IMPORTANT: Connector version is independent from the desktop app version.
 # Do not change this package/version unless the browser connector itself is intentionally updated.
-BUNDLED_CONNECTOR_VERSION = '1.4.8'
-BUNDLED_CONNECTOR_FILENAME = '专业监控工具-浏览器连接器-1.4.8.zip'
-BUNDLED_CONNECTOR_SHA256 = '659318fcd47663515dc9174e571f02f18b9583589af69213e6277fbc552a7a86'
+BUNDLED_CONNECTOR_VERSION = '1.4.10'
+BUNDLED_CONNECTOR_FILENAME = '专业监控工具-浏览器连接器-1.4.10.zip'
+BUNDLED_CONNECTOR_SHA256 = '2313bc71c69a46f84bc7d029b6172cd64b5fda18613218a28942d79bc89dc39d'
 BUNDLED_CONNECTOR_ZIP_B64 = (
-    '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'
+    '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'
 )
 # END BUNDLED CONNECTOR PACKAGE
 
@@ -5494,6 +5627,10 @@ class ConnectorBridge:
         self.records={}
         self.sessions={}
         self.jobs={}
+        # rev120: concurrent collect jobs allowed per browser session
+        # (tabs setting, 1..5, default 3). One job per slot; the
+        # extension enforces the same cap on its side.
+        self.max_jobs=3
         self.server=None
         self.thread=None
         self.error=''
@@ -5712,18 +5849,27 @@ class ConnectorBridge:
     def online(self, cid):
         return any(r['instance_id']==cid and r['online'] for r in self.clients())
 
+    def active_jobs(self, cid):
+        """Unfinished collect jobs on one browser session right now."""
+        with self.lock:
+            session=self.sessions.get(cid)
+            if not session:return 0
+            return sum(1 for j in self.jobs.values() if j.session is session and not j.event.is_set())
+
     def request(self, cid, row, purpose='monitor', stop=None, timeout=120, retry=False):
         pid=str(row.get('page_id') or '')
         if not re.fullmatch(r'[0-9]{5,25}',pid):raise ConnectorError('Invalid page ID')
         if purpose not in ('monitor','metadata'):raise ConnectorError('Unsupported purpose')
+        _limit=_bounded_int(getattr(self,'max_jobs',3),3,1,5)
         with self.lock:
             session=self.sessions.get(cid)
             if not session or time.monotonic()-session.last_seen>=65:raise ConnectorError('Selected browser is offline')
-            if any(j.session is session and not j.event.is_set() for j in self.jobs.values()):
+            if sum(1 for j in self.jobs.values() if j.session is session and not j.event.is_set())>=_limit:
                 raise ConnectorError('Selected browser is busy')
             jid=secrets.token_hex(16);job=_ConnectorJob(session,pid);self.jobs[jid]=job
         try:
             session.send({'type':'collect','job_id':jid,'page_id':pid,'purpose':purpose,
+                          'slots':_limit,
                           'retry':bool(retry),
                           'growth':bool(purpose=='monitor' and row.get('monitor_growth',1)),
                           'posts':bool(purpose=='monitor' and row.get('monitor_posts',0)),
@@ -6008,8 +6154,8 @@ def connector_record(row, payload, purpose='monitor'):
                 else:
                     result['follower_source']='text'
             else:raise ValueError('No follower statistic')
-        except Exception:
-            result['growth_error']=error or '\u672a\u8bfb\u5230\u53ef\u786e\u8ba4\u7684\u7c89\u4e1d\u6570\uff0c\u4e0d\u4f1a\u5199\u5165 0'
+        except Exception as _exc:
+            result['growth_error']=error or '未读到可确认的粉丝数，不会写入 0'
     if purpose=='monitor' and row.get('monitor_posts'):
         candidates=[]
         post_rows=payload.get('post_candidates')
@@ -6227,7 +6373,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QSizeGrip, QSpinBox, QGraphicsDropShadowEffect,
     QStackedWidget, QStyle, QSystemTrayIcon, QTableWidget, QTableWidgetItem,
     QToolButton, QToolTip, QVBoxLayout, QWidget, QListWidget, QListWidgetItem, QTabWidget,
-    QStyledItemDelegate, QStyleOptionViewItem, QAbstractSpinBox, QProxyStyle, QProgressBar,
+    QStyledItemDelegate, QStyleOptionViewItem, QStyleOptionFrame, QAbstractSpinBox, QProxyStyle, QProgressBar,
 )
 
 # Focused palettes. Blue-Orange Obsidian is the default theme.
@@ -7194,8 +7340,19 @@ class CollectWorker(QObject):
             self.finished.emit(False,"任务异常："+str(exc)[:300])
 
 
+# rev120: wire errors that mean the browser itself is gone (not the page).
+_TRANSPORT_ERROR_HINTS=('offline','timed out','timeout','disconnected',
+                        'closed the connection','connection closed',
+                        'no result received','connector stopped')
+
+
+def _is_transport_error(message):
+    low=str(message or '').lower()
+    return any(h in low for h in _TRANSPORT_ERROR_HINTS)
+
+
 class ConnectorCollectWorker(CollectWorker):
-    """Distribute one round across the connected browsers (no cap) and auto-recheck ambiguity.
+    """Distribute one round across the connected browsers (rev120: up to N lanes per browser) and auto-recheck ambiguity.
 
     A name/post result that cannot be confirmed is retried up to five times,
     each pass running in parallel across browsers (one lane per target).  When
@@ -7204,10 +7361,21 @@ class ConnectorCollectWorker(CollectWorker):
     first-pass follower observation is preserved so the
     corrective pass never creates a duplicate follower sample.
     """
-    def __init__(self,pages,bridge,instance_ids,gap=8,purpose='monitor',gap_range=None):
+    def __init__(self,pages,bridge,instance_ids,gap=8,purpose='monitor',gap_range=None,slots=3):
         super().__init__(pages,gap=gap,purpose=purpose,gap_range=gap_range)
         if isinstance(instance_ids,str):instance_ids=[instance_ids]
         self.bridge=bridge;self.instance_ids=list(dict.fromkeys(str(x) for x in instance_ids if x))
+        # rev120: concurrent lanes per browser (tabs setting, 1..5, default 3).
+        self.slots=_bounded_int(slots,3,1,5)
+        # rev120: browsers skipped this round (dead / no normal window) and
+        # pages waiting for an early recheck, shared by the lanes.
+        self._skipped_cids=set();self._no_window_cids=set()
+        self._recheck_pending=[];self._recheck_lock=threading.Lock()
+        self._recheck_tried={}
+        self._transport_attempts={}
+        self._rechecked_pids=set()
+        # rev118 diagnostic: round clock (set from _start_worker) + first-send/first-done flags.
+        self._timing_t0=None;self._timing_sent=set();self._timing_first_done=False;self._timing_first_error=False
 
     def _record_good(self,row,record):
         checks=[]
@@ -7225,7 +7393,7 @@ class ConnectorCollectWorker(CollectWorker):
             rows=self.bridge.clients()
         except Exception:
             return [cid for cid in self.instance_ids if self.bridge.online(cid)]
-        live=[r['instance_id'] for r in rows if r.get('online') and not r.get('blocked')]
+        live=[r['instance_id'] for r in rows if r.get('online') and not r.get('blocked') and r['instance_id'] not in self._skipped_cids]
         ordered=[cid for cid in self.instance_ids if cid in live]
         ordered+=[cid for cid in live if cid not in ordered]
         return ordered
@@ -7246,22 +7414,66 @@ class ConnectorCollectWorker(CollectWorker):
         if others:return random.choice(others)
         return source_cid if source_cid in online else (online[0] if online else '')
 
+    def _slot_free(self,cid):
+        """True when a browser still has a free collect slot this round."""
+        fn=getattr(self.bridge,'active_jobs',None)
+        if not callable(fn):return True
+        try:return int(fn(cid))<int(self.slots)
+        except Exception:return True
+
+    def _run_one_recheck(self,source_cid,row,first,target):
+        """One recheck fetch against the planned target browser.
+
+        Same retry purpose split as the old per-target lane: only the
+        still-unconfirmed half (posts or growth) is re-read. A busy
+        target is re-raised so the caller can hand the page back
+        instead of recording a failure.
+        """
+        _retry_row=dict(row);_retry_purpose='metadata'
+        if self.purpose=='monitor' and row.get('monitor_posts') and not first.get('posts_ok'):
+            _retry_purpose='monitor';_retry_row['monitor_growth']=False;_retry_row['monitor_posts']=True
+        elif self.purpose=='monitor' and row.get('monitor_growth') and not first.get('growth_ok'):
+            _retry_purpose='monitor';_retry_row['monitor_growth']=True;_retry_row['monitor_posts']=False
+        _second={'page_id':row['page_id'],'metadata_ok':False,'growth_ok':False,'posts_ok':False}
+        try:
+            payload=self.bridge.request(target,_retry_row,_retry_purpose,self._stop,timeout=120,retry=True)
+            _second=connector_record(_retry_row,payload,_retry_purpose)
+        except ConnectorError as exc:
+            if 'busy' in str(exc).lower():raise
+            if 'normal window' in str(exc).lower():
+                # rev120 item 7: this browser has no normal window, so
+                # it cannot open any tab. Skip it for the rest of the
+                # round; the next attempt goes to another browser.
+                self._skipped_cids.add(target);self._no_window_cids.add(target)
+            _second.update(error=str(exc),name_error=str(exc),posts_error=str(exc))
+        _merged=merge_recheck_record(first,_second,row,self.purpose)
+        _merged['recheck_connector_changed']=bool(target!=source_cid)
+        return _merged
+
     def run(self):
         total=len(self.pages);success=0;failure=0;finalized=0
         if not self.instance_ids:
+            log_patrol_timing("线程已进 run：没有可用浏览器连接器"+_timing_suffix(self._timing_t0))
             self.finished.emit(False,'没有可用浏览器连接器');return
         online=[cid for cid in self.instance_ids if self.bridge.online(cid)]
         if not online:
+            log_patrol_timing("线程已进 run：所有已选择浏览器均已离线"+_timing_suffix(self._timing_t0))
             self.finished.emit(False,'连接器中断：所有已选择浏览器均已离线');return
         self.instance_ids=online
         self._spawned_ids=set(self.instance_ids)
+        # rev120: fresh per-round skip/recheck state.
+        self._skipped_cids=set();self._no_window_cids=set()
+        self._recheck_pending=[];self._recheck_tried={};self._transport_attempts={};self._rechecked_pids=set()
         if total < len(self.instance_ids):
             self.finished.emit(False,f'任务数 {total} 少于当前在线连接器 {len(self.instance_ids)} 个，请减少连接器');return
 
         pages=list(self.pages);random.shuffle(pages)
+        log_patrol_timing("线程已进 run：%d 个连接器在线，每浏览器 %d 个标签页，共 %d 个主页，已打乱排序"%(len(self.instance_ids),self.slots,total)+_timing_suffix(self._timing_t0))
         workq=queue.Queue();outq=queue.Queue();threads=[]
-        initial={cid:pages[i] for i,cid in enumerate(self.instance_ids)}
-        for row in pages[len(self.instance_ids):]:workq.put(row)
+        # rev120: one lane per (browser, slot); the first pages go
+        # round-robin across browsers so a slow page cannot hog one lane.
+        _lanes=[cid for _slot in range(self.slots) for cid in self.instance_ids]
+        for row in pages[len(_lanes):]:workq.put(row)
         remaining={'count':total};lock=threading.Lock()
 
         def mark_done():
@@ -7269,11 +7481,50 @@ class ConnectorCollectWorker(CollectWorker):
         def remaining_count():
             with lock:return remaining['count']
 
+        def _steal_recheck():
+            """Run one pending recheck on an idle lane instead of waiting
+            for the whole first pass to finish (rev120)."""
+            with self._recheck_lock:
+                if not self._recheck_pending:return False
+                _src,_row,_first,_attempt=self._recheck_pending.pop(0)
+            _pid=str(_row['page_id'])
+            with self._recheck_lock:
+                _tried=set(self._recheck_tried.get(_pid,()))
+            _target=self._recheck_connector(_src,_first,_tried)
+            if not _target or not self._slot_free(_target):
+                with self._recheck_lock:
+                    self._recheck_pending.append((_src,_row,_first,_attempt))
+                return False
+            with self._recheck_lock:
+                self._recheck_tried.setdefault(_pid,set()).add(_target)
+            _was_no_window=_target in self._no_window_cids
+            try:
+                _merged=self._run_one_recheck(_src,_row,_first,_target)
+            except ConnectorError as exc:
+                if 'busy' in str(exc).lower():
+                    with self._recheck_lock:
+                        self._recheck_pending.append((_src,_row,_first,_attempt))
+                    return False
+                _merged=merge_recheck_record(_first,{'page_id':_row['page_id'],'metadata_ok':False,'growth_ok':False,'posts_ok':False,'error':str(exc),'name_error':str(exc),'posts_error':str(exc)},_row,self.purpose)
+                _merged['recheck_connector_changed']=bool(_target!=_src)
+            except Exception as exc:
+                _merged=merge_recheck_record(_first,{'page_id':_row['page_id'],'metadata_ok':False,'growth_ok':False,'posts_ok':False,'error':str(exc)[:200]},_row,self.purpose)
+                _merged['recheck_connector_changed']=bool(_target!=_src)
+            self._rechecked_pids.add(_pid)
+            if _target in self._no_window_cids and not _was_no_window:
+                outq.put(('offline',_target,'no-window'))
+            outq.put(('recheck-done',_target,_row,_merged,_attempt+1,_src))
+            return True
+
         def lane_worker(cid,first_row):
             row=first_row
+            fail_streak=0
             try:
                 while not self._stop.is_set():
                     if not self._wait_ready():break
+                    if cid in self._skipped_cids:
+                        if row is not None:workq.put(row);row=None
+                        break
                     if row is None:
                         if remaining_count()<=0:break
                         try:row=workq.get(timeout=.35)
@@ -7281,16 +7532,64 @@ class ConnectorCollectWorker(CollectWorker):
                             if remaining_count()<=0:break
                             if not self.bridge.online(cid):
                                 outq.put(('offline',cid,'浏览器连接已断开'));break
+                            if _steal_recheck():continue
                             continue
+                    if cid in self._skipped_cids:
+                        workq.put(row);row=None;break
                     if not self.bridge.online(cid):
                         workq.put(row);row=None;outq.put(('offline',cid,'浏览器连接已断开'));break
                     try:
+                        self.progress.emit(-1,total,f"正在打开 {display_name(row)}")
+                        if cid not in self._timing_sent:
+                            self._timing_sent.add(cid);log_patrol_timing("发任务：%s（%s）→ 浏览器 %s"%(display_name(row),str(row.get("page_id") or ""),str(cid)[:8])+_timing_suffix(self._timing_t0))
+                        _t_send=time.monotonic()
                         payload=self.bridge.request(cid,row,self.purpose,self._stop,timeout=120)
+                        _took=time.monotonic()-_t_send
+                        if not self._timing_first_done:
+                            self._timing_first_done=True;log_patrol_timing("第一个主页采完：%s，本页用时 %.1f 秒"%(display_name(row),_took)+_timing_suffix(self._timing_t0))
+                        elif _took>=20:
+                            log_patrol_timing("慢页：%s 本页用时 %.1f 秒"%(display_name(row),_took)+_timing_suffix(self._timing_t0))
+                        fail_streak=0
                         if self._stop.is_set():
                             workq.put(row);row=None;break
                         record=connector_record(row,payload,self.purpose)
                     except ConnectorError as exc:
-                        if not self.bridge.online(cid):
+                        if not self._timing_first_error:
+                            self._timing_first_error=True;log_patrol_timing("发任务失败：%s，原因 %s"%(display_name(row),str(exc)[:120])+_timing_suffix(self._timing_t0))
+                        if self._stop.is_set():
+                            workq.put(row);row=None;break
+                        _msg=str(exc);_low=_msg.lower()
+                        if 'busy' in _low:
+                            # All slots on this browser are full: hand
+                            # the page back and try other work for a beat.
+                            workq.put(row);row=None
+                            if self._stop.wait(1.0):break
+                            continue
+                        if 'normal window' in _low:
+                            # rev120: the browser is connected but has
+                            # no normal window, so it cannot open any
+                            # tab. Skip it for the rest of the round;
+                            # its pages go back to the live browsers.
+                            with lock:self._skipped_cids.add(cid);self._no_window_cids.add(cid)
+                            workq.put(row);row=None;outq.put(('offline',cid,'no-window'));break
+                        if _is_transport_error(_msg):
+                            _pid=str(row['page_id'])
+                            with lock:
+                                _n=self._transport_attempts.get(_pid,0)+1
+                                self._transport_attempts[_pid]=_n
+                            fail_streak+=1
+                            if _n>=3:
+                                # Already failed on the wire three
+                                # times: record it so the round ends.
+                                fail_streak=0
+                            elif (not self.bridge.online(cid)) or fail_streak>=2:
+                                with lock:self._skipped_cids.add(cid)
+                                workq.put(row);row=None;outq.put(('offline',cid,_msg));break
+                            else:
+                                workq.put(row);row=None
+                                if self._stop.wait(0.5):break
+                                continue
+                        elif not self.bridge.online(cid):
                             workq.put(row);row=None;outq.put(('offline',cid,str(exc)));break
                         record={'page_id':row['page_id'],'error':str(exc),'growth_ok':False,'posts_ok':False,'metadata_ok':False,
                                 'name_error':str(exc),'posts_error':str(exc)}
@@ -7304,12 +7603,20 @@ class ConnectorCollectWorker(CollectWorker):
                         remaining_wait-=tick
             finally:outq.put(('done',cid))
 
-        for cid in self.instance_ids:
-            t=threading.Thread(target=lane_worker,args=(cid,initial[cid]),name='POM-connector-'+cid[:8],daemon=True)
+        for _i,_cid in enumerate(_lanes):
+            _first=pages[_i] if _i<len(pages) else None
+            t=threading.Thread(target=lane_worker,args=(_cid,_first),name='POM-connector-'+_cid[:8]+'-s%d'%(_i//len(self.instance_ids)),daemon=True)
             threads.append(t);t.start()
 
         spawned=set(self.instance_ids);last_scan=time.monotonic()
-        done=0;offline=set();first_seen=0;rechecks=[]
+        done=0;offline=set();first_seen=0
+        def _browser_label(_cid):
+            try:
+                for _r in self.bridge.clients():
+                    if str(_r.get('instance_id'))==str(_cid):
+                        return connector_display_name(_r.get('identity') or {},_cid)
+            except Exception:pass
+            return str(_cid)[:8]
         while done<len(threads):
             # Browsers that came online after the round started join while
             # there is still queued work. Scan on every loop pass (results
@@ -7322,18 +7629,43 @@ class ConnectorCollectWorker(CollectWorker):
                 for cid in self._live_online():
                     if cid in spawned or not self.bridge.online(cid):continue
                     spawned.add(cid);self._spawned_ids.add(cid)
-                    t=threading.Thread(target=lane_worker,args=(cid,None),name='POM-connector-'+cid[:8],daemon=True)
-                    threads.append(t);t.start()
+                    for _slot in range(self.slots):
+                        t=threading.Thread(target=lane_worker,args=(cid,None),name='POM-connector-'+cid[:8]+'-s%d'%_slot,daemon=True)
+                        threads.append(t);t.start()
             try:item=outq.get(timeout=.25)
             except queue.Empty:
                 if not any(t.is_alive() for t in threads):break
                 continue
             kind=item[0]
             if kind=='done':done+=1;continue
-            if kind=='offline':offline.add(item[1]);continue
+            if kind=='offline':
+                offline.add(item[1])
+                _label=_browser_label(item[1])
+                if item[2]=='no-window':
+                    log_patrol_timing(f"浏览器没有打开普通窗口：{_label}，本轮已跳过它，任务已交还其他浏览器")
+                    self.progress.emit(-1,total,f"{_label}：这个 Chrome 账号里没有打开普通窗口，请先打开一个 Chrome 普通窗口再巡检。本轮已跳过它，任务已交还其他浏览器。")
+                else:
+                    log_patrol_timing(f"浏览器中途离线：{_label}，剩余任务已交还其他浏览器")
+                    self.progress.emit(-1,total,f"浏览器已断开：{_label}，剩余任务已交还其他浏览器")
+                continue
+            if kind=='recheck-done':
+                _,_tcid,_row,_merged,_attempt,_src=item
+                if record_needs_recheck(_row,_merged,self.purpose) and _attempt<RECHECK_MAX_PASSES and not self._stop.is_set():
+                    with self._recheck_lock:
+                        self._recheck_pending.append((_src,dict(_row),_merged,_attempt))
+                    self.progress.emit(finalized+1,total,f'自动复检第 {_attempt} 遍 '+display_name(_row)+(' · 换浏览器' if _tcid!=_src else ' · 当前浏览器'))
+                    continue
+                _good=self._record_good(_row,_merged);_merged['ok']=_good;_merged['purpose']=self.purpose
+                self.result.emit(_merged);finalized+=1
+                if _good:success+=1
+                else:failure+=1
+                self.progress.emit(finalized,total,f'自动复检完成 · 已确认 {finalized} / {total}')
+                continue
             _,cid,row,record=item;first_seen+=1
             if record_needs_recheck(row,record,self.purpose) and not self._stop.is_set():
-                rechecks.append((cid,row,record))
+                with self._recheck_lock:
+                    self._recheck_pending.append((cid,dict(row),record,0))
+                    self._recheck_tried.setdefault(str(row['page_id']),set()).add(cid)
                 self.progress.emit(first_seen,total,f'首检 {first_seen} / {total} · 待自动复检')
                 continue
             good=self._record_good(row,record);record['ok']=good;record['purpose']=self.purpose
@@ -7344,96 +7676,97 @@ class ConnectorCollectWorker(CollectWorker):
 
         for t in threads:t.join(timeout=1)
 
-        # Recheck the ambiguous subset up to 5 passes, in parallel across
-        # browsers: each pass plans targets first (same rotation rule as
-        # before: prefer a browser not yet tried for that page, same
-        # connector repeats when alone), then runs one lane per target
-        # browser so no connector ever handles two fetches at once. A
-        # later pass can confirm the post time and move the page to
-        # overdue/normal.
-        _pending=list(rechecks);_tried={}
-        for _cid0,_row0,_first0 in rechecks:
-            _tried.setdefault(str(_row0["page_id"]),set()).add(_cid0)
-        _attempt=0
-        while _pending and _attempt<RECHECK_MAX_PASSES and not self._stop.is_set():
-            _attempt+=1
-            _planned=[]
-            for _source_cid,_row,_first in _pending:
+        # Leftover rechecks (pages the idle lanes never got to steal):
+        # same per-target parallel lanes as before, but each page carries
+        # its own attempt count, so the five-pass cap still holds across
+        # the stolen attempts above.
+        _pending=[]
+        with self._recheck_lock:
+            _pending=list(self._recheck_pending);self._recheck_pending.clear()
+        _tried={str(_row["page_id"]):set(self._recheck_tried.get(str(_row["page_id"]),())) for _src,_row,_first,_att in _pending}
+        _passes=0
+        while _pending and _passes<RECHECK_MAX_PASSES+1 and not self._stop.is_set():
+            _passes+=1
+            _planned=[];_still=[]
+            for _source_cid,_row,_first,_attempt in _pending:
                 _pid=str(_row["page_id"])
+                if _attempt>=RECHECK_MAX_PASSES:
+                    _good=self._record_good(_row,_first);_first['ok']=_good;_first['purpose']=self.purpose
+                    self.result.emit(_first);finalized+=1
+                    if _good:success+=1
+                    else:failure+=1
+                    continue
                 _target=self._recheck_connector(_source_cid,_first,_tried.get(_pid,()))
                 if _target:_tried.setdefault(_pid,set()).add(_target)
-                _planned.append((_source_cid,_row,_first,_target))
+                _planned.append((_source_cid,_row,_first,_target,_attempt))
             _by_target={}
-            _still=[]
-            for _source_cid,_row,_first,_target in _planned:
+            for _source_cid,_row,_first,_target,_attempt in _planned:
                 if _target:
-                    _by_target.setdefault(_target,[]).append((_source_cid,_row,_first,_target))
+                    _by_target.setdefault(_target,[]).append((_source_cid,_row,_first,_target,_attempt))
                     continue
                 _second={'page_id':_row['page_id'],'metadata_ok':False,'growth_ok':False,'posts_ok':False}
                 _merged=merge_recheck_record(_first,_second,_row,self.purpose)
                 _merged['recheck_connector_changed']=False
-                if record_needs_recheck(_row,_merged,self.purpose) and _attempt<RECHECK_MAX_PASSES:
-                    _still.append((_source_cid,_row,_merged));continue
+                if record_needs_recheck(_row,_merged,self.purpose) and _attempt+1<RECHECK_MAX_PASSES:
+                    _still.append((_source_cid,_row,_merged,_attempt+1));continue
                 _good=self._record_good(_row,_merged);_merged['ok']=_good;_merged['purpose']=self.purpose
                 self.result.emit(_merged);finalized+=1
                 if _good:success+=1
                 else:failure+=1
             _outq=queue.Queue()
             def _recheck_lane(_cid,_items):
-                for _source_cid,_row,_first,_target in _items:
+                for _source_cid,_row,_first,_target,_attempt in _items:
                     if self._stop.is_set():break
-                    _retry_row=dict(_row)
-                    _retry_purpose='metadata'
-                    if self.purpose=='monitor' and _row.get('monitor_posts') and not _first.get('posts_ok'):
-                        _retry_purpose='monitor';_retry_row['monitor_growth']=False;_retry_row['monitor_posts']=True
-                    elif self.purpose=='monitor' and _row.get('monitor_growth') and not _first.get('growth_ok'):
-                        _retry_purpose='monitor';_retry_row['monitor_growth']=True;_retry_row['monitor_posts']=False
-                    _second={'page_id':_row['page_id'],'metadata_ok':False,'growth_ok':False,'posts_ok':False}
                     try:
-                        payload=self.bridge.request(_cid,_retry_row,_retry_purpose,self._stop,timeout=120,retry=True)
-                        _second=connector_record(_retry_row,payload,_retry_purpose)
+                        _was_no_window=_target in self._no_window_cids
+                        _merged=self._run_one_recheck(_source_cid,_row,_first,_target)
+                        self._rechecked_pids.add(str(_row['page_id']))
+                        if _target in self._no_window_cids and not _was_no_window:
+                            self.progress.emit(-1,total,f"{_browser_label(_target)}：这个 Chrome 账号里没有打开普通窗口，请先打开一个 Chrome 普通窗口再巡检。本轮已跳过它，任务已交还其他浏览器。")
                     except ConnectorError as exc:
-                        _second.update(error=str(exc),name_error=str(exc),posts_error=str(exc))
-                    _merged=merge_recheck_record(_first,_second,_row,self.purpose)
-                    _merged['recheck_connector_changed']=bool(_target!=_source_cid)
-                    _outq.put((_cid,_row,_merged,_target,_source_cid))
+                        if 'busy' in str(exc).lower():
+                            _outq.put((_cid,_row,_first,_target,_source_cid,_attempt,True));continue
+                        raise
+                    _outq.put((_cid,_row,_merged,_target,_source_cid,_attempt,False))
             _lanes=[]
             for _cid,_items in _by_target.items():
                 _t=threading.Thread(target=_recheck_lane,args=(_cid,_items),name='POM-recheck-'+_cid[:8],daemon=True)
                 _lanes.append(_t);_t.start()
             _need=sum(len(_v) for _v in _by_target.values());_got=0
             while _got<_need and not self._stop.is_set():
-                try:_cid,_row,_merged,_target,_source_cid=_outq.get(timeout=.25)
+                try:_cid,_row,_item,_target,_source_cid,_attempt,_busy=_outq.get(timeout=.25)
                 except queue.Empty:
                     if not any(_t.is_alive() for _t in _lanes):break
                     continue
                 _got+=1
-                self.progress.emit(finalized+1,total,f'自动复检第 {_attempt} 遍 '+display_name(_row)+(' · 换浏览器' if _target!=_source_cid else ' · 当前浏览器'))
-                if record_needs_recheck(_row,_merged,self.purpose) and _attempt<RECHECK_MAX_PASSES:
-                    _still.append((_cid,_row,_merged));continue
-                _good=self._record_good(_row,_merged);_merged['ok']=_good;_merged['purpose']=self.purpose
-                self.result.emit(_merged);finalized+=1
+                if _busy:
+                    _still.append((_source_cid,_row,_item,_attempt));continue
+                self.progress.emit(finalized+1,total,f'自动复检第 {_attempt+1} 遍 '+display_name(_row)+(' · 换浏览器' if _target!=_source_cid else ' · 当前浏览器'))
+                if record_needs_recheck(_row,_item,self.purpose) and _attempt+1<RECHECK_MAX_PASSES:
+                    _still.append((_source_cid,_row,_item,_attempt+1));continue
+                _good=self._record_good(_row,_item);_item['ok']=_good;_item['purpose']=self.purpose
+                self.result.emit(_item);finalized+=1
                 if _good:success+=1
                 else:failure+=1
             for _t in _lanes:_t.join(timeout=1)
             if self._stop.is_set():break
             _pending=_still
         if not self._stop.is_set():
-            for source_cid,row,first in _pending:
+            for source_cid,row,first,attempt in _pending:
                 good=self._record_good(row,first);first['ok']=good;first['purpose']=self.purpose
                 self.result.emit(first);finalized+=1
                 if good:success+=1
                 else:failure+=1
-
         aborted=self._stop.is_set() and finalized<total
         if finalized<total and not aborted:
             active=self._live_online()
+            _nw=f' · {len(self._no_window_cids)} 个浏览器没有打开普通窗口，请打开后再巡检' if self._no_window_cids else ''
             if not active:
-                self.finished.emit(False,f'连接器中断：所有已选择浏览器均已离线，当前轮次已停止 · 已处理 {finalized}/{total}');return
-            self.finished.emit(False,f'浏览器连接异常，本轮未完成 · 已处理 {finalized}/{total}');return
+                self.finished.emit(False,f'连接器中断：所有已选择浏览器均已离线，当前轮次已停止 · 已处理 {finalized}/{total}'+_nw);return
+            self.finished.emit(False,f'浏览器连接异常，本轮未完成 · 已处理 {finalized}/{total}'+_nw);return
         task='资料同步' if self.purpose=='metadata' else '主页巡检'
         extra=f' · {len(offline)} 个浏览器中途离线' if offline else ''
-        if rechecks:extra+=f' · 自动复检 {len(rechecks)} 个主页（最多 {RECHECK_MAX_PASSES} 遍）'
+        if self._rechecked_pids:extra+=f' · 自动复检 {len(self._rechecked_pids)} 个主页（最多 {RECHECK_MAX_PASSES} 遍）'
         self.finished.emit(not aborted and failure==0 and finalized==total,
             f"{task}{'已停止' if aborted else '完成'} · 完整成功 {success} / 部分或失败 {failure} / 共 {total} · 使用 {len(getattr(self,'_spawned_ids',self.instance_ids))} 个浏览器{extra}")
 
@@ -7446,6 +7779,78 @@ def connector_notice_colors(theme_name):
     if preset.get("light", True):
         return "#FDF3E3", preset.get("amber", "#B45309")
     return "#33291A", preset.get("amber", "#E5B567")
+
+
+class NewBrowserApprovalDialog(QDialog):
+    """New-browser approval (rev123): in-app modal, like the update
+    dialog -- frameless (nothing to drag), fixed size, modal, with
+    the same dim overlay behind it, so it can no longer pop up as
+    a free system window. choice: "allow" / "block" / None (later,
+    closed with X, or Esc).
+    """
+    def __init__(self, parent, detail):
+        super().__init__(parent)
+        self.setObjectName("NewBrowserApprovalDialog")
+        self.setWindowTitle("新浏览器连接确认")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setModal(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("QDialog#NewBrowserApprovalDialog{background:%s;border:1px solid %s;border-radius:8px;} QPushButton#CloseX{background:#DC2626;border:0;border-radius:14px;color:#FFFFFF;font-size:20px;font-weight:700;padding:0;} QPushButton#CloseX:hover{background:#B91C1C;}" % (PANEL, BORDER))
+        self.setFixedSize(520, 380)
+        self.choice = None
+        self._dim_overlay = None
+        _parent = self.parentWidget()
+        if _parent is not None:
+            self._dim_overlay = _CloseDimOverlay(_parent)
+        root = QVBoxLayout(self); root.setContentsMargins(24, 20, 24, 20); root.setSpacing(12)
+        head_row = QHBoxLayout(); head_row.setSpacing(8)
+        heading = QLabel("新浏览器连接确认"); heading.setObjectName("PageTitle"); head_row.addWidget(heading)
+        head_row.addStretch()
+        _xbtn = QPushButton("×"); _xbtn.setObjectName("CloseX"); _xbtn.setFixedSize(28, 28)
+        _xbtn.setCursor(Qt.CursorShape.PointingHandCursor); _xbtn.clicked.connect(self._later); head_row.addWidget(_xbtn, 0, Qt.AlignmentFlag.AlignTop)
+        root.addLayout(head_row)
+        q = QLabel("检测到一个从未连接过的新浏览器，是否允许它连接本软件？")
+        q.setWordWrap(True); root.addWidget(q)
+        det = QLabel(str(detail)); det.setObjectName("SmallMuted"); det.setWordWrap(True)
+        det.setTextFormat(Qt.TextFormat.PlainText); root.addWidget(det)
+        note = QLabel("只确认一次。已连接过的浏览器不会再次询问。停用后该浏览器不会再自动注册。")
+        note.setWordWrap(True); note.setObjectName("SmallMuted"); root.addWidget(note)
+        root.addStretch(1)
+        row = QHBoxLayout(); row.addStretch()
+        later = QPushButton("稍后决定"); later.clicked.connect(self._later); row.addWidget(later)
+        block = QPushButton("停用此浏览器"); block.clicked.connect(self._block); row.addWidget(block)
+        allow = QPushButton("允许连接"); allow.setObjectName("PrimaryButton"); allow.clicked.connect(self._allow); allow.setDefault(True); row.addWidget(allow)
+        root.addLayout(row)
+    def _allow(self):
+        self.choice = "allow"; self.accept()
+    def _block(self):
+        self.choice = "block"; self.accept()
+    def _later(self):
+        self.choice = None; self.reject()
+    def showEvent(self, event):
+        # rev123: centre on the main window explicitly; a frameless
+        # dialog is not centred by every window manager (and the
+        # offscreen platform does not centre it at all), so do not
+        # leave the placement to chance.
+        _p = self.parentWidget()
+        if _p is not None:
+            _c = _p.frameGeometry().center()
+            self.move(_c.x() - self.width() // 2, _c.y() - self.height() // 2)
+        if self._dim_overlay is not None:
+            self._dim_overlay.show(); self.raise_()
+        super().showEvent(event)
+    def hideEvent(self, event):
+        if self._dim_overlay is not None:
+            self._dim_overlay.hide()
+        super().hideEvent(event)
+    def closeEvent(self, event):
+        if self._dim_overlay is not None:
+            self._dim_overlay.hide()
+        super().closeEvent(event)
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self._later(); return
+        super().keyPressEvent(event)
 
 
 class BrowserConnectionsDialog(QDialog):
@@ -8468,12 +8873,18 @@ class FlowLayout(QLayout):
 
 
 class ChipRow(QWidget):
-    """Container whose height follows the wrapped FlowLayout."""
+    """单行横排的筛选胶囊容器，永不换行。
+
+    rev119：工具栏再窄也只许搜索框先缩到最小值（刚好放下
+    “搜索名称”四个字，见 dashboard_search_min_width），绝不许
+    胶囊换到第二行。以后胶囊变多、最小窗口下还是放不下时的牺
+    牲顺序（现在只留顺序，不做）：1. 搜索框缩到最小值；
+    2. 缩短排序框文案；3. 胶囊横向滚动。
+    """
     def __init__(self,parent=None):
-        super().__init__(parent);self.setLayout(FlowLayout(self))
-        policy=self.sizePolicy();policy.setHeightForWidth(True);self.setSizePolicy(policy)
-    def heightForWidth(self,width):return self.layout().heightForWidth(width)
-    def sizeHint(self):return self.layout().sizeHint()
+        super().__init__(parent)
+        lay=QHBoxLayout(self);lay.setContentsMargins(0,0,0,0);lay.setSpacing(8)
+        self.setSizePolicy(QSizePolicy.Policy.Minimum,QSizePolicy.Policy.Fixed)
 
 
 class MetricXmasDeco(QWidget):
@@ -8783,9 +9194,16 @@ def _zh_connector_error(text):
 
 
 def _display_connector_error(text):
-    """Card display: Chinese when the error is known, original otherwise."""
-    _zh = _zh_connector_error(text)
-    return _zh if _zh is not None else str(text or "")
+    """Card display: Chinese when the error is known, original otherwise.
+    rev121: keep any detail the connector appended after the known English
+    phrase (e.g. the real window counts), so the diagnosis line shows it
+    instead of dropping it with the translation."""
+    _s = str(text or "")
+    for _en, _zh in _CONNECTOR_ERROR_ZH.items():
+        if _en in _s:
+            _rest = _s.split(_en, 1)[1].strip(" :;[]\uff0c\u3001")
+            return _zh + ("\uff08" + _rest + "\uff09" if _rest else "")
+    return _s
 
 
 def _page_card_diag_text(row):
@@ -9119,8 +9537,9 @@ def today_growth_over_threshold(row, threshold, today_delta=None):
     """Whether today's accumulated growth reached the threshold.
 
     THE definition of fan-growth over-standard for display classification:
-    today's growth (the card's 今日新增: latest reading minus today's
-    baseline) reaching the threshold counts. A single-interval jump does
+    today's growth (the card's 今日新增: last reading today minus last
+    reading yesterday, the same number the trend page shows for today)
+    reaching the threshold counts. A single-interval jump does
     NOT count on its own: one jump of 50 is not required, and one jump
     of 50 with only 40 of net growth today does not count either.
     An unread growth alert from today also counts (via is_growth_alert
@@ -9128,9 +9547,8 @@ def today_growth_over_threshold(row, threshold, today_delta=None):
     Abbreviated readings (Facebook shows 1.2\u4e07 / 12K style counts) count
     here: the numbers on screen are the evidence, and cards already
     annotate them as approx. The age of the reading does NOT exclude it:
-    today_delta only exists when today_change anchors the reading to
-    today's baseline (baseline_date is today and the latest reading is
-    newer than the baseline), so a same-day reading always describes
+    today_delta only exists when the page has a reading both today and
+    yesterday (see _day_growth), so a same-day reading always describes
     today's growth, however many hours old it is. A page whose last
     reading is old still shows its 今日新增 on the card, and the
     category must match the number on the card. Freshness still gates
@@ -9816,6 +10234,27 @@ class OnboardingTour(QObject):
 
 
 
+def dashboard_search_min_width(line_edit):
+    """主界面搜索框的最小宽：刚好放下“搜索名称”四个字。
+
+    rev119：从当前字体和样式实测，不写死数字——四个字宽 +
+    样式内容区左右边距 + 清除按钮宽 + 光标宽。离屏实测：宽 100
+    时第一个字被滚出框外，104 刚好放下，公式算出来是 105
+    （留 1px 余量）。工具栏再窄，搜索框也只缩到这个宽为止；
+    再窄就按 ChipRow 注释里的牺牲顺序办，胶囊绝不换行。
+    """
+    fm=line_edit.fontMetrics()
+    text_w=fm.horizontalAdvance("搜索名称")
+    opt=QStyleOptionFrame();opt.initFrom(line_edit);opt.rect=line_edit.rect()
+    contents=line_edit.style().subElementRect(QStyle.SubElement.SE_LineEditContents,opt,line_edit)
+    left=contents.x()
+    right=line_edit.width()-contents.right()-1 if line_edit.width()>0 else left
+    clear=line_edit.findChild(QToolButton)
+    clear_w=clear.sizeHint().width() if clear is not None else 24
+    cursor_w=line_edit.cursorRect().width() or 1
+    return text_w+left+right+clear_w+cursor_w
+
+
 class DashboardPage(QWidget):
     collect_once=pyqtSignal()
     collect_subset_requested=pyqtSignal(str)
@@ -9862,12 +10301,12 @@ class DashboardPage(QWidget):
         self.once_btn.setIconSize(QSize(_dpi_px(16,scale),_dpi_px(16,scale)))
         self._grace_cancel_btn.setFixedSize(_dpi_px(72,scale),_dpi_px(40,scale))
         self.auto_btn.setFixedSize(_dpi_px(140,scale),_dpi_px(40,scale))
-        self.search.setMinimumWidth(_dpi_px(280,scale));self.search.setMaximumWidth(_dpi_px(360,scale));self.search.setFixedHeight(_dpi_px(36,scale))
+        self.search.setMinimumWidth(_dpi_px(dashboard_search_min_width(self.search),scale));self.search.setMaximumWidth(_dpi_px(260,scale));self.search.setFixedHeight(_dpi_px(36,scale))
         self.sort_box.setFixedWidth(_dpi_px(140,scale))
         for _mode,_chip in self._filter_chips.items():
             _chip.setFixedHeight(_dpi_px(30,scale))
             if _mode in ("needs","post_overdue","growth_alert"):
-                _chip.setMinimumWidth(_chip.sizeHint().width()+20)
+                _chip.setMinimumWidth(_chip.sizeHint().width()+10)
         for _m in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_today):
             _m.set_card_height(self._metric_card_base_height())
         self.scroll.setMinimumHeight(_dpi_px(230,scale))
@@ -9912,23 +10351,28 @@ class DashboardPage(QWidget):
         root.addLayout(metrics)
         toolbar=QHBoxLayout();toolbar.setSpacing(8)
         self.search=MultiIdSearchLineEdit();self.search.setPlaceholderText("搜索名称 / 专业 ID（可粘贴多行 ID）");self.search.setClearButtonEnabled(True)
-        self.search.setMinimumWidth(280);self.search.setMaximumWidth(360);self.search.setFixedHeight(36)
+        self.search.setMinimumWidth(dashboard_search_min_width(self.search));self.search.setMaximumWidth(260);self.search.setFixedHeight(36)
         self.search.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         self.search.textChanged.connect(lambda _:self._on_search_changed())
-        toolbar.addWidget(self.search,0,Qt.AlignmentFlag.AlignTop)
+        toolbar.addWidget(self.search,1,Qt.AlignmentFlag.AlignTop)
         self._chip_row=ChipRow()
         self._filter_chips={}
         for name,mode in (("全部","all"),("粉丝监控","growth"),("发帖监控","posts"),("发帖超时","post_overdue"),("粉丝增长超标","growth_alert"),("需处理","needs")):
             chip=BadgeButton(name) if mode in ("needs","post_overdue","growth_alert") else QPushButton(name)
             chip.setObjectName("FilterChip");chip.setFixedHeight(30)
-            if mode in ("needs","post_overdue","growth_alert"):chip.setMinimumWidth(chip.sizeHint().width()+20)
+            if mode in ("needs","post_overdue","growth_alert"):chip.setMinimumWidth(chip.sizeHint().width()+10)  # rev119: was +20, see patch note 4c
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
             chip.clicked.connect(lambda _=False,m=mode:self._set_filter_mode(m))
             chip.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             chip.customContextMenuRequested.connect(lambda pos,m=mode:self._on_chip_context_menu(m,pos))
             if mode=="growth_alert":chip.badge.setProperty("tone","good")
             self._chip_row.layout().addWidget(chip);self._filter_chips[mode]=chip
-        toolbar.addWidget(self._chip_row,1)
+        # rev122: trailing stretch eats leftover toolbar width, so the
+        # chips stay at content width; without it QHBoxLayout spreads
+        # the leftover (search caps at 260, sort box fixed 140) across
+        # the chips and they grow with the window (rev119 regression).
+        self._chip_row.layout().addStretch(1)
+        toolbar.addWidget(self._chip_row,0)
         self._sort_mode=str(self.settings.value("dashboard/sort","growth"))
         if self._sort_mode not in ("growth","post","name"):self._sort_mode="growth"
         self.sort_box=MenuButton((("增长预警优先","growth"),("发帖超时优先","post"),("名称排序","name")),self._sort_mode)
@@ -10148,9 +10592,6 @@ class DashboardPage(QWidget):
         _day_start=datetime.fromtimestamp(now).astimezone().replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
         unread_pages=self.store.unread_alert_page_ids(_day_start)
         _threshold=_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)
-        today_sum=0;covered=0;partial=0;yesterday_sum=0;yesterday_covered=0;yesterday_partial=0
-        growth_rows=[r for r in rows if r["monitor_growth"]]
-        post_rows=[r for r in rows if r["monitor_posts"]]
         states=self.store.follower_states()
         for row in rows:
             row["post_view"]=post_view(row,now,interval)
@@ -10158,12 +10599,6 @@ class DashboardPage(QWidget):
                 _st=states.get(row["page_id"])
                 row["today"]=self.store._today_from_state(_st,now,interval)
                 row["yesterday"]=self.store._yesterday_from_state_with_history(_st,now)
-                if row["today"]["delta"] is not None:
-                    today_sum+=row["today"]["delta"];covered+=1
-                    partial+=int(row["today"]["partial"])
-                if row["yesterday"]["delta"] is not None:
-                    yesterday_sum+=row["yesterday"]["delta"];yesterday_covered+=1
-                    yesterday_partial+=int(row["yesterday"]["partial"])
             # Growth category is state-based, not unread-only: an alert row
             # is created on every over-threshold collection (should_alert
             # still applies its elapsed/approx guards), and it stops
@@ -10178,22 +10613,15 @@ class DashboardPage(QWidget):
             row["growth_threshold"]=_threshold
             _gf,_of,_nf=dashboard_row_flags(row,posts_on)
             row["cat_growth"]=_gf;row["is_post_overdue"]=_of;row["needs_attention"]=_nf
-        total=sum(r["last_followers"] for r in growth_rows if r["last_followers"] is not None)
-        sampled=sum(r["last_followers"] is not None for r in growth_rows)
         overdue=sum(r["post_view"]["state"]=="overdue" for r in rows)
         unverified=sum(r["post_view"]["state"] in ("unknown","unverified") for r in rows)
         g,p=self.store.unread_totals()
         unavailable=sum(1 for r in rows if r.get("diagnosis_code")=="page_unavailable")
-        failed=sum(1 for r in rows if r.get("diagnosis_code")!="page_unavailable" and (r.get("status") in ("采集失败","部分成功") or r.get("growth_error") or (posts_on and r.get("post_error"))))
-        self.metric_pages.set_values(len(rows),(f"粉丝 {len(growth_rows)} · 发帖 {len(post_rows)}" if posts_on else f"仅粉丝监控 {len(growth_rows)}")+(f" · 失败 {failed}" if failed else ""))
-        self.metric_total.set_values(format_count(total) if sampled else "—",f"有粉丝记录 {sampled} / {len(growth_rows)}")
-        self.metric_yesterday.set_values(format_delta(yesterday_sum) if yesterday_covered else "—",
-            ((f"可比较 {yesterday_covered} 个"+(f" · {yesterday_partial} 个为部分日" if yesterday_partial else "")) if yesterday_covered else "暂无可比较记录"))
-        self.metric_today.set_values(format_delta(today_sum) if covered else "—",
-            ((f"可比较 {covered} 个"+(f" · {partial} 个为部分日" if partial else "")) if covered else "今日暂无可比较记录"))
+        # rev125: the four top metrics moved below, after filtered is
+        # built and sorted, so they describe the cards actually shown.
+        # The red badge stays global (alert, not a total).
         self.metric_today.set_badge(unavailable)
         self._unavailable_count=unavailable
-        for _m in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_today):_m.refresh_xmas_deco()
         _needs_count=sum(1 for r in rows if r.get("needs_attention"))
         _growth_count=sum(1 for r in rows if r.get("cat_growth"))
         _overdue_count=sum(1 for r in rows if r.get("is_post_overdue"))
@@ -10230,6 +10658,34 @@ class DashboardPage(QWidget):
             filtered.sort(key=lambda r:(0 if r.get("is_post_overdue") else 1,0 if r.get("cat_growth") else 1,float(r.get("last_post_ts") or 0),int(r.get("sort_order") or 0),str(r["page_id"])))
         else:
             filtered.sort(key=lambda r:(int(r.get("sort_order") or 0),str(r["page_id"])))
+        # rev125: the four top metrics describe the cards actually
+        # shown, so they follow the current filter (and the search
+        # box). With no filter active filtered == rows, so the values
+        # are exactly the old all-pages totals. The chip counts and
+        # the red unavailable badge above stay global: chips are
+        # navigation, the badge is an alert, neither is a total.
+        # An empty filter shows "—" on the value cards, as with no
+        # data at all.
+        _f_growth_rows=[r for r in filtered if r["monitor_growth"]]
+        _f_post_rows=[r for r in filtered if r["monitor_posts"]]
+        _f_total=sum(r["last_followers"] for r in _f_growth_rows if r["last_followers"] is not None)
+        _f_sampled=sum(r["last_followers"] is not None for r in _f_growth_rows)
+        _f_failed=sum(1 for r in filtered if r.get("diagnosis_code")!="page_unavailable" and (r.get("status") in ("采集失败","部分成功") or r.get("growth_error") or (posts_on and r.get("post_error"))))
+        _f_today_sum=0;_f_covered=0;_f_partial=0;_f_yesterday_sum=0;_f_yesterday_covered=0;_f_yesterday_partial=0
+        for _r in _f_growth_rows:
+            _t=_r.get("today") or {}
+            if _t.get("delta") is not None:
+                _f_today_sum+=_t["delta"];_f_covered+=1;_f_partial+=int(_t.get("partial") or 0)
+            _y=_r.get("yesterday") or {}
+            if _y.get("delta") is not None:
+                _f_yesterday_sum+=_y["delta"];_f_yesterday_covered+=1;_f_yesterday_partial+=int(_y.get("partial") or 0)
+        self.metric_pages.set_values(len(filtered),(f"粉丝 {len(_f_growth_rows)} · 发帖 {len(_f_post_rows)}" if posts_on else f"仅粉丝监控 {len(_f_growth_rows)}")+(f" · 失败 {_f_failed}" if _f_failed else ""))
+        self.metric_total.set_values(format_count(_f_total) if _f_sampled else "—",f"有粉丝记录 {_f_sampled} / {len(_f_growth_rows)}")
+        self.metric_yesterday.set_values(format_delta(_f_yesterday_sum) if _f_yesterday_covered else "—",
+            ((f"可比较 {_f_yesterday_covered} 个"+(f" · {_f_yesterday_partial} 个为部分日" if _f_yesterday_partial else "")) if _f_yesterday_covered else "暂无可比较记录"))
+        self.metric_today.set_values(format_delta(_f_today_sum) if _f_covered else "—",
+            ((f"可比较 {_f_covered} 个"+(f" · {_f_partial} 个为部分日" if _f_partial else "")) if _f_covered else "今日暂无可比较记录"))
+        for _m in (self.metric_pages,self.metric_total,self.metric_yesterday,self.metric_today):_m.refresh_xmas_deco()
         cards=[]
         for r in filtered:
             _pid=str(r["page_id"]);_card=self._card_cache.get(_pid)
@@ -11670,6 +12126,8 @@ class SettingsPage(QWidget):
         self.gap_min=DirectNumberSpinBox();self.gap_min.setRange(0,120);self.gap_min.setFixedWidth(70)
         self.gap_max=DirectNumberSpinBox();self.gap_max.setRange(0,120);self.gap_max.setFixedWidth(70)
         _block(_labeled("主页间隔（秒）",[self.gap_min,QLabel("–"),self.gap_max]),"同一轮里，每两个主页之间隔几秒再读。")
+        self.tabs_per_browser=DirectNumberSpinBox();self.tabs_per_browser.setRange(1,5);self.tabs_per_browser.setFixedWidth(70)
+        _block(_labeled("同时巡检标签页数",[self.tabs_per_browser]),"每个浏览器同时开几个脸书标签页采，默认 3 个，最多 5 个，改完下一轮生效。")
         _div=QFrame();_div.setFrameShape(QFrame.Shape.HLine);_div.setObjectName("HeaderDivider");cl.addWidget(_div)
         _gt=QLabel("粉丝增长");_gt.setObjectName("SettingsTitle");cl.addWidget(_gt)
         _tr=QHBoxLayout();_tr.setSpacing(8)
@@ -11723,7 +12181,7 @@ class SettingsPage(QWidget):
     def load_settings(self):
         minutes,j0,j1,g0,g1=random_inspection_timing(self.settings)
         pairs=((self.interval,minutes),(self.jitter_min,j0),(self.jitter_max,j1),(self.gap_min,g0),(self.gap_max,g1),
-               (self.threshold,_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)))
+               (self.threshold,_bounded_int(self.settings.value("alert_threshold",500),500,1,100_000_000)),(self.tabs_per_browser,patrol_tabs_per_browser(self.settings)))
         for widget,value in pairs:
             widget.blockSignals(True);widget.setValue(value);widget.blockSignals(False)
         for widget,key,default in ((self.alert_enabled,"alert_enabled",True),(self.notify_post_overdue,"notify_post_overdue",True),
@@ -11759,6 +12217,7 @@ class SettingsPage(QWidget):
             "notify_post_overdue":int(self.notify_post_overdue.isChecked()),
             "fireworks_enabled":int(self.fireworks_enabled.isChecked()),"progress_style":getattr(self,"_progress_style","fill"),"card_layout":getattr(self,"_card_layout","oneline"),
             "alert_threshold":self.threshold.value(),
+            "patrol_tabs_per_browser":self.tabs_per_browser.value(),
             "auto_check_updates":int(self.auto_update.isChecked()),"dev_mode":int(self.dev_mode.isChecked()),
             MODULE_GROWTH_KEY:int(self.module_growth_switch.isChecked()),MODULE_POSTS_KEY:int(self.module_posts_switch.isChecked()),
         }
@@ -11817,7 +12276,19 @@ class UpdateDialog(QDialog):
     cancel_requested=pyqtSignal()
     def __init__(self,info,parent=None):
         super().__init__(parent);self.info=info;self.ready_path=""
-        self.setWindowTitle("发现新版本 · "+APP_TITLE);self.resize(630,530)
+        self.setWindowTitle("发现新版本 · "+APP_TITLE)
+        # rev117: fixed in place like BrowserConnectionsDialog -- frameless
+        # (no title-bar drag), modal, fixed size; the dim overlay behind
+        # it is shown/hidden with the dialog (showEvent/hideEvent below).
+        self.setObjectName("UpdateDialog")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setModal(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("QDialog#UpdateDialog{background:%s;border:1px solid %s;border-radius:8px;} QPushButton#CloseX{background:#DC2626;border:0;border-radius:14px;color:#FFFFFF;font-size:20px;font-weight:700;padding:0;} QPushButton#CloseX:hover{background:#B91C1C;}" % (PANEL, BORDER))
+        self.setFixedSize(630,530)
+        self._downloading=False;self._dim_overlay=None
+        _parent=self.parentWidget()
+        if _parent is not None:self._dim_overlay=_CloseDimOverlay(_parent)
         root=QVBoxLayout(self);root.setContentsMargins(24,22,24,20);root.setSpacing(13)
         head_row=QHBoxLayout();head_row.setSpacing(13)
         head_row.addWidget(BrandMark(40))
@@ -11827,16 +12298,17 @@ class UpdateDialog(QDialog):
         pill=QLabel("V"+str(info.get("version","")));pill.setObjectName("UpdatePill");heading_row.addWidget(pill);heading_row.addStretch()
         head_text.addLayout(heading_row)
         repo=QLabel("当前 V"+APP_VERSION+"   →   V"+str(info.get("version","")));repo.setObjectName("SmallMuted");head_text.addWidget(repo)
-        head_row.addLayout(head_text,1);root.addLayout(head_row)
+        head_row.addLayout(head_text,1)
+        _xbtn=QPushButton("×");_xbtn.setObjectName("CloseX");_xbtn.setFixedSize(28,28);_xbtn.setCursor(Qt.CursorShape.PointingHandCursor);_xbtn.clicked.connect(self._later);head_row.addWidget(_xbtn,0,Qt.AlignmentFlag.AlignTop)
+        root.addLayout(head_row)
         title=QLabel(str(info.get("title") or "版本更新"));title.setTextFormat(Qt.TextFormat.PlainText);title.setWordWrap(True);root.addWidget(title)
         self.notes=QPlainTextEdit();self.notes.setReadOnly(True);self.notes.setPlainText(str(info.get("notes") or "暂无更新日志"))
         root.addWidget(self.notes,1)
         self.status=QLabel();self.status.setTextFormat(Qt.TextFormat.PlainText);self.status.setWordWrap(True);self.status.setObjectName("SmallMuted");root.addWidget(self.status)
         self.progress=QProgressBar();self.progress.setRange(0,100);self.progress.setValue(0);self.progress.hide();root.addWidget(self.progress)
         row=QHBoxLayout();row.addStretch()
-        self.cancel_btn=QPushButton();self.cancel_btn.hide()
         self.later=QPushButton("以后再说");self.later.clicked.connect(self._later);row.addWidget(self.later)
-        self.action=QPushButton("升级");self.action.setObjectName("PrimaryButton");self.action.clicked.connect(self._action);row.addWidget(self.action)
+        self.action=QPushButton("立即升级");self.action.setObjectName("PrimaryButton");self.action.clicked.connect(self._action);row.addWidget(self.action)
         root.addLayout(row)
         asset=info.get("asset")
         if not asset:
@@ -11844,26 +12316,44 @@ class UpdateDialog(QDialog):
         elif not asset.get("sha256"):
             self.action.setEnabled(False);self.status.setText("发布包缺少 SHA-256，自动下载暂不可用，请发布者完善 Release 资产校验信息。")
         else:
-            self.status.setText("下载将在后台进行；不会在下载后未经确认就退出或安装。"+
-                ("\n当前为源码运行方式：下载的新文件不会自动覆盖正在执行的 Python 文件。" if asset.get("source_mode") else ""))
+            # rev117: the old note claimed the download would never quit or
+            # install without another confirmation, but with auto-install on
+            # (the default) the silent-install path does exactly that, so
+            # the note is deleted; only the source-mode line survives.
+            self.status.setText("当前为源码运行方式：下载的新文件不会自动覆盖正在执行的 Python 文件。" if asset.get("source_mode") else "")
     def _action(self):
-        if self.ready_path:self.install_requested.emit()
+        if self._downloading:
+            # rev117: the button reads 取消下载 while downloading.
+            self.cancel_requested.emit();self.action.setText("正在取消…");self.action.setEnabled(False)
+        elif self.ready_path:self.install_requested.emit()
         else:self.download_requested.emit()
     def _later(self):
         self.later_requested.emit();self.hide()
     def downloading(self):
-        self.action.setEnabled(False);self.progress.show()
+        self._downloading=True;self.action.setText("取消下载");self.action.setEnabled(True);self.progress.show()
         self.status.setText("正在后台下载。可以选择“以后再说”关闭窗口，下载会继续。")
     def set_progress(self,done,total):
         self.progress.setValue(int(100*int(done)/max(1,int(total))))
         self.status.setText(f"已下载 {int(done)/1048576:.1f} / {int(total)/1048576:.1f} MB，完成后校验 SHA-256。")
     def ready(self,path):
-        self.ready_path=str(path);self.progress.show();self.progress.setValue(100);self.action.setEnabled(True)
+        self._downloading=False;self.ready_path=str(path);self.progress.show();self.progress.setValue(100);self.action.setEnabled(True)
         allowed,reason=signed_install_available(self.info.get("asset") or {})
         self.action.setText("现在更新" if allowed else "打开下载目录")
         self.status.setText("下载和完整性校验完成。\n"+("下载完成，是否现在更新？点击“现在更新”会安全结束巡检并重启；也可以选择“以后再说”。" if allowed else reason))
     def error(self,text):
-        self.status.setText(str(text));self.action.setEnabled(bool((self.info.get("asset") or {}).get("sha256")))
+        self._downloading=False;self.status.setText(str(text));self.action.setText("立即升级");self.action.setEnabled(bool((self.info.get("asset") or {}).get("sha256")));self.progress.hide()
+    def showEvent(self,event):
+        if self._dim_overlay is not None:self._dim_overlay.show();self.raise_()
+        super().showEvent(event)
+    def hideEvent(self,event):
+        if self._dim_overlay is not None:self._dim_overlay.hide()
+        super().hideEvent(event)
+    def closeEvent(self,event):
+        if self._dim_overlay is not None:self._dim_overlay.hide()
+        super().closeEvent(event)
+    def keyPressEvent(self,event):
+        if event.key()==Qt.Key.Key_Escape:self._later();return
+        super().keyPressEvent(event)
 
 
 class WindowResizeHandle(QWidget):
@@ -12749,7 +13239,7 @@ class UpdateLogPanel(QWidget):
         close_btn.setObjectName("UpdateLogClose")
         close_btn.setFixedSize(32, 32)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.clicked.connect(self.hide)
+        close_btn.clicked.connect(self._close)
         head_lay.addWidget(close_btn)
         root.addWidget(head)
         div = QFrame(); div.setFrameShape(QFrame.Shape.HLine); div.setObjectName("HeaderDivider")
@@ -12823,6 +13313,16 @@ class UpdateLogPanel(QWidget):
         bl.addStretch(1)
         scroll.setWidget(body)
         root.addWidget(scroll, 1)
+
+    def _close(self):
+        # rev123: closing the log must also take the dim down;
+        # hiding the panel alone would leave the left side greyed
+        # and unclickable until the next show/hide cycle.
+        _p = self.parentWidget()
+        if _p is not None and hasattr(_p, "hide_update_log"):
+            _p.hide_update_log()
+        else:
+            self.hide()
 
     def show_log(self, just_updated=False):
         self._note_box.setVisible(bool(just_updated))
@@ -13308,6 +13808,7 @@ class MainWindow(QMainWindow):
         self._closing=False;self._maintenance=False;self._tray_hint_shown=False;self._exit_after_round=False
         self.auto_enabled=False;self.next_run_at=None;self.active_run_id=None
         self.run_started_at=None;self.run_ok=0;self.run_fail=0;self.current_purpose="monitor"
+        self._round_manual=True;self._round_alert_count=0
         self._tick=0;self._popup=None;self._notice_queue=[];self._toast=None;self._diag_window=None;self._fireworks_overlay=None;self._snowfall_overlay=None;self._growth_alert_seen=None;self._fireworks_pending=0;self._fireworks_queue=0
         self._grace_timer=QTimer(self);self._grace_timer.setInterval(1000);self._grace_timer.timeout.connect(self._on_grace_tick);self._grace_remaining=0
         self._badge_show_next=False
@@ -13321,6 +13822,13 @@ class MainWindow(QMainWindow):
             # rev92 一次性迁移：更新完默认用圣诞主题；只跑一次，之后
             # 用户手动换主题不再干预；明年新版本改回云白时再清这个标记。
             self.settings.setValue("ui_theme","圣诞");self.settings.setValue("theme/xmas2026_migrated",1);self.settings.sync()
+        if not is_true(self.settings.value("theme/xmas2026_migrated_174",0)):
+            # rev117：1.7.4 发布版再强制切一次圣诞。rev92 的旧标记
+            # 早被测试版消耗掉了（测试版和安装版共用同一份设置），
+            # 1.7.4 安装版启动时旧标记已是 1，直接跳过迁移，主题
+            # 就没切过去。只跑一次，之后用户手动换主题不再干预；
+            # 明年新版本改回云白时再清这个标记。
+            self.settings.setValue("ui_theme","圣诞");self.settings.setValue("theme/xmas2026_migrated_174",1);self.settings.sync()
         # rev106 一次性迁回：rev105 分出去的头像搬回 avatars/，空文件夹
         # 删掉；只跑一次，失败跳过不打断启动。
         _migrate_avatar_cache_back_once(self.settings)
@@ -13412,11 +13920,22 @@ class MainWindow(QMainWindow):
         Settings and after an update)."""
         if getattr(self, "_update_log_panel", None) is None:
             return
+        # rev123: grey out everything behind the panel while it is
+        # open, so a click on the sidebar or a page cannot switch
+        # the page behind the still-open log. The panel itself is
+        # raised above the dim by show_log and stays clickable;
+        # closing the log takes the dim down again.
+        if getattr(self, "_update_log_dim", None) is None:
+            self._update_log_dim = _CloseDimOverlay(self)
+        self._update_log_dim.show()
         self._update_log_panel.show_log(just_updated=just_updated)
 
     def hide_update_log(self):
         if getattr(self, "_update_log_panel", None) is not None:
             self._update_log_panel.hide()
+        _dim = getattr(self, "_update_log_dim", None)
+        if _dim is not None:
+            _dim.hide(); _dim.deleteLater(); self._update_log_dim = None
 
     @staticmethod
     def _set_paths(path):
@@ -13566,7 +14085,7 @@ class MainWindow(QMainWindow):
             self.dashboard.next_run.setParent(self.statusbar);self.dashboard.next_run.hide()
         center_layout.addWidget(self.statusbar)
         shell.addWidget(center,1)
-        self._update_log_panel=UpdateLogPanel(self);self._update_log_panel.hide()
+        self._update_log_panel=UpdateLogPanel(self);self._update_log_panel.hide();self._update_log_dim=None
         self._root_layout.addLayout(shell,1)
         self.wire_signals();self.switch_page(0);self._update_window_shape()
 
@@ -14327,15 +14846,19 @@ class MainWindow(QMainWindow):
         ever start).
         """
         if not self.selected_connectors(require_all=False):
+            log_patrol_timing("进队列失败：没有在线连接器")
             show_hint(self,"连接器未连接。",kind="warning");return
         queued={pid for pid,_ in self._patrol_queue}
         running={pid for pid,_ in self._patrol_running}
         fresh=[p for p in pages if str(p["page_id"]) not in queued and str(p["page_id"]) not in running]
         if not fresh:
+            log_patrol_timing("不重复加：这些主页已在队列或正在跑")
             show_hint(self,"已在巡检队列中。",kind="info");return
         for p in fresh:self._patrol_queue.append((str(p["page_id"]),display_name(p)))
+        log_patrol_timing("新加 %d 个主页进队列"%len(fresh))
         if self._maybe_start_queued_round():return
         if any(str(p["page_id"]) in {pid for pid,_ in self._patrol_queue} for p in fresh):
+            log_patrol_timing("已排队，等本轮跑完就巡检")
             show_hint(self,"已加入巡检队列，本轮跑完就巡检。",kind="info")
         # Otherwise the pages were dropped by _start_worker (for example no
         # module enabled); it already explained why in the status bar.
@@ -14354,17 +14877,20 @@ class MainWindow(QMainWindow):
         pages=[p for p in self.store.list_pages() if str(p["page_id"]) in chosen]
         if not pages:
             return False
-        self._start_worker(pages,"monitor")
+        self._start_worker(pages,"monitor",manual=True)
         return self.worker_thread is not None
 
     def start_collection(self,once=True):
         if self._closing or self._maintenance:return
         if getattr(self,"_grace_remaining",0)>0:self._clear_grace()
+        log_patrol_timing("开始巡检（手动点击）" if once else "开始巡检（自动触发）")
         if self.login_thread is not None:
+            log_patrol_timing("开始巡检被拦下：登录浏览器还开着")
             if once:show_hint(self,"请先关闭登录浏览器，再巡检。",kind="warning")
             elif self.auto_enabled:self.auto_timer.start(30000)
             return
         if self.worker_thread is not None:
+            log_patrol_timing("开始巡检：上一轮还在跑，先排队" if once else "开始巡检：上一轮还在跑，等它跑完")
             if once:
                 pages=self.store.list_pages(enabled_only=True)
                 if pages:self._enqueue_patrol(pages)
@@ -14372,10 +14898,11 @@ class MainWindow(QMainWindow):
         if self._maybe_start_queued_round():return
         pages=self.store.list_pages(enabled_only=True)
         if not pages:
+            log_patrol_timing("开始巡检被拦下：没有可巡检的主页")
             self.stop_auto()
             if once:show_hint(self,"请在 ID管理中添加 ID，并至少勾选一个监控模块。",kind="warning")
             return
-        self._start_worker(pages,"monitor")
+        self._start_worker(pages,"monitor",manual=once)
 
     def inspect_single_page(self,pid):
         if self.login_thread is not None or self._maintenance:
@@ -14410,7 +14937,7 @@ class MainWindow(QMainWindow):
         chosen=set(ids);pages=[p for p in self.store.list_pages() if p["page_id"] in chosen]
         if pages:self._start_worker(pages,"metadata")
 
-    def _start_worker(self,pages,purpose):
+    def _start_worker(self,pages,purpose,manual=True):
         try:self.settings_page.flush_pending()
         except (ValueError,OSError) as exc:
             QMessageBox.warning(self,"\u8bbe\u7f6e\u672a\u80fd\u4fdd\u5b58",str(exc));return
@@ -14418,10 +14945,12 @@ class MainWindow(QMainWindow):
             pages=apply_module_gating(pages,self.settings)
             pages=[p for p in pages if p.get("monitor_growth") or p.get("monitor_posts")]
             if not pages:
+                log_patrol_timing("开线程失败：监控模块未启用，没有可巡检的主页")
                 self.dashboard.status.setText("没有可巡检的主页：监控模块均未启用，请在设置 → 监控模块中至少开启一个")
                 return
         cids=self.selected_connectors(require_all=False)
         if not cids:
+            log_patrol_timing("开线程失败：没有在线连接器")
             self.dashboard.status.setText("浏览器连接未就绪，请打开已安装连接器的 Chrome")
             if self.auto_enabled:self.stop_auto()
             else:self.show_toast("未检测到在线浏览器连接器，请先打开已安装连接器的 Chrome",kind="warning")
@@ -14435,8 +14964,13 @@ class MainWindow(QMainWindow):
         self.auto_timer.stop();self.next_run_at=None;self.current_purpose=purpose
         self.active_run_id=uuid.uuid4().hex;self.store.start_run(self.active_run_id,len(pages))
         self.run_started_at=time.time();self.run_ok=0;self.run_fail=0
+        self._round_manual=manual;self._round_alert_count=0;self._no_window_toasted=False
+        self._patrol_t0=time.monotonic();self._patrol_first_result=False
+        _tabs=patrol_tabs_per_browser(self.settings);self.connector.max_jobs=_tabs
+        log_patrol_timing("开线程：%d 个连接器 · 每浏览器 %d 个标签页 · %d 个主页 · %s"%(len(cids),_tabs,len(pages),purpose))
         self.worker_thread=QThread(self);timing=random_inspection_timing(self.settings)
-        self.worker=ConnectorCollectWorker(pages,self.connector,cids,purpose=purpose,gap_range=timing[3:])
+        self.worker=ConnectorCollectWorker(pages,self.connector,cids,purpose=purpose,gap_range=timing[3:],slots=_tabs)
+        self.worker._timing_t0=self._patrol_t0
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.started.connect(self.worker.run)
         self.worker.result.connect(self.on_collect_result);self.worker.progress.connect(self.on_progress)
@@ -14444,16 +14978,31 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self.worker.deleteLater);self.worker.finished.connect(self.worker_thread.quit)
         self.worker_thread.finished.connect(self.cleanup_worker)
         self.dashboard.paused=False;self.dashboard.set_running(self.auto_enabled,True);self.page_manager.set_busy(True)
-        self.dashboard.status.setText(f"通过 {len(cids)} 个 Chrome 连接器并行开始任务 · {len(pages)} 个 ID")
+        self.dashboard.status.setText(f"通过 {len(cids)} 个 Chrome 连接器并行开始任务 · 每浏览器 {_tabs} 个标签页 · {len(pages)} 个 ID")
         if purpose=="monitor":
             self._patrol_running=[(str(p["page_id"]),display_name(p)) for p in pages]
         self.worker_thread.start()
 
     def on_progress(self,current,total,info):
+        # rev118: current < 0 means "a lane just started a page": show the
+        # text right away, but do not rewind the progress bar (it keeps the
+        # last completed count until the first result arrives).
+        if current<0:
+            self.dashboard.status.setText(str(info))
+            # rev120: a browser with no normal window is skipped for this
+            # round; tell the user once (per round) to open a window there.
+            if "这个 Chrome 账号里没有打开普通窗口" in str(info) and not getattr(self,"_no_window_toasted",False):
+                self._no_window_toasted=True
+                try:self.show_toast(str(info),kind="warning")
+                except Exception:pass
+            return
         self.dashboard.status.setText(f"{info}  ·  {current}/{total}")
         self.dashboard.set_patrol_progress(current,total)
 
     def on_collect_result(self,data):
+        if not getattr(self,"_patrol_first_result",False):
+            self._patrol_first_result=True
+            log_patrol_timing("第一个结果到界面：%s%s"%(str(data.get("page_id") or ""),_timing_suffix(getattr(self,"_patrol_t0",None))))
         options={key:self.settings.value(key,default) for key,default in
                  (("interval_minutes",DEFAULT_INTERVAL_MINUTES),("alert_threshold",500),("alert_enabled",1),("notify_post_overdue",1))}
         try:out=self.store.apply_collection(data,options,self.current_purpose)
@@ -14465,6 +15014,7 @@ class MainWindow(QMainWindow):
         else:self.run_fail+=1
         if out.get("error"):self.dashboard.status.setText(str(data.get("page_id"))+" · "+out["error"][:180])
         if out["alerts"]:
+            self._round_alert_count+=len(out["alerts"])
             self._notice_queue.extend(out["alerts"])
             if not self.notice_timer.isActive():self.notice_timer.start(500)
         self.schedule_refresh()
@@ -14472,6 +15022,10 @@ class MainWindow(QMainWindow):
     def flush_notices(self):
         queued=self._notice_queue;self._notice_queue=[]
         if not queued:return
+        if self._window_in_foreground():
+            # rev119：在前台看着：预警已进通知列表和侧栏角标，
+            # 不再弹系统通知打扰；队列已清空，记录不丢。
+            return
         fresh=self.store.combined_alerts(limit=300,unread_only=True);entries=[]
         pages=self.store.pages_map([r.get("page_id") for r in queued])
         for raw in queued:
@@ -14503,6 +15057,38 @@ class MainWindow(QMainWindow):
         if not _ok:
             log_exception("系统通知未发出："+str(_detail))
 
+    def _window_in_foreground(self):
+        """窗口是否正在前台被看着：可见、没最小化、是活动窗口。
+
+        rev119：被别的窗口盖住时 isActiveWindow() 为假，也算不在
+        前台。系统通知（预警 + 巡检完成）只在不在前台时才弹。
+        """
+        try:
+            return bool(self.isVisible()) and not bool(self.isMinimized()) and bool(self.isActiveWindow())
+        except Exception:
+            return True
+
+    def _notify_patrol_finished(self):
+        """本轮巡检结束且窗口不在前台时，发一条系统通知报结果。
+
+        rev119：标题区分手动 / 自动，正文写共多少个、成功失败
+        多少，有新增预警才写预警数；失败或中断的轮次也照实报。
+        发不出去只记日志，不弹备用弹窗（预警通知同款规矩）。
+        """
+        if self._window_in_foreground():
+            return
+        total=self.run_ok+self.run_fail
+        if total<=0:
+            return
+        title="手动巡检已完成" if getattr(self,"_round_manual",True) else "自动巡检已完成"
+        message="共%d个主页，成功%d个，失败%d个"%(total,self.run_ok,self.run_fail)
+        alerts=getattr(self,"_round_alert_count",0)
+        if alerts:
+            message+="；本轮新增预警%d条"%alerts
+        _ok,_detail=send_simple_system_toast(title,message,lambda:self.show_dashboard())
+        if not _ok:
+            log_exception("巡检完成通知未发出："+str(_detail))
+
     def on_collection_finished(self,ok,message):
         if self.active_run_id:
             state="completed" if ok and self.run_fail==0 else "partial" if self.run_ok else "failed"
@@ -14511,9 +15097,11 @@ class MainWindow(QMainWindow):
             stamp=now_iso();self.settings.setValue("last_inspection_at",stamp);self.settings.sync()
             self.dashboard._last_inspection_stamp=stamp
             self._refresh_run_badge()
+            self._notify_patrol_finished()
         if "连接器中断" in message and self.auto_enabled:
             self.stop_auto();self.dashboard.status.setText(message+" · 自动巡检已暂停，请恢复浏览器连接后重新开启")
         else:self.dashboard.status.setText(message)
+        log_patrol_timing("本轮结束：成功 %d / 失败 %d，用时 %.1f 秒"%(self.run_ok,self.run_fail,max(0.0,time.time()-getattr(self,"run_started_at",time.time()))))
         self.schedule_refresh()
 
     def cleanup_worker(self):
@@ -14541,6 +15129,7 @@ class MainWindow(QMainWindow):
         if self.auto_enabled:return
         cids=self.selected_connectors(require_all=False)
         if not cids:
+            log_patrol_timing("开启自动巡检失败：没有在线连接器")
             self.show_toast("未检测到在线浏览器连接器，请先打开已安装连接器的 Chrome",kind="warning")
             return
         try:self.settings_page.flush_pending()
@@ -14558,6 +15147,9 @@ class MainWindow(QMainWindow):
         # when it runs out, unless the user cancels it first.
         if not self.worker_thread:
             self._grace_remaining=5;self.dashboard.set_grace_countdown(5);self._grace_timer.start()
+            log_patrol_timing("自动巡检已开启：5 秒宽限后开始第一轮")
+        else:
+            log_patrol_timing("自动巡检已开启：上一轮还在跑，跑完后按间隔排下一轮")
         self.dashboard.set_running(True,self.worker_thread is not None)
 
     def stop_auto(self):
@@ -14577,13 +15169,15 @@ class MainWindow(QMainWindow):
         self._grace_remaining-=1
         if self._grace_remaining<=0:
             self._clear_grace()
-            if self.auto_enabled and not self.worker_thread:self.start_collection(False)
+            if self.auto_enabled and not self.worker_thread:
+                log_patrol_timing("5 秒宽限结束，开始第一轮");self.start_collection(False)
             return
         self.dashboard.set_grace_countdown(self._grace_remaining)
 
     def _on_grace_cancel(self):
         """User cancelled the immediate first round: wait for the scheduled time."""
         self._clear_grace()
+        log_patrol_timing("取消宽限，改按间隔等下一轮")
         if self.auto_enabled:self.schedule_next_round()
 
     def _on_badge_timer(self):
@@ -14678,20 +15272,14 @@ class MainWindow(QMainWindow):
                         "资料目录："+str(ident.get('profile_directory') or ''),
                         "扩展版本："+str(ident.get('extension_version') or ''),
                     ) if x.split('：',1)[-1].strip())
-                    box=QMessageBox(self)
-                    box.setWindowTitle("新浏览器连接确认")
-                    box.setText("检测到一个从未连接过的新浏览器，是否允许它连接本软件？")
-                    box.setInformativeText(detail+"\n\n只确认一次。已连接过的浏览器不会再次询问。停用后该浏览器不会再自动注册。")
-                    allow_btn=box.addButton("允许连接",QMessageBox.ButtonRole.AcceptRole)
-                    block_btn=box.addButton("停用此浏览器",QMessageBox.ButtonRole.DestructiveRole)
-                    box.addButton("稍后决定",QMessageBox.ButtonRole.RejectRole)
-                    box.setDefaultButton(allow_btn)
-                    box.exec()
-                    clicked=box.clickedButton()
-                    if clicked is allow_btn:
+                    # rev123: in-app modal dialog (frameless, fixed,
+                    # dimmed background) instead of a free QMessageBox.
+                    _dlg=NewBrowserApprovalDialog(self,detail)
+                    _dlg.exec()
+                    if _dlg.choice=="allow":
                         self.connector.approve_pending(cid)
                         self.show_toast("已允许新浏览器连接："+label,kind="success")
-                    elif clicked is block_btn:
+                    elif _dlg.choice=="block":
                         self.connector.block_pending(cid)
                         self.show_toast("已停用该浏览器连接",kind="success")
                     else:
@@ -14760,7 +15348,7 @@ class MainWindow(QMainWindow):
         box = QMessageBox(self)
         box.setWindowTitle("浏览器连接器需要重装一次")
         box.setIcon(QMessageBox.Icon.Warning)
-        box.setText(f"检测到 {same_count} 个浏览器连接器是 v{BUNDLED_CONNECTOR_VERSION}，和内置的是同一个版本号，但不是同一版：头像已恢复为原来方式，连接器也恢复为原来版本。请重装一次连接器。")
+        box.setText(f"检测到 {same_count} 个浏览器连接器是 v{BUNDLED_CONNECTOR_VERSION}，和内置的是同一个版本号，但不是同一版构建，请重装一次连接器。")
         box.setInformativeText("点「更新连接器」会把连接器保存出来，解压后在 Chrome 扩展页面加载即可。")
         update_btn = box.addButton("更新连接器", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("以后再说", QMessageBox.ButtonRole.RejectRole)
