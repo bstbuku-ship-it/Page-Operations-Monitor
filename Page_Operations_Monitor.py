@@ -42,14 +42,14 @@ import base64
 import shlex
 
 APP_TITLE = "专业监控工具"
-APP_VERSION = "1.7.5"
-APP_BUILD = "professional-portable-deployer-ui-v175-20261124-rev127"
+APP_VERSION = "1.7.6"
+APP_BUILD = "professional-portable-deployer-ui-v176-20261125-rev129"
 
 # Update log, bundled in the code in Whitaker's wording and grouping:
 # version header "vX.Y.Z (date)", groups 优化/新增/修复 (first release
 # uses 首个版本), connector line on its own after the groups.
 UPDATE_LOG_SHOWN_KEY = "update_log/shown_for"
-CHANGELOG = [{'version': '1.7.5', 'date': '2026-11-20', 'groups': [{'title': '新增', 'items': ['后台或最小化时巡检跑完会弹系统通知，写明手动还是自动、跑了多少个、成功失败多少。', '每个浏览器可以同时开几个标签页巡检，默认 3 个，可以在设置里改成 1 到 5 个。', '下载新版本时可以点“取消下载”停掉下载。']}, {'title': '优化', 'items': ['主界面搜索框缩短了，筛选胶囊在最小窗口下也保持在一行。', '浏览器断开或复检时不用等整轮跑完，剩下的主页马上交给还连着的浏览器接着巡检。', '没有打开普通窗口的浏览器本轮会直接跳过，并提示打开一个普通窗口。', '更新日志和新浏览器连接的确认框都改成在窗口里弹，背景变暗、点不了别的。']}, {'title': '修复', 'items': ['预警的系统通知只在没看这个界面时才弹，看着界面时不再弹。', '看板今日新增和昨日新增都改成和粉丝趋势同一个算法，两边同一天的数完全一致。', '读到的粉丝数是 0 时也会按实际读到的写进去，不再当作没读到处理。', '没有打开普通窗口时，诊断会写明这个浏览器实际看到的窗口数量。', '粉丝趋势总图不再算已删主页和已关粉丝监控的主页，只算现在还在的主页。']}], 'connector': '浏览器连接器升级至 1.4.10（需手动更新；多标签巡检和窗口数量诊断都要用新版连接器）。'}, {'version': '1.7.4', 'date': '2026-11-17', 'groups': [{'title': '新增', 'items': ['ID 管理的搜索框可以直接粘贴多行 ID，一次查出多个主页，查到的可以直接批量设置或批量删除。', '新增圣诞主题：整体墨绿底色配金色点缀，侧栏有雪花和小书本装饰。', '监控看板的搜索框也可以直接粘贴多行 ID，一次查出多个主页。']}, {'title': '优化', 'items': ['左侧导航栏默认宽度修改了。', '删除了一个导航栏样式。', '左侧导航栏底部的“外观”文字删掉了，只剩四个主题圆点。', '整个页面四角的圆角改小了。', '界面缩放功能移除了，界面固定为 100% 显示。', '浏览器连接窗口打开时背景变暗、点不了别的，只能关掉后再操作。', 'ID 管理的搜索框加长了，最小窗口下也能完整显示。', '固定窗口的图钉图标换成新样式（未置顶斜钉、已置顶竖钉，颜色跟随主题）。', '监控看板副标题改成粉丝与发帖监控。', '两个搜索框都加宽了一点，主界面搜索框里写明了可粘贴多行 ID。', '侧栏和趋势页标题里的“趋势”改成“粉丝趋势”。']}, {'title': '修复', 'items': ['巡检时筛选胶囊右上角的数字徽标会被压住一半，现在能完整显示了。', '巡检进度选角标样式时，“继续巡检”按钮右上角的数字会被压住一半，现在能完整显示了。', '最小窗口下上次巡检时间显示不全，现在能完整显示了。', '没有连接器时点“仅巡检本主页”不再提示已在队列中，会直接提示连接器未连接。', '过了零点还没巡检时，昨日新增不再显示横杠，改按昨天和前天的最后一次读数计算；今日新增没巡检时仍显示横杠。']}], 'connector': '浏览器连接器升级至 1.4.8（需手动更新）。'}, {'version': '1.7.3', 'date': '2026-11-12', 'groups': [{'title': '新增', 'items': ['左侧导航栏可以收起来，只留一列图标，点 ‹ 收起、点 › 展开。', '设置 → 外观里可以换导航栏样式：胶囊分组、清爽线条、深色导航三种。', '左侧导航栏新增「趋势」：上面是所有专业汇总趋势图，下面是每个专业的趋势图；点日期药丸可以选几号到几号。']}, {'title': '优化', 'items': ['启用自动巡检后，按钮变成深蓝色；点启用后等 5 秒再开始第一轮，5 秒内点取消就不立即巡检。', '窗口默认 1230×720，最小 1024×650；拉到 1200 以下侧栏自动收起，拖回自动展开；卡片按宽度排，最多 6 列；开发者模式最小 1080×560，开发者日志里可以输入尺寸测试、还原默认尺寸。', '通知、发帖超时、需处理、粉丝增长超标的数字，三个主题统一成正红色。', '更新完旧的安装包会自动清理，只留当前版本。', '浏览器连接窗口里，在线绿色、离线红色；状态和备注不再弹重复提示。', '关闭窗口改成新确认框，只有最小化到托盘和完全退出两个选项。', '左侧导航栏的「最近预警」板块删掉了。', '更新前会验证发布者的签名，签名不对就不会安装。']}, {'title': '修复', 'items': ['趋势日历下面三个快捷日期，现在只有点中的那一个有颜色；手动在日历上选日期后，三个都不亮了。', '头像不会再误抓成贴文里的图片。', '粉丝增长超标时，每录到一个就立刻放一次烟花。']}], 'connector': '浏览器连接器保持 1.4.7，已安装的无需重新安装。'}, {'version': '1.7.2', 'date': '2026-11-06', 'groups': [{'title': '新增', 'items': ['第一次打开会弹新手引导，带你走一遍装连接器、加主页、设自动巡检时间、跑巡检、看提醒；老用户也会弹一次，确认过就不再弹。', '自动巡检间隔设到 180 分钟以下时，设置里会出现提示，提醒你太短容易被 Facebook 临时限制。', '巡检跑起来之后，右键点「立即巡检」可以取消当前这一轮。']}, {'title': '优化', 'items': ['设置 → 巡检与提醒里的「巡检设置」改名「自动巡检设置」。']}, {'title': '修复', 'items': ['昨天超标、今天没超标的主页，不再一直留在「粉丝增长超标」里。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.1', 'date': '2026-11-06', 'groups': [{'title': '优化', 'items': ['主页小卡片改版：数值显示为「昨日新增 / 今日新增 / 距上次发帖」三列，当前粉丝单独一行（仅开启粉丝监控时显示）。', '昨日新增以红色、今日新增以绿色显示，无数据时为灰色；数值达 10000 以上以 W 为单位显示。', '点击「仅巡检本主页」后立即排入队列，无需等待上一轮结束；多个浏览器并行执行。', '发帖状态区分为「未见贴文」「读取不到」「待获取」三种。', '设置页重新整理：说明文字移至控件下方，「巡检与提醒」拆分为三节，粉丝增长提醒与发帖超时提醒可分别开关。', '精简设置项，移除「启动自动巡检」「静默收起到托盘」「备份数据库」。', '托盘右键菜单精简为「打开软件」「完全退出」。']}, {'title': '新增', 'items': ['筛选胶囊支持右键直接巡检该类主页。', '关闭窗口时可选择继续后台运行、等待本轮结束后退出或立即退出。']}, {'title': '修复', 'items': ['主页名称本轮未读取到时，不再判定为异常。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.0', 'date': '2026-11-04', 'groups': [{'title': '新增', 'items': ['浏览器连接器升级至 1.4.7（需手动更新），工具栏图标以角标显示离线 / 空闲 / 执行中状态。', '粉丝增长达标时播放烟花提示。', '自动复检：对仍无法确认的主页最多复检 5 遍，并优先更换浏览器重试。', '新增界面缩放（80%–130%）与消息提示位置设置。', '新增诊断日志窗口。']}, {'title': '优化', 'items': ['优化预警分类规则：粉丝增长超标、发帖超时、需处理三个维度独立统计。', '排序精简为三项，默认「增长预警优先」。', '卡片数值达 1000 以上以 k 为单位显示，悬停可查看精确值。', '设置页改为 5 个横向标签页。', '巡检间隔默认值调整为 240 分钟。', '通知历史支持清空已读记录。', '统一各类提示的显示样式。', '重写浏览器连接窗口，支持筛选、停用、删除与重新检测。', '并行巡检自动识别新上线的浏览器，不再限制数量。']}], 'connector': ''}, {'version': '1.6.2', 'date': '', 'groups': [{'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.1', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['Windows 版改用标准安装程序，提供简体中文安装向导，可自选安装路径。', '新增绿色便携版，解压即用，数据保存在软件文件夹内。']}, {'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.0', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['新增三套主题：云白（默认）、护眼绿、曜石黑。', '新增监控模块开关，首次运行时可选择启用的模块。', '支持静默升级：后台下载并校验新版本，空闲时自动安装并重启，可在「设置 → 更新」中关闭。', '提示气泡按类型区分图标：成功、警告、普通提示。', '主页卡片支持通过三点菜单删除。', '左侧栏新增预警头像行。', '接入 Windows 系统通知。']}, {'title': '优化', 'items': ['界面改为圆角风格，并新增左侧边栏。', '提示气泡按主题配色，宽度随内容自适应。', '主页不可用时直接给出判断。', 'ID 管理列表按专业名称排序。', '精简通知文案，不再显示 ID。']}, {'title': '修复', 'items': ['修复提示气泡偶尔被裁掉最后一个字的问题。']}], 'connector': '浏览器连接器保持 1.4.1，无需重新安装。'}, {'version': '1.5.0', 'date': '', 'groups': [{'title': '优化', 'items': ['软件名称统一为「专业监控工具」。', '「设置中心」更名为「设置」，移除「恢复默认巡检参数」「打开运行日志」「重置窗口布局」。', '专业 ID 管理入口统一为「FB专业ID管理」。', '更新提示改为「升级 / 以后再说」，下载并校验完成后再次确认安装。']}, {'title': '新增', 'items': ['设置新增「智能清理缓存」，扫描后经确认再清理，不影响 ID、通知、头像、设置、数据库及浏览器连接记录。']}], 'connector': ''}, {'version': '1.4.0', 'date': '2026-10-15', 'groups': [{'title': '新增', 'items': ['首页新增「昨日新增」指标。', '点击「查看通知」可直达通知界面并高亮对应预警。']}, {'title': '优化', 'items': ['通知界面默认仅显示未读及今日通知，较早的已读记录移至「历史记录」。', '预警弹窗头像与主页卡片保持一致。', '首页巡检参数布局更紧凑。', '数字输入框改为点击即选中、输入即保存。', '顶部图标按主题分层配色，有未读通知时显示红色。', '浏览器按钮增加状态灯：绿色可用、黄色部分连接、红色无连接。', '浏览器连接窗口简化；多个连接器可并行巡检，最多 10 个。', '浏览器连接器改为紧凑弹窗，可直接填写浏览器备注。']}], 'connector': ''}, {'version': '1.3.0', 'date': '2026-10-14', 'groups': [{'title': '新增', 'items': ['浏览器连接器改为同机自动发现、自动连接，无需手动输入配对码。', '检测到多个 Chrome 配置时可选择巡检所用浏览器，并记住上次选择。', '专业 ID 的粉丝监控与发帖监控可独立启用，支持批量管理。', '首页显示上次巡检时间，支持随机巡检间隔与随机主页间隔。', '关闭窗口后可留在系统托盘运行，再次启动时自动唤回已有窗口。', '最近预警增加主页头像。', '支持通过 GitHub Releases 检查并更新软件。']}], 'connector': ''}, {'version': '1.0.0', 'date': '2026-10-12', 'groups': [{'title': '首个版本', 'items': ['支持批量导入主页 ID，可直接粘贴谷歌表格内容并自动清洗。', '登录监控账号后，逐页采集粉丝数、主页名称与头像。', '首页展示当前粉丝与今日新增。', '支持粉丝增长桌面提醒。', '支持发帖时间监控与超时判断。', '提供专业 ID 管理：添加、编辑、批量设置、批量删除、导出清单。', '支持立即巡检与自动巡检。', '支持系统托盘、数据导出、数据目录迁移与数据库备份。', '支持检查新版本。']}], 'connector': ''}]
+CHANGELOG = [{'version': '1.7.6', 'date': '2026-11-25', 'groups': [{'title': '修复', 'items': ['修复巡检一瞬间就“跑完”、实际没打开网页的问题：浏览器回复“忙”或“已有任务”时，不再记成主页失败，会稍后重试。', '修复巡检进度忽高忽低：进度现在只增不减，逐个往上涨。', '修复巡检提前结束（浏览器全离线、没有普通窗口等）时没有系统通知：现在会弹出通知并写明原因。', '浏览器持续忙碌超过 1 分钟且没有任务在跑时，本轮会自动跳过它，不再卡住整轮。']}, {'title': '优化', 'items': ['某个浏览器同时只能跑一个任务时，会自动降低它同时打开的标签页数，连续成功后再逐步恢复。', '浏览器忙时重试间隔逐步拉长（1 到 4 秒），不再高频敲打。', '每轮结束在诊断日志里汇总失败原因和次数。', '自动清理同一浏览器配置重装连接器后留下的重复离线记录。']}], 'connector': '浏览器连接器保持 1.4.10，无需重新安装。'}, {'version': '1.7.5', 'date': '2026-11-20', 'groups': [{'title': '新增', 'items': ['后台或最小化时巡检跑完会弹系统通知，写明手动还是自动、跑了多少个、成功失败多少。', '每个浏览器可以同时开几个标签页巡检，默认 3 个，可以在设置里改成 1 到 5 个。', '下载新版本时可以点“取消下载”停掉下载。']}, {'title': '优化', 'items': ['主界面搜索框缩短了，筛选胶囊在最小窗口下也保持在一行。', '浏览器断开或复检时不用等整轮跑完，剩下的主页马上交给还连着的浏览器接着巡检。', '没有打开普通窗口的浏览器本轮会直接跳过，并提示打开一个普通窗口。', '更新日志和新浏览器连接的确认框都改成在窗口里弹，背景变暗、点不了别的。']}, {'title': '修复', 'items': ['预警的系统通知只在没看这个界面时才弹，看着界面时不再弹。', '看板今日新增和昨日新增都改成和粉丝趋势同一个算法，两边同一天的数完全一致。', '读到的粉丝数是 0 时也会按实际读到的写进去，不再当作没读到处理。', '没有打开普通窗口时，诊断会写明这个浏览器实际看到的窗口数量。', '粉丝趋势总图不再算已删主页和已关粉丝监控的主页，只算现在还在的主页。']}], 'connector': '浏览器连接器升级至 1.4.10（需手动更新；多标签巡检和窗口数量诊断都要用新版连接器）。'}, {'version': '1.7.4', 'date': '2026-11-17', 'groups': [{'title': '新增', 'items': ['ID 管理的搜索框可以直接粘贴多行 ID，一次查出多个主页，查到的可以直接批量设置或批量删除。', '新增圣诞主题：整体墨绿底色配金色点缀，侧栏有雪花和小书本装饰。', '监控看板的搜索框也可以直接粘贴多行 ID，一次查出多个主页。']}, {'title': '优化', 'items': ['左侧导航栏默认宽度修改了。', '删除了一个导航栏样式。', '左侧导航栏底部的“外观”文字删掉了，只剩四个主题圆点。', '整个页面四角的圆角改小了。', '界面缩放功能移除了，界面固定为 100% 显示。', '浏览器连接窗口打开时背景变暗、点不了别的，只能关掉后再操作。', 'ID 管理的搜索框加长了，最小窗口下也能完整显示。', '固定窗口的图钉图标换成新样式（未置顶斜钉、已置顶竖钉，颜色跟随主题）。', '监控看板副标题改成粉丝与发帖监控。', '两个搜索框都加宽了一点，主界面搜索框里写明了可粘贴多行 ID。', '侧栏和趋势页标题里的“趋势”改成“粉丝趋势”。']}, {'title': '修复', 'items': ['巡检时筛选胶囊右上角的数字徽标会被压住一半，现在能完整显示了。', '巡检进度选角标样式时，“继续巡检”按钮右上角的数字会被压住一半，现在能完整显示了。', '最小窗口下上次巡检时间显示不全，现在能完整显示了。', '没有连接器时点“仅巡检本主页”不再提示已在队列中，会直接提示连接器未连接。', '过了零点还没巡检时，昨日新增不再显示横杠，改按昨天和前天的最后一次读数计算；今日新增没巡检时仍显示横杠。']}], 'connector': '浏览器连接器升级至 1.4.8（需手动更新）。'}, {'version': '1.7.3', 'date': '2026-11-12', 'groups': [{'title': '新增', 'items': ['左侧导航栏可以收起来，只留一列图标，点 ‹ 收起、点 › 展开。', '设置 → 外观里可以换导航栏样式：胶囊分组、清爽线条、深色导航三种。', '左侧导航栏新增「趋势」：上面是所有专业汇总趋势图，下面是每个专业的趋势图；点日期药丸可以选几号到几号。']}, {'title': '优化', 'items': ['启用自动巡检后，按钮变成深蓝色；点启用后等 5 秒再开始第一轮，5 秒内点取消就不立即巡检。', '窗口默认 1230×720，最小 1024×650；拉到 1200 以下侧栏自动收起，拖回自动展开；卡片按宽度排，最多 6 列；开发者模式最小 1080×560，开发者日志里可以输入尺寸测试、还原默认尺寸。', '通知、发帖超时、需处理、粉丝增长超标的数字，三个主题统一成正红色。', '更新完旧的安装包会自动清理，只留当前版本。', '浏览器连接窗口里，在线绿色、离线红色；状态和备注不再弹重复提示。', '关闭窗口改成新确认框，只有最小化到托盘和完全退出两个选项。', '左侧导航栏的「最近预警」板块删掉了。', '更新前会验证发布者的签名，签名不对就不会安装。']}, {'title': '修复', 'items': ['趋势日历下面三个快捷日期，现在只有点中的那一个有颜色；手动在日历上选日期后，三个都不亮了。', '头像不会再误抓成贴文里的图片。', '粉丝增长超标时，每录到一个就立刻放一次烟花。']}], 'connector': '浏览器连接器保持 1.4.7，已安装的无需重新安装。'}, {'version': '1.7.2', 'date': '2026-11-06', 'groups': [{'title': '新增', 'items': ['第一次打开会弹新手引导，带你走一遍装连接器、加主页、设自动巡检时间、跑巡检、看提醒；老用户也会弹一次，确认过就不再弹。', '自动巡检间隔设到 180 分钟以下时，设置里会出现提示，提醒你太短容易被 Facebook 临时限制。', '巡检跑起来之后，右键点「立即巡检」可以取消当前这一轮。']}, {'title': '优化', 'items': ['设置 → 巡检与提醒里的「巡检设置」改名「自动巡检设置」。']}, {'title': '修复', 'items': ['昨天超标、今天没超标的主页，不再一直留在「粉丝增长超标」里。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.1', 'date': '2026-11-06', 'groups': [{'title': '优化', 'items': ['主页小卡片改版：数值显示为「昨日新增 / 今日新增 / 距上次发帖」三列，当前粉丝单独一行（仅开启粉丝监控时显示）。', '昨日新增以红色、今日新增以绿色显示，无数据时为灰色；数值达 10000 以上以 W 为单位显示。', '点击「仅巡检本主页」后立即排入队列，无需等待上一轮结束；多个浏览器并行执行。', '发帖状态区分为「未见贴文」「读取不到」「待获取」三种。', '设置页重新整理：说明文字移至控件下方，「巡检与提醒」拆分为三节，粉丝增长提醒与发帖超时提醒可分别开关。', '精简设置项，移除「启动自动巡检」「静默收起到托盘」「备份数据库」。', '托盘右键菜单精简为「打开软件」「完全退出」。']}, {'title': '新增', 'items': ['筛选胶囊支持右键直接巡检该类主页。', '关闭窗口时可选择继续后台运行、等待本轮结束后退出或立即退出。']}, {'title': '修复', 'items': ['主页名称本轮未读取到时，不再判定为异常。']}], 'connector': '浏览器连接器保持 1.4.7，无需重新安装。'}, {'version': '1.7.0', 'date': '2026-11-04', 'groups': [{'title': '新增', 'items': ['浏览器连接器升级至 1.4.7（需手动更新），工具栏图标以角标显示离线 / 空闲 / 执行中状态。', '粉丝增长达标时播放烟花提示。', '自动复检：对仍无法确认的主页最多复检 5 遍，并优先更换浏览器重试。', '新增界面缩放（80%–130%）与消息提示位置设置。', '新增诊断日志窗口。']}, {'title': '优化', 'items': ['优化预警分类规则：粉丝增长超标、发帖超时、需处理三个维度独立统计。', '排序精简为三项，默认「增长预警优先」。', '卡片数值达 1000 以上以 k 为单位显示，悬停可查看精确值。', '设置页改为 5 个横向标签页。', '巡检间隔默认值调整为 240 分钟。', '通知历史支持清空已读记录。', '统一各类提示的显示样式。', '重写浏览器连接窗口，支持筛选、停用、删除与重新检测。', '并行巡检自动识别新上线的浏览器，不再限制数量。']}], 'connector': ''}, {'version': '1.6.2', 'date': '', 'groups': [{'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.1', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['Windows 版改用标准安装程序，提供简体中文安装向导，可自选安装路径。', '新增绿色便携版，解压即用，数据保存在软件文件夹内。']}, {'title': '优化', 'items': ['优化已知问题，提升使用体验。']}], 'connector': ''}, {'version': '1.6.0', 'date': '2026-11-02', 'groups': [{'title': '新增', 'items': ['新增三套主题：云白（默认）、护眼绿、曜石黑。', '新增监控模块开关，首次运行时可选择启用的模块。', '支持静默升级：后台下载并校验新版本，空闲时自动安装并重启，可在「设置 → 更新」中关闭。', '提示气泡按类型区分图标：成功、警告、普通提示。', '主页卡片支持通过三点菜单删除。', '左侧栏新增预警头像行。', '接入 Windows 系统通知。']}, {'title': '优化', 'items': ['界面改为圆角风格，并新增左侧边栏。', '提示气泡按主题配色，宽度随内容自适应。', '主页不可用时直接给出判断。', 'ID 管理列表按专业名称排序。', '精简通知文案，不再显示 ID。']}, {'title': '修复', 'items': ['修复提示气泡偶尔被裁掉最后一个字的问题。']}], 'connector': '浏览器连接器保持 1.4.1，无需重新安装。'}, {'version': '1.5.0', 'date': '', 'groups': [{'title': '优化', 'items': ['软件名称统一为「专业监控工具」。', '「设置中心」更名为「设置」，移除「恢复默认巡检参数」「打开运行日志」「重置窗口布局」。', '专业 ID 管理入口统一为「FB专业ID管理」。', '更新提示改为「升级 / 以后再说」，下载并校验完成后再次确认安装。']}, {'title': '新增', 'items': ['设置新增「智能清理缓存」，扫描后经确认再清理，不影响 ID、通知、头像、设置、数据库及浏览器连接记录。']}], 'connector': ''}, {'version': '1.4.0', 'date': '2026-10-15', 'groups': [{'title': '新增', 'items': ['首页新增「昨日新增」指标。', '点击「查看通知」可直达通知界面并高亮对应预警。']}, {'title': '优化', 'items': ['通知界面默认仅显示未读及今日通知，较早的已读记录移至「历史记录」。', '预警弹窗头像与主页卡片保持一致。', '首页巡检参数布局更紧凑。', '数字输入框改为点击即选中、输入即保存。', '顶部图标按主题分层配色，有未读通知时显示红色。', '浏览器按钮增加状态灯：绿色可用、黄色部分连接、红色无连接。', '浏览器连接窗口简化；多个连接器可并行巡检，最多 10 个。', '浏览器连接器改为紧凑弹窗，可直接填写浏览器备注。']}], 'connector': ''}, {'version': '1.3.0', 'date': '2026-10-14', 'groups': [{'title': '新增', 'items': ['浏览器连接器改为同机自动发现、自动连接，无需手动输入配对码。', '检测到多个 Chrome 配置时可选择巡检所用浏览器，并记住上次选择。', '专业 ID 的粉丝监控与发帖监控可独立启用，支持批量管理。', '首页显示上次巡检时间，支持随机巡检间隔与随机主页间隔。', '关闭窗口后可留在系统托盘运行，再次启动时自动唤回已有窗口。', '最近预警增加主页头像。', '支持通过 GitHub Releases 检查并更新软件。']}], 'connector': ''}, {'version': '1.0.0', 'date': '2026-10-12', 'groups': [{'title': '首个版本', 'items': ['支持批量导入主页 ID，可直接粘贴谷歌表格内容并自动清洗。', '登录监控账号后，逐页采集粉丝数、主页名称与头像。', '首页展示当前粉丝与今日新增。', '支持粉丝增长桌面提醒。', '支持发帖时间监控与超时判断。', '提供专业 ID 管理：添加、编辑、批量设置、批量删除、导出清单。', '支持立即巡检与自动巡检。', '支持系统托盘、数据导出、数据目录迁移与数据库备份。', '支持检查新版本。']}], 'connector': ''}]
 DEFAULT_INTERVAL_MINUTES = 240
 DEFAULT_PAGE_GAP_SECONDS = 8  # compatibility for callers using a fixed interval
 DEFAULT_ROUND_JITTER_MIN = 15
@@ -2021,6 +2021,31 @@ def diag_log_snapshot():
     return list(_diag_log_lines)
 
 
+_round_fail_counter = {}
+
+
+def diag_round_reset():
+    _round_fail_counter.clear()
+
+
+def diag_note_failure(reason):
+    key = str(reason or "未知原因").strip()[:40] or "未知原因"
+    _round_fail_counter[key] = _round_fail_counter.get(key, 0) + 1
+
+
+def diag_round_summary(ok, fail):
+    """One line at the end of a round: failures grouped by reason, most
+    frequent first (top 5). Nothing is logged when nothing failed."""
+    if not _round_fail_counter:
+        return
+    items = sorted(_round_fail_counter.items(), key=lambda kv: -kv[1])
+    text = "、".join("%s ×%d" % (k, n) for k, n in items[:5])
+    if len(items) > 5:
+        text += "、其他 %d 类" % (len(items) - 5)
+    diag_log("[采集汇总] 本轮成功 %d、失败 %d；失败原因：%s" % (int(ok), int(fail), text))
+    _round_fail_counter.clear()
+
+
 def add_diag_log_listener(callback):
     if callback not in _diag_log_listeners:
         _diag_log_listeners.append(callback)
@@ -2520,6 +2545,7 @@ class Store:
             if ts is None:
                 c.execute("""UPDATE pages SET last_post_checked_ts=?,post_result='failed',
                     post_error=?,post_diag=?,last_inspected_at=?,updated_at=? WHERE page_id=?""",(now,error,str(result.get("post_diag") or "")[:300],now_iso(),now_iso(),pid))
+                diag_note_failure("发帖："+str(decision))
                 diag_log(f"[发帖] {display_name(dict(row))}（{pid}）本次={_diag_ts(seen_ts)} 精度={new_precision}s 已存={_diag_ts(stored_ts)} 精度={stored_precision}s 差={delta_text}s 判定={decision} 写入=failed")
                 return None
             limit=int(row["post_limit_hours"] or 24)
@@ -2563,6 +2589,7 @@ class Store:
         if _fail_parts:
             _cerr = str(result.get("growth_error") or "")[:200]
             _czh = _zh_connector_error(_cerr)
+            diag_note_failure("粉丝："+(_czh or _cerr))
             diag_log(f"[采集] {pid} " + "／".join(_fail_parts) + "失败：" + _cerr + (f"（{_czh}）" if _czh else ""))
         if purpose=="metadata":
             return {"ignored":False,"success":bool(name or result.get("avatar_fresh")),
@@ -5631,6 +5658,8 @@ class ConnectorBridge:
         # (tabs setting, 1..5, default 3). One job per slot; the
         # extension enforces the same cap on its side.
         self.max_jobs=3
+        self._cid_cap={}  # per-browser effective job cap, lowered when a connector reports 'active task'
+        self._cid_ok={}   # consecutive good results since the cap was lowered, used to raise it again
         self.server=None
         self.thread=None
         self.error=''
@@ -5792,6 +5821,8 @@ class ConnectorBridge:
                     except Exception:pass
                 session=_ConnectorSession(cid,ws,identity)
                 self.sessions[cid]=session
+                try:self.prune_duplicates()
+                except Exception:pass
             response={'type':'ready','protocol':CONNECTOR_PROTOCOL,'version':CONNECTOR_VERSION,'instance_id':cid,
                       'product':CONNECTOR_PRODUCT,'build':CONNECTOR_BUILD,'connection_mode':'auto'}
             if token:response['token']=token
@@ -5846,6 +5877,34 @@ class ConnectorBridge:
                              'last_connected_at':item.get('last_connected_at',0),'blocked':bool(item.get('blocked'))})
             return rows
 
+    def prune_duplicates(self):
+        """Drop stale offline records left behind when the connector was
+        reinstalled in the same browser profile (new instance id, same
+        profile). Per group, keep one record (online first, then the most
+        recently connected); delete only the OTHER records that are offline
+        and not disabled by the user. Returns how many were removed."""
+        removed=0
+        with self.lock:
+            now=time.monotonic();groups={}
+            for cid,item in self.records.items():
+                ident=item.get('identity') or {}
+                directory=str(ident.get('profile_directory') or '').strip()
+                if not directory:continue  # cannot prove it is the same profile
+                try:name=connector_display_name(ident,cid)
+                except Exception:continue
+                key=(name,directory,str(ident.get('browser_brand') or ''),str(ident.get('channel_label') or ''),str(ident.get('os') or ''))
+                sess=self.sessions.get(cid)
+                online=bool(sess and now-sess.last_seen<65)
+                groups.setdefault(key,[]).append((cid,online,float(item.get('last_connected_at') or 0),bool(item.get('blocked'))))
+            for members in groups.values():
+                if len(members)<2:continue
+                members.sort(key=lambda m:(m[1],m[2]),reverse=True)
+                for cid,online,_ts,blocked in members[1:]:
+                    if online or blocked:continue
+                    self.records.pop(cid,None);self.sessions.pop(cid,None);removed+=1
+            if removed:self._save()
+        return removed
+
     def online(self, cid):
         return any(r['instance_id']==cid and r['online'] for r in self.clients())
 
@@ -5864,7 +5923,8 @@ class ConnectorBridge:
         with self.lock:
             session=self.sessions.get(cid)
             if not session or time.monotonic()-session.last_seen>=65:raise ConnectorError('Selected browser is offline')
-            if sum(1 for j in self.jobs.values() if j.session is session and not j.event.is_set())>=_limit:
+            _eff=min(_limit,max(1,int(self._cid_cap.get(cid,_limit))))
+            if sum(1 for j in self.jobs.values() if j.session is session and not j.event.is_set())>=_eff:
                 raise ConnectorError('Selected browser is busy')
             jid=secrets.token_hex(16);job=_ConnectorJob(session,pid);self.jobs[jid]=job
         try:
@@ -5878,8 +5938,42 @@ class ConnectorBridge:
             while not job.event.wait(.15):
                 if stop and stop.is_set():raise ConnectorError('Task stopped')
                 if time.monotonic()>end:raise ConnectorError('Browser task timed out')
-            if job.error:raise ConnectorError(job.error)
+            if job.error:
+                _err=str(job.error)
+                if 'active task' in _err.lower():
+                    # The connector is still running another task. That is the
+                    # browser being busy, not the page failing: report it as
+                    # busy so the lane hands the page back instead of
+                    # recording a bogus failure and bumping the progress.
+                    with self.lock:
+                        _others=sum(1 for j in self.jobs.values() if j.session is session and j is not job and not j.event.is_set())
+                        self._cid_cap[cid]=max(1,_others);self._cid_ok[cid]=0
+                    raise ConnectorError('Selected browser is busy')
+                raise ConnectorError(_err)
             if not job.result:raise ConnectorError('No result received')
+            # The extension reports "I could not even start this page" as a
+            # normal result whose payload carries only an error text (no page
+            # data). Those are NOT observations: raise them as errors so the
+            # lanes hand the page back instead of recording a fake failure.
+            _pl=job.result
+            _perr=str(_pl.get('error') or '') if isinstance(_pl,dict) else ''
+            _plow=_perr.lower()
+            _has_data=bool(_pl.get('name_candidates') or _pl.get('follower_text') or _pl.get('post_candidates') or _pl.get('observed_url')) if isinstance(_pl,dict) else False
+            if _perr and not _has_data:
+                if 'active task' in _plow or 'busy' in _plow or 'all slots in use' in _plow:
+                    with self.lock:
+                        _others=sum(1 for j in self.jobs.values() if j.session is session and j is not job and not j.event.is_set())
+                        self._cid_cap[cid]=max(1,_others);self._cid_ok[cid]=0
+                    raise ConnectorError('Selected browser is busy')
+                if 'normal window' in _plow:
+                    raise ConnectorError(_perr)
+            # A real result: after 3 in a row, give a lowered cap one slot back.
+            with self.lock:
+                _c=self._cid_cap.get(cid)
+                if _c is not None and _c<_limit:
+                    self._cid_ok[cid]=self._cid_ok.get(cid,0)+1
+                    if self._cid_ok[cid]>=3:
+                        self._cid_cap[cid]=_c+1;self._cid_ok[cid]=0
             return job.result
         finally:
             with self.lock:self.jobs.pop(jid,None)
@@ -7461,6 +7555,11 @@ class ConnectorCollectWorker(CollectWorker):
             self.finished.emit(False,'连接器中断：所有已选择浏览器均已离线');return
         self.instance_ids=online
         self._spawned_ids=set(self.instance_ids)
+        try:
+            self.bridge._cid_cap.clear();self.bridge._cid_ok.clear()
+            _n=self.bridge.prune_duplicates()
+            if _n:log_patrol_timing(f"已清理 {_n} 条重复的离线连接器记录")
+        except Exception:pass
         # rev120: fresh per-round skip/recheck state.
         self._skipped_cids=set();self._no_window_cids=set()
         self._recheck_pending=[];self._recheck_tried={};self._transport_attempts={};self._rechecked_pids=set()
@@ -7470,6 +7569,7 @@ class ConnectorCollectWorker(CollectWorker):
         pages=list(self.pages);random.shuffle(pages)
         log_patrol_timing("线程已进 run：%d 个连接器在线，每浏览器 %d 个标签页，共 %d 个主页，已打乱排序"%(len(self.instance_ids),self.slots,total)+_timing_suffix(self._timing_t0))
         workq=queue.Queue();outq=queue.Queue();threads=[]
+        _round_t0=time.monotonic();_last_ok={};_busy_n={}  # per-browser time of last real result, for the stuck-busy guard
         # rev120: one lane per (browser, slot); the first pages go
         # round-robin across browsers so a slow page cannot hog one lane.
         _lanes=[cid for _slot in range(self.slots) for cid in self.instance_ids]
@@ -7549,7 +7649,7 @@ class ConnectorCollectWorker(CollectWorker):
                             self._timing_first_done=True;log_patrol_timing("第一个主页采完：%s，本页用时 %.1f 秒"%(display_name(row),_took)+_timing_suffix(self._timing_t0))
                         elif _took>=20:
                             log_patrol_timing("慢页：%s 本页用时 %.1f 秒"%(display_name(row),_took)+_timing_suffix(self._timing_t0))
-                        fail_streak=0
+                        fail_streak=0;_last_ok[cid]=time.monotonic();_busy_n[cid]=0
                         if self._stop.is_set():
                             workq.put(row);row=None;break
                         record=connector_record(row,payload,self.purpose)
@@ -7563,7 +7663,23 @@ class ConnectorCollectWorker(CollectWorker):
                             # All slots on this browser are full: hand
                             # the page back and try other work for a beat.
                             workq.put(row);row=None
-                            if self._stop.wait(1.0):break
+                            # "Busy" while one of OUR jobs is still in flight is normal
+                            # (a slow page): keep waiting. "Busy" with nothing of ours
+                            # running means a stale task inside the connector.
+                            with self.bridge.lock:
+                                _sess=self.bridge.sessions.get(cid)
+                                _inflight=sum(1 for j in self.bridge.jobs.values() if j.session is _sess and not j.event.is_set())
+                            if _inflight>0:
+                                _last_ok[cid]=time.monotonic()
+                            elif time.monotonic()-_last_ok.get(cid,_round_t0)>60:
+                                # Stuck for 1 minute with no job of ours running:
+                                # skip this browser so the round can end.
+                                with lock:self._skipped_cids.add(cid)
+                                outq.put(('offline',cid,'busy-stuck'));break
+                            # Back off gradually (1s -> 4s) so a struggling connector
+                            # is not hammered; any real result resets it.
+                            _busy_n[cid]=_busy_n.get(cid,0)+1
+                            if self._stop.wait(min(4.0,1.0+0.25*_busy_n[cid])):break
                             continue
                         if 'normal window' in _low:
                             # rev120: the browser is connected but has
@@ -7610,6 +7726,13 @@ class ConnectorCollectWorker(CollectWorker):
 
         spawned=set(self.instance_ids);last_scan=time.monotonic()
         done=0;offline=set();first_seen=0
+        _hi=[0]
+        def _emit_progress(_n,_text):
+            # One monotonic counter for the whole round: the bar never goes
+            # backwards, whatever stage (first pass / recheck) is reporting.
+            _n=max(0,min(total,int(_n)))
+            if _n>_hi[0]:_hi[0]=_n
+            self.progress.emit(_hi[0],total,_text)
         def _browser_label(_cid):
             try:
                 for _r in self.bridge.clients():
@@ -7641,7 +7764,10 @@ class ConnectorCollectWorker(CollectWorker):
             if kind=='offline':
                 offline.add(item[1])
                 _label=_browser_label(item[1])
-                if item[2]=='no-window':
+                if item[2]=='busy-stuck':
+                    log_patrol_timing(f"浏览器一直忙：{_label}，本轮已跳过它，任务已交还其他浏览器")
+                    self.progress.emit(-1,total,f"{_label}：浏览器一直忙没有响应，本轮已跳过它，任务已交还其他浏览器")
+                elif item[2]=='no-window':
                     log_patrol_timing(f"浏览器没有打开普通窗口：{_label}，本轮已跳过它，任务已交还其他浏览器")
                     self.progress.emit(-1,total,f"{_label}：这个 Chrome 账号里没有打开普通窗口，请先打开一个 Chrome 普通窗口再巡检。本轮已跳过它，任务已交还其他浏览器。")
                 else:
@@ -7653,26 +7779,26 @@ class ConnectorCollectWorker(CollectWorker):
                 if record_needs_recheck(_row,_merged,self.purpose) and _attempt<RECHECK_MAX_PASSES and not self._stop.is_set():
                     with self._recheck_lock:
                         self._recheck_pending.append((_src,dict(_row),_merged,_attempt))
-                    self.progress.emit(finalized+1,total,f'自动复检第 {_attempt} 遍 '+display_name(_row)+(' · 换浏览器' if _tcid!=_src else ' · 当前浏览器'))
+                    _emit_progress(first_seen,f'自动复检第 {_attempt} 遍 '+display_name(_row)+(' · 换浏览器' if _tcid!=_src else ' · 当前浏览器'))
                     continue
                 _good=self._record_good(_row,_merged);_merged['ok']=_good;_merged['purpose']=self.purpose
                 self.result.emit(_merged);finalized+=1
                 if _good:success+=1
                 else:failure+=1
-                self.progress.emit(finalized,total,f'自动复检完成 · 已确认 {finalized} / {total}')
+                _emit_progress(first_seen,f'自动复检 · 已确认 {finalized} / {total}')
                 continue
             _,cid,row,record=item;first_seen+=1
             if record_needs_recheck(row,record,self.purpose) and not self._stop.is_set():
                 with self._recheck_lock:
                     self._recheck_pending.append((cid,dict(row),record,0))
                     self._recheck_tried.setdefault(str(row['page_id']),set()).add(cid)
-                self.progress.emit(first_seen,total,f'首检 {first_seen} / {total} · 待自动复检')
+                _emit_progress(first_seen,f'首检 {first_seen} / {total} · 待自动复检')
                 continue
             good=self._record_good(row,record);record['ok']=good;record['purpose']=self.purpose
             self.result.emit(record);finalized+=1
             if good:success+=1
             else:failure+=1
-            self.progress.emit(first_seen,total,f'并行巡检 {first_seen} / {total}')
+            _emit_progress(first_seen,f'并行巡检 {first_seen} / {total}')
 
         for t in threads:t.join(timeout=1)
 
@@ -7741,7 +7867,7 @@ class ConnectorCollectWorker(CollectWorker):
                 _got+=1
                 if _busy:
                     _still.append((_source_cid,_row,_item,_attempt));continue
-                self.progress.emit(finalized+1,total,f'自动复检第 {_attempt+1} 遍 '+display_name(_row)+(' · 换浏览器' if _target!=_source_cid else ' · 当前浏览器'))
+                _emit_progress(max(first_seen,finalized),f'自动复检第 {_attempt+1} 遍 '+display_name(_row)+(' · 换浏览器' if _target!=_source_cid else ' · 当前浏览器'))
                 if record_needs_recheck(_row,_item,self.purpose) and _attempt+1<RECHECK_MAX_PASSES:
                     _still.append((_source_cid,_row,_item,_attempt+1));continue
                 _good=self._record_good(_row,_item);_item['ok']=_good;_item['purpose']=self.purpose
@@ -14964,7 +15090,7 @@ class MainWindow(QMainWindow):
         self.auto_timer.stop();self.next_run_at=None;self.current_purpose=purpose
         self.active_run_id=uuid.uuid4().hex;self.store.start_run(self.active_run_id,len(pages))
         self.run_started_at=time.time();self.run_ok=0;self.run_fail=0
-        self._round_manual=manual;self._round_alert_count=0;self._no_window_toasted=False
+        self._round_manual=manual;self._round_alert_count=0;self._no_window_toasted=False;self._prog_high=0;diag_round_reset()
         self._patrol_t0=time.monotonic();self._patrol_first_result=False
         _tabs=patrol_tabs_per_browser(self.settings);self.connector.max_jobs=_tabs
         log_patrol_timing("开线程：%d 个连接器 · 每浏览器 %d 个标签页 · %d 个主页 · %s"%(len(cids),_tabs,len(pages),purpose))
@@ -14996,6 +15122,9 @@ class MainWindow(QMainWindow):
                 try:self.show_toast(str(info),kind="warning")
                 except Exception:pass
             return
+        # Never let the bar go backwards within one round.
+        current=max(int(current),int(getattr(self,"_prog_high",0)))
+        self._prog_high=current
         self.dashboard.status.setText(f"{info}  ·  {current}/{total}")
         self.dashboard.set_patrol_progress(current,total)
 
@@ -15068,7 +15197,7 @@ class MainWindow(QMainWindow):
         except Exception:
             return True
 
-    def _notify_patrol_finished(self):
+    def _notify_patrol_finished(self,message_text=""):
         """本轮巡检结束且窗口不在前台时，发一条系统通知报结果。
 
         rev119：标题区分手动 / 自动，正文写共多少个、成功失败
@@ -15079,6 +15208,17 @@ class MainWindow(QMainWindow):
             return
         total=self.run_ok+self.run_fail
         if total<=0:
+            # Nothing was processed (every browser offline / no normal window /
+            # connector interrupted): still tell the user why the round ended,
+            # instead of staying silent. A round the user stopped by hand is
+            # not announced.
+            _txt=str(message_text or "")
+            if "\u5df2\u505c\u6b62" in _txt:
+                return
+            _t="\u624b\u52a8\u5de1\u68c0\u672a\u5b8c\u6210" if getattr(self,"_round_manual",True) else "\u81ea\u52a8\u5de1\u68c0\u672a\u5b8c\u6210"
+            _ok,_detail=send_simple_system_toast(_t,(_txt or "\u672c\u8f6e\u6ca1\u6709\u5b8c\u6210\u4efb\u4f55\u4e3b\u9875")[:120],lambda:self.show_dashboard())
+            if not _ok:
+                log_exception("\u5de1\u68c0\u5b8c\u6210\u901a\u77e5\u672a\u53d1\u51fa\uff1a"+str(_detail))
             return
         title="手动巡检已完成" if getattr(self,"_round_manual",True) else "自动巡检已完成"
         message="共%d个主页，成功%d个，失败%d个"%(total,self.run_ok,self.run_fail)
@@ -15090,6 +15230,8 @@ class MainWindow(QMainWindow):
             log_exception("巡检完成通知未发出："+str(_detail))
 
     def on_collection_finished(self,ok,message):
+        try:diag_round_summary(self.run_ok,self.run_fail)
+        except Exception:pass
         if self.active_run_id:
             state="completed" if ok and self.run_fail==0 else "partial" if self.run_ok else "failed"
             self.store.finish_run(self.active_run_id,self.run_ok,self.run_fail,state)
@@ -15097,7 +15239,9 @@ class MainWindow(QMainWindow):
             stamp=now_iso();self.settings.setValue("last_inspection_at",stamp);self.settings.sync()
             self.dashboard._last_inspection_stamp=stamp
             self._refresh_run_badge()
-            self._notify_patrol_finished()
+            self._notify_patrol_finished(message)
+        elif self.current_purpose=="monitor":
+            self._notify_patrol_finished(message)
         if "连接器中断" in message and self.auto_enabled:
             self.stop_auto();self.dashboard.status.setText(message+" · 自动巡检已暂停，请恢复浏览器连接后重新开启")
         else:self.dashboard.status.setText(message)
